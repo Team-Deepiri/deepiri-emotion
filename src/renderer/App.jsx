@@ -365,12 +365,29 @@ const App = () => {
     }
   }, [projectRoot, openFileInEditor, handleOpenFolder]);
 
+  const handleSelectWorkspaceResult = useCallback(async ({ path, name, line }) => {
+    const tab = openTabs.find((t) => t.path === path);
+    if (tab) {
+      setActiveTabId(tab.id);
+      setTimeout(() => editorApiRef.current?.goToLine(line), 100);
+    } else {
+      setPendingGoToLine(line);
+      await openFileInEditor({ path, name });
+    }
+  }, [openTabs, openFileInEditor]);
+
   useKeybindings([
     { key: 'p', ctrlKey: true, shiftKey: true, action: () => setCommandPaletteOpen(true) },
     { key: 'p', ctrlKey: true, action: (e) => { e.preventDefault(); setQuickOpenOpen(true); } },
     { key: 'n', ctrlKey: true, action: (e) => { e.preventDefault(); handleNewFile(); } },
     { key: 's', ctrlKey: true, action: (e) => { e.preventDefault(); saveActiveTab(); } },
-    { key: 'o', ctrlKey: true, action: (e) => { e.preventDefault(); handleOpenFolder(); } }
+    { key: 'o', ctrlKey: true, action: (e) => { e.preventDefault(); handleOpenFolder(); } },
+    { key: 'g', ctrlKey: true, action: (e) => { e.preventDefault(); setGoToLineOpen(true); setGoToLineValue(''); } },
+    { key: 'f', ctrlKey: true, shiftKey: true, action: (e) => { e.preventDefault(); switchView('search'); setFocusSearchRequest((n) => n + 1); } },
+    { key: 'F', shiftKey: true, altKey: true, action: (e) => { e.preventDefault(); editorApiRef.current?.formatDocument(); } },
+    { key: '=', ctrlKey: true, action: (e) => { e.preventDefault(); zoomIn(); } },
+    { key: '-', ctrlKey: true, action: (e) => { e.preventDefault(); zoomOut(); } },
+    { key: '0', ctrlKey: true, action: (e) => { e.preventDefault(); zoomReset(); } }
   ]);
 
   const handleCommand = useCallback((cmdId) => {
@@ -382,9 +399,27 @@ const App = () => {
     else if (cmdId === 'toggle-output') { setBottomPanelOpen(true); setBottomPanelTab('output'); }
     else if (cmdId === 'toggle-problems') { setBottomPanelOpen(true); setBottomPanelTab('problems'); }
     else if (cmdId === 'toggle-ai') setShowAIAssistant((v) => !v);
+    else if (cmdId === 'ask-ai-explain') {
+      setInitialAIPrompt(editorSelection?.trim() ? 'Explain the selected code.' : 'Explain this file.');
+      setShowAIAssistant(true);
+      setTimeout(() => setInitialAIPrompt(null), 500);
+    }
+    else if (cmdId === 'ask-ai-refactor') {
+      setInitialAIPrompt(editorSelection?.trim() ? 'Refactor the selected code for clarity and best practices.' : 'Refactor this file for clarity and best practices.');
+      setShowAIAssistant(true);
+      setTimeout(() => setInitialAIPrompt(null), 500);
+    }
+    else if (cmdId === 'ask-ai-add-tests') {
+      setInitialAIPrompt(editorSelection?.trim() ? 'Add unit tests for the selected code.' : 'Add unit tests for this file.');
+      setShowAIAssistant(true);
+      setTimeout(() => setInitialAIPrompt(null), 500);
+    }
     else if (cmdId === 'keybindings') switchView('keybindings');
     else if (cmdId === 'extensions') switchView('extensions');
     else if (cmdId === 'outline') switchView('outline');
+    else if (cmdId === 'go-to-line') setGoToLineOpen(true);
+    else if (cmdId === 'format-document') editorApiRef.current?.formatDocument();
+    else if (cmdId === 'focus-search') { switchView('search'); setFocusSearchRequest((n) => n + 1); }
     else if (cmdId === 'settings') switchView('integrations');
     else if (cmdId === 'new-task') {
       const title = window.prompt('Task title');
@@ -420,6 +455,7 @@ const App = () => {
         <div 
           className={`activity-item ${currentView === 'challenges' ? 'active' : ''}`}
           onClick={() => switchView('challenges')}
+          title="Challenges"
         >
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
             <path d="M12 2L2 7l10 5 10-5-10-5z"/>
@@ -428,6 +464,7 @@ const App = () => {
         <div 
           className={`activity-item ${currentView === 'gamification' ? 'active' : ''}`}
           onClick={() => switchView('gamification')}
+          title="Gamification"
         >
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
             <circle cx="12" cy="12" r="10"/>
@@ -436,6 +473,7 @@ const App = () => {
         <div 
           className={`activity-item ${currentView === 'integrations' ? 'active' : ''}`}
           onClick={() => switchView('integrations')}
+          title="Integrations"
         >
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
             <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
@@ -500,6 +538,7 @@ const App = () => {
         <div 
           className={`activity-item ${showAIAssistant ? 'active' : ''}`}
           onClick={() => setShowAIAssistant(!showAIAssistant)}
+          title="AI Chat"
         >
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
             <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
@@ -647,12 +686,37 @@ const App = () => {
             ) : currentView === 'search' ? (
               <SearchPanel
                 openTabs={openTabs}
+                projectRoot={projectRoot}
                 onSelectTab={(tabId, line) => {
                   setActiveTabId(tabId);
-                  setCursorPosition((c) => ({ ...c, lineNumber: line }));
+                  setTimeout(() => editorApiRef.current?.goToLine(line), 50);
                 }}
+                onSelectWorkspaceResult={handleSelectWorkspaceResult}
+                focusRequest={focusSearchRequest}
               />
             ) : activeTab ? (
+              <>
+                <div className="editor-ai-bar">
+                  <button
+                    type="button"
+                    className="editor-ask-ai-btn"
+                    onClick={() => {
+                      setInitialAIPrompt(editorSelection?.trim()
+                        ? 'Explain the selected code and suggest improvements.'
+                        : 'Explain this file and suggest improvements.');
+                      setShowAIAssistant(true);
+                      setTimeout(() => setInitialAIPrompt(null), 500);
+                    }}
+                    title="Ask AI about this file or selection"
+                  >
+                    ✨ Ask AI
+                  </button>
+                  <div className="editor-ai-chips">
+                    <button type="button" className="editor-ai-chip" onClick={() => { setInitialAIPrompt(editorSelection?.trim() ? 'Explain the selected code.' : 'Explain this file.'); setShowAIAssistant(true); setTimeout(() => setInitialAIPrompt(null), 500); }} title="Explain">Explain</button>
+                    <button type="button" className="editor-ai-chip" onClick={() => { setInitialAIPrompt(editorSelection?.trim() ? 'Refactor the selected code for clarity and best practices.' : 'Refactor this file for clarity and best practices.'); setShowAIAssistant(true); setTimeout(() => setInitialAIPrompt(null), 500); }} title="Refactor">Refactor</button>
+                    <button type="button" className="editor-ai-chip" onClick={() => { setInitialAIPrompt(editorSelection?.trim() ? 'Add unit tests for the selected code.' : 'Add unit tests for this file.'); setShowAIAssistant(true); setTimeout(() => setInitialAIPrompt(null), 500); }} title="Add tests">Add tests</button>
+                  </div>
+                </div>
               <MonacoEditor
                 path={activeTab.path}
                 value={activeTab.content}
@@ -690,6 +754,7 @@ const App = () => {
                 onNewFile={handleNewFile}
                 onCommandPalette={() => setCommandPaletteOpen(true)}
                 onQuickOpen={() => setQuickOpenOpen(true)}
+                onOpenAIChat={() => setShowAIAssistant(true)}
                 recentFolders={recentFolders}
                 onOpenRecentFolder={(path) => setProjectRoot(path)}
               />
@@ -702,6 +767,7 @@ const App = () => {
                   currentFile={activeTab}
                   currentContent={activeTab.content}
                   selection={editorSelection}
+                  initialPrompt={initialAIPrompt}
                   onApplyEdit={(content) => {
                     if (activeTabId) updateTabContent(activeTabId, content);
                   }}

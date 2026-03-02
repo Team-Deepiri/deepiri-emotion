@@ -1,13 +1,14 @@
 import React from 'react';
 
 /**
- * Cursor-style welcome: recent folders, quick actions, getting started.
+ * Decked-out AI IDE welcome: AI first, then start, recent, features.
  */
 export default function WelcomeScreen({
   onOpenFolder,
   onNewFile,
   onCommandPalette,
   onQuickOpen,
+  onOpenAIChat,
   recentFolders = [],
   onOpenRecentFolder
 }) {
@@ -15,8 +16,20 @@ export default function WelcomeScreen({
     <div className="welcome-screen-full">
       <div className="welcome-brand">
         <h1>Deepiri IDE</h1>
-        <p className="welcome-tagline">AI-powered productivity IDE with Cyrex & Helox</p>
+        <p className="welcome-tagline">Decked-out AI-powered IDE — context-aware chat, apply edits, Cyrex & Helox</p>
       </div>
+
+      {onOpenAIChat && (
+        <section className="welcome-section welcome-ai-hero">
+          <h2>✨ AI IDE</h2>
+          <p className="welcome-ai-desc">Ask about your code, get edits applied in one click, or insert at cursor. Open a file and click AI in the status bar.</p>
+          <div className="welcome-actions">
+            <button type="button" className="welcome-btn ai-primary" onClick={onOpenAIChat}>
+              Open AI Chat
+            </button>
+          </div>
+        </section>
+      )}
 
       <div className="welcome-sections">
         <section className="welcome-section">
@@ -61,6 +74,17 @@ export default function WelcomeScreen({
             <li>Helox training pipelines</li>
             <li>Tasks, challenges, gamification</li>
             <li>Terminal, search, problems panel</li>
+          </ul>
+        </section>
+
+        <section className="welcome-section welcome-tips">
+          <h2>Quick tips</h2>
+          <ul className="welcome-tips-list">
+            <li><kbd>Ctrl+Shift+P</kbd> — Command palette</li>
+            <li><kbd>Ctrl+P</kbd> — Go to file</li>
+            <li><kbd>Ctrl+G</kbd> — Go to line</li>
+            <li><kbd>Ctrl+Plus / Ctrl+Minus</kbd> — Zoom editor</li>
+            <li>Use <strong>Explain</strong>, <strong>Refactor</strong>, <strong>Add tests</strong> above the editor for one-click AI prompts</li>
           </ul>
         </section>
       </div>
