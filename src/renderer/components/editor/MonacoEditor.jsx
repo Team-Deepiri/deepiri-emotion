@@ -121,7 +121,7 @@ export default function MonacoEditor({
         loading={<div className="monaco-loading">Loading editor…</div>}
         options={{
           minimap: { enabled: true },
-          fontSize: 14,
+          fontSize,
           lineNumbers: 'on',
           scrollBeyondLastLine: false,
           wordWrap: 'on',
