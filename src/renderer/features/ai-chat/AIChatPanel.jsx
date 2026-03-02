@@ -9,6 +9,7 @@ export default function AIChatPanel({
   currentFile = null,
   currentContent = '',
   selection = null,
+  initialPrompt = null,
   onApplyEdit,
   onInsertAtCursor,
   onShowDiff
@@ -17,11 +18,19 @@ export default function AIChatPanel({
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const endRef = useRef(null);
+  const inputRef = useRef(null);
   const { success, error } = useNotifications();
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  useEffect(() => {
+    if (initialPrompt) {
+      setInput(initialPrompt);
+      inputRef.current?.focus();
+    }
+  }, [initialPrompt]);
 
   const contextSummary = currentFile
     ? selection
@@ -115,6 +124,7 @@ export default function AIChatPanel({
       </div>
       <form className="ai-chat-input-row" onSubmit={(e) => { e.preventDefault(); sendMessage(); }}>
         <input
+          ref={inputRef}
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}

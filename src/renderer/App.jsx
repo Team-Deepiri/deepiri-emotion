@@ -662,9 +662,12 @@ const App = () => {
                 onSelectionChange={setEditorSelection}
                 onSymbolsChange={setOutlineSymbols}
                 onEditorReady={(api) => { editorApiRef.current = api; }}
+                onProblemsChange={setProblems}
                 theme={monacoTheme}
+                fontSize={editorFontSize}
                 height="100%"
               />
+              </>
             ) : activeFile ? (
               <CodeEditor
                 content={activeFile.content || ''}
@@ -730,7 +733,12 @@ const App = () => {
           <div className="bottom-panel-content">
             {bottomPanelTab === 'terminal' && <TerminalPanel projectRoot={projectRoot} />}
             {bottomPanelTab === 'output' && <OutputPanel logs={outputLogs} onClear={() => setOutputLogs([])} />}
-            {bottomPanelTab === 'problems' && <ProblemsPanel problems={problems} />}
+            {bottomPanelTab === 'problems' && (
+              <ProblemsPanel
+                problems={problems}
+                onSelect={(p) => editorApiRef.current?.goToLine(p.line)}
+              />
+            )}
           </div>
         </div>
       )}
