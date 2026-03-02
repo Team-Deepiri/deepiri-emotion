@@ -111,11 +111,11 @@
 .ai-chat-apply:hover { background: #1177bb; }
 
 .ai-chat-message-actions { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
-.ai-chat-diff, .ai-chat-insert {
+.ai-chat-copy, .ai-chat-diff, .ai-chat-insert {
   padding: 4px 10px; font-size: 12px; border: 1px solid #555; background: #333; color: #ccc;
   border-radius: 4px; cursor: pointer;
 }
-.ai-chat-diff:hover, .ai-chat-insert:hover { background: #444; color: #fff; }
+.ai-chat-copy:hover, .ai-chat-diff:hover, .ai-chat-insert:hover { background: #444; color: #fff; }
 
 .ai-chat-input-row {
   display: flex;
@@ -210,6 +210,7 @@
 .welcome-brand { margin-bottom: 32px; }
 .welcome-brand h1 { font-size: 28px; margin-bottom: 8px; }
 .welcome-tagline { color: #858585; font-size: 14px; }
+.welcome-tip { margin-top: 10px; font-size: 12px; color: #0ea5e9; }
 
 .welcome-sections { display: flex; flex-direction: column; gap: 24px; }
 .welcome-section h2 { font-size: 12px; text-transform: uppercase; color: #858585; margin-bottom: 12px; }
@@ -367,3 +368,52 @@
 .breadcrumb-segment::after { content: ' › '; color: #454545; margin-left: 4px; }
 .breadcrumb-segment:last-child::after { display: none; }
 .breadcrumb-segment.active { color: #ccc; }
+
+/* About dialog */
+.about-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 10002;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.about-dialog {
+  background: #252526;
+  border: 1px solid #454545;
+  border-radius: 8px;
+  padding: 24px;
+  min-width: 320px;
+  max-width: 90vw;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+.about-dialog h2 { margin: 0 0 8px; font-size: 18px; color: #fff; }
+.about-version { margin: 0 0 12px; font-size: 13px; color: #858585; }
+.about-desc { margin: 0 0 20px; font-size: 13px; color: #ccc; line-height: 1.5; }
+.about-close { padding: 8px 20px; background: #0e639c; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+.about-close:hover { background: #1177bb; }
+
+/* Error boundary fallback */
+.error-boundary {
+  position: fixed;
+  inset: 0;
+  background: #1e1e1e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999;
+}
+.error-boundary-box {
+  background: #252526;
+  border: 1px solid #454545;
+  border-radius: 8px;
+  padding: 24px;
+  max-width: 480px;
+  text-align: center;
+}
+.error-boundary-box h2 { margin: 0 0 12px; font-size: 18px; color: #f14c4c; }
+.error-boundary-message { margin: 0 0 8px; font-size: 13px; color: #ccc; word-break: break-word; }
+.error-boundary-hint { margin: 0 0 20px; font-size: 12px; color: #858585; }
+.error-boundary-reload { padding: 10px 24px; background: #0e639c; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+.error-boundary-reload:hover { background: #1177bb; }
