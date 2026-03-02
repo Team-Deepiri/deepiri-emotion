@@ -1,4 +1,13 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+
+const TIPS = [
+  'Ctrl+Shift+N — Create anything launcher (templates, Visual, Emotion)',
+  'Use the Run chip to preview HTML in browser or run Node/Python in terminal',
+  'Classify & Ask AI: classify selection then open AI with context',
+  'Edit agent personality and system prompt in Emotion panel',
+  'Visual canvas: Ctrl+C / Ctrl+V to copy and paste nodes',
+  'Voice: mic in editor bar inserts at cursor; mic in chat appends to input',
+];
 
 /**
  * Decked-out AI IDE welcome: AI first, then start, recent, features.
@@ -9,27 +18,52 @@ export default function WelcomeScreen({
   onCommandPalette,
   onQuickOpen,
   onOpenAIChat,
+  onOpenVisual,
+  onOpenEmotion,
+  onOpenCreateLauncher,
   recentFolders = [],
   onOpenRecentFolder
 }) {
+  const [tipIndex, setTipIndex] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTipIndex((i) => (i + 1) % TIPS.length), 8000);
+    return () => clearInterval(id);
+  }, []);
+
   return (
     <div className="welcome-screen-full">
       <div className="welcome-brand">
         <h1>Deepiri IDE</h1>
-        <p className="welcome-tagline">Decked-out AI-powered IDE — context-aware chat, apply edits, Cyrex & Helox</p>
+        <p className="welcome-tagline">Create anything. For everyone. With feeling. — Code, Visual, Emotion, Cyrex & Helox</p>
+        <p className="welcome-tip">💡 {TIPS[tipIndex]}</p>
       </div>
 
-      {onOpenAIChat && (
-        <section className="welcome-section welcome-ai-hero">
-          <h2>✨ AI IDE</h2>
-          <p className="welcome-ai-desc">Ask about your code, get edits applied in one click, or insert at cursor. Open a file and click AI in the status bar.</p>
-          <div className="welcome-actions">
+      <section className="welcome-section welcome-ai-hero">
+        <h2>✨ Create anything</h2>
+        <p className="welcome-ai-desc">Code in the editor, build UIs in the Visual canvas, or pair with an emotional AI agent. No one has seen this before.</p>
+        <div className="welcome-actions">
+          {onOpenAIChat && (
             <button type="button" className="welcome-btn ai-primary" onClick={onOpenAIChat}>
               Open AI Chat
             </button>
-          </div>
-        </section>
-      )}
+          )}
+          {onOpenVisual && (
+            <button type="button" className="welcome-btn ai-primary" onClick={onOpenVisual}>
+              Visual — No-code canvas
+            </button>
+          )}
+          {onOpenEmotion && (
+            <button type="button" className="welcome-btn ai-primary" onClick={onOpenEmotion}>
+              Emotion — AI partners
+            </button>
+          )}
+          {onOpenCreateLauncher && (
+            <button type="button" className="welcome-btn ai-primary" onClick={onOpenCreateLauncher}>
+              Create anything (Ctrl+Shift+N)
+            </button>
+          )}
+        </div>
+      </section>
 
       <div className="welcome-sections">
         <section className="welcome-section">
@@ -68,12 +102,13 @@ export default function WelcomeScreen({
         <section className="welcome-section">
           <h2>Features</h2>
           <ul className="welcome-features">
-            <li>Monaco editor with syntax highlighting</li>
+            <li>Code: Monaco editor, AI completion, format, find/replace</li>
+            <li>Visual: Drag-and-drop canvas, export to React/HTML</li>
+            <li>Emotion: AI agents with personality (deepiri-emotion)</li>
             <li>AI Chat (context-aware, apply edits)</li>
             <li>Cyrex AI: Agent Playground, RAG, Workflows</li>
             <li>Helox training pipelines</li>
-            <li>Tasks, challenges, gamification</li>
-            <li>Terminal, search, problems panel</li>
+            <li>Terminal, search, problems, outline</li>
           </ul>
         </section>
 

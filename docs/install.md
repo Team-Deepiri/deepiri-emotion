@@ -1,4 +1,4 @@
-# Deepiri IDE Desktop — Install & Setup
+# Deepiri Emotion Desktop — Install & Setup
 
 This document is the single reference for **how to get the installers** and **how to set up** the project (dev and first-run).
 
@@ -44,21 +44,21 @@ You can run the full chain with one command, or run steps individually.
 
 | File | Format | Use |
 |------|--------|-----|
-| `Deepiri IDE Setup 1.0.0.exe` | NSIS installer | Double-click to install. Optional install path, Desktop + Start Menu shortcuts, Add/Remove Programs uninstall. |
+| `Deepiri Emotion Setup 1.0.0.exe` | NSIS installer | Double-click to install. Optional install path, Desktop + Start Menu shortcuts, Add/Remove Programs uninstall. |
 
 **macOS** (run `npm run build:mac` on macOS):
 
 | File | Format | Use |
 |------|--------|-----|
-| `Deepiri IDE-1.0.0.dmg` | Disk image (x64 + arm64) | Open, drag app to Applications. |
-| `Deepiri IDE-1.0.0.pkg` | Package installer (x64 + arm64) | Run for guided install. |
+| `Deepiri Emotion-1.0.0.dmg` | Disk image (x64 + arm64) | Open, drag app to Applications. |
+| `Deepiri Emotion-1.0.0.pkg` | Package installer (x64 + arm64) | Run for guided install. |
 
 **Linux** (run `npm run build:linux` on Linux):
 
 | File | Format | Use |
 |------|--------|-----|
-| `desktop-ide-deepiri_1.0.0_amd64.deb` | Debian package | `sudo dpkg -i desktop-ide-deepiri_1.0.0_amd64.deb` (fix deps with `sudo apt -f install` if needed). |
-| `Deepiri IDE-1.0.0.AppImage` | AppImage | `chmod +x "Deepiri IDE-1.0.0.AppImage"` then run; no system install. |
+| `deepiri-emotion-desktop_1.0.0_amd64.deb` | Debian package | `sudo dpkg -i deepiri-emotion-desktop_1.0.0_amd64.deb` (fix deps with `sudo apt -f install` if needed). |
+| `Deepiri Emotion-1.0.0.AppImage` | AppImage | `chmod +x "Deepiri Emotion-1.0.0.AppImage"` then run; no system install. |
 
 Version `1.0.0` comes from `package.json` → `version`; change it there and rebuild to get new numbers in filenames.
 
@@ -88,7 +88,7 @@ npm run build:linux      # Linux
 
 ```bash
 # 1. Clone or open the repo
-cd /path/to/Deepiri/deepiri-ide-desktop
+cd /path/to/Deepiri/deepiri-emotion-desktop
 
 # 2. Install dependencies (required for both dev and building installers)
 npm install
@@ -124,9 +124,9 @@ Without building installers you can still run the packaged app from the build ou
 ```bash
 # After at least one full build (e.g. npm run build:linux)
 # Linux:
-./dist/linux-unpacked/deepiri-ide-deepiri   # or "Deepiri IDE" binary name
+./dist/linux-unpacked/deepiri-emotion   # or "Deepiri Emotion" binary name
 
-# Or install from the installer, then launch "Deepiri IDE" from the OS.
+# Or install from the installer, then launch "Deepiri Emotion" from the OS.
 ```
 
 ### 2.4 Optional backend services (for full IDE features)
@@ -142,7 +142,15 @@ The app runs standalone; these are optional for tasks, AI, Cyrex UI, and Helox p
 
 **Setup (optional):** Start platform API and Cyrex in their repos; start Cyrex interface on 5175; set `HELOX_PATH` if needed. No `.env` is required; use it to override defaults.
 
-### 2.5 Summary: setup by scenario
+### 2.5 First run (after installing from an installer)
+
+1. Launch **Deepiri Emotion** from your OS (Start menu, Applications, or desktop shortcut).
+2. You’ll see the **Welcome** screen. Click **Open Folder** and choose a project directory (or use **Recent** if you’ve opened one before).
+3. Use the **Explorer** sidebar to open files. Edit in the **Monaco** editor; use **Ctrl+S** to save.
+4. **Terminal** (bottom panel) runs in your project root. **AI Chat** and **Tasks** work if you run the optional backends; otherwise you can still edit, search, and use the terminal.
+5. **File → Settings** (or **Ctrl+,**) to change theme, font size, or API URLs.
+
+### 2.6 Summary: setup by scenario
 
 | Scenario | Steps |
 |----------|--------|

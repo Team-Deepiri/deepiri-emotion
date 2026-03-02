@@ -1,14 +1,18 @@
 /**
- * Deepiri Desktop IDE - Main Process
- * Electron main process for the desktop IDE application
+ * Deepiri Emotion - Main Process
+ * Electron main process for the Deepiri Emotion desktop IDE
+ * Includes in-process agent runtime, Fabric-style bus, and neural memory (NeuralGPTOS-inspired).
  */
-import { app, BrowserWindow, ipcMain, Menu, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, dialog, shell } from 'electron';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { readFile, writeFile, readdir, mkdir, unlink, rm, stat } from 'fs/promises';
 import { existsSync } from 'fs';
 import { spawn } from 'child_process';
 import axios from 'axios';
+import { createAgentRuntime } from './agentRuntime.js';
+import { createNeuralMemory } from './neuralMemory.js';
+import { IDE_CAPABILITIES } from './capabilities.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -28,13 +32,19 @@ let projectRoot = null;
 let heloxProcess = null;
 let shellProcess = null;
 
+// In-process agent runtime (Fabric-style bus) and neural memory
+const agentRuntime = createAgentRuntime();
+const neuralMemory = createNeuralMemory();
+const ideAgentId = agentRuntime.registerAgent({ name: 'ide', version: '1.0.0' }, IDE_CAPABILITIES);
+const rendererSubscriptions = new Map();
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 1000,
     minHeight: 600,
-    title: 'Deepiri IDE',
+    title: 'Deepiri Emotion',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -57,6 +67,11 @@ function createWindow() {
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
+  });
+
+  const wcId = mainWindow.webContents.id;
+  mainWindow.webContents.on('destroyed', () => {
+    rendererSubscriptions.delete(wcId);
   });
 
   mainWindow.on('closed', () => {
@@ -210,6 +225,7 @@ ipcMain.handle('api-request', async (event, { method, endpoint, data, headers = 
 });
 
 ipcMain.handle('ai-request', async (event, { endpoint, data, headers = {} }) => {
+  agentRuntime.emit('ai/request', { endpoint, data });
   try {
     const response = await axios({
       method: 'POST',
@@ -220,12 +236,84 @@ ipcMain.handle('ai-request', async (event, { endpoint, data, headers = {} }) => 
         ...headers
       }
     });
+    agentRuntime.emit('ai/response', { endpoint, data: response.data });
     return { success: true, data: response.data };
   } catch (error) {
     return {
       success: false,
       error: error.response?.data || error.message
     };
+  }
+});
+
+// --- Fabric bus (in-process semantic routing) ---
+ipcMain.handle('fabric-send', async (event, { subject, data }) => {
+  try {
+    const result = agentRuntime.send(ideAgentId, subject || 'event', data);
+    return { success: true, ...result };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+let nextSubscriptionId = 0;
+const subscriptionIds = new Map();
+
+ipcMain.handle('fabric-subscribe', (event, { subjectPattern }) => {
+  const senderId = event.sender.id;
+  if (!rendererSubscriptions.has(senderId)) rendererSubscriptions.set(senderId, []);
+  const id = ++nextSubscriptionId;
+  const unsub = agentRuntime.on(subjectPattern || '*', (payload) => {
+    if (event.sender.isDestroyed()) return;
+    event.sender.send('fabric-message', { subject: subjectPattern, payload });
+  });
+  rendererSubscriptions.get(senderId).push({ id, unsub });
+  subscriptionIds.set(id, senderId);
+  return { subscribed: true, subscriptionId: id, subjectPattern: subjectPattern || '*' };
+});
+
+ipcMain.handle('fabric-unsubscribe', (event, { subscriptionId } = {}) => {
+  const senderId = event.sender.id;
+  const subs = rendererSubscriptions.get(senderId);
+  if (subscriptionId != null) {
+    const entry = subs?.find(s => s.id === subscriptionId);
+    if (entry) {
+      entry.unsub();
+      subs.splice(subs.indexOf(entry), 1);
+      subscriptionIds.delete(subscriptionId);
+    }
+  } else if (subs) {
+    subs.forEach(s => { s.unsub(); subscriptionIds.delete(s.id); });
+    rendererSubscriptions.delete(senderId);
+  }
+  return { unsubscribed: true };
+});
+
+// --- Neural memory (local vector store for RAG/cache) ---
+ipcMain.handle('neural-memory-store', async (event, { agentId, embedding, metadata, ttlSec }) => {
+  try {
+    const id = neuralMemory.store(agentId ?? 0, embedding, metadata, ttlSec ?? 3600);
+    return { success: true, memoryId: id };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('neural-memory-query', async (event, { agentId, queryVector, topK, threshold }) => {
+  try {
+    const results = neuralMemory.query(agentId ?? 0, queryVector, topK ?? 5, threshold ?? 0);
+    return { success: true, results };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('neural-memory-clear', async (event, { agentId }) => {
+  try {
+    neuralMemory.clear(agentId ?? null);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
   }
 });
 
@@ -381,6 +469,11 @@ ipcMain.handle('open-project', async () => {
   return projectRoot;
 });
 
+ipcMain.handle('set-project-root', (event, path) => {
+  if (path && typeof path === 'string') projectRoot = path;
+  return projectRoot;
+});
+
 ipcMain.handle('get-project-root', () => projectRoot);
 
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'dist-renderer', 'build', '.next', '__pycache__', '.venv', 'venv']);
@@ -530,6 +623,10 @@ ipcMain.handle('cancel-command', async () => {
     return { success: true };
   }
   return { success: false };
+});
+
+ipcMain.handle('open-external', async (_event, url) => {
+  await shell.openExternal(url);
 });
 
 // --- Gamification ---

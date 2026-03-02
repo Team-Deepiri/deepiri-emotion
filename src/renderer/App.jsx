@@ -23,10 +23,17 @@ import SearchPanel from './components/panels/SearchPanel';
 import OutlinePanel from './components/panels/OutlinePanel';
 import KeybindingsPanel from './components/panels/KeybindingsPanel';
 import ExtensionsPanel from './components/panels/ExtensionsPanel';
+import FineTuningPanel from './components/panels/FineTuningPanel';
+import ClassificationPanel from './components/panels/ClassificationPanel';
 import WelcomeScreen from './components/WelcomeScreen';
 import QuickOpen from './features/quick-open/QuickOpen';
 import AIChatPanel from './features/ai-chat/AIChatPanel';
 import DiffView from './features/generation/DiffView';
+import { EmotionPanel, useEmotion } from './features/emotion';
+import { VisualCanvas } from './features/visual-editor';
+import CreateLauncher from './features/create-launcher/CreateLauncher';
+import VoiceInput from './features/multimodal/VoiceInput';
+import GuideView from './features/guide/GuideView';
 import Breadcrumbs from './components/Breadcrumbs';
 import Notifications from './components/Notifications';
 import { useSession } from './hooks/useSession';
@@ -38,6 +45,8 @@ import './services/challengeService';
 import './services/taskService';
 import './integrations/github';
 import './integrations/notion';
+import { classifySelection } from './services/classificationService';
+import { runOrPreview } from './services/runPreviewService';
 
 let tabIdCounter = 0;
 function nextTabId() {
@@ -72,11 +81,15 @@ const App = () => {
   const [focusSearchRequest, setFocusSearchRequest] = useState(0);
   const [goToLineOpen, setGoToLineOpen] = useState(false);
   const [goToLineValue, setGoToLineValue] = useState('');
+  const [createLauncherOpen, setCreateLauncherOpen] = useState(false);
   const [initialAIPrompt, setInitialAIPrompt] = useState(null);
+  const [showAbout, setShowAbout] = useState(false);
+  const [appVersion, setAppVersion] = useState('1.0.0');
   const editorApiRef = useRef(null);
   const userId = localStorage.getItem('user_id') || 'default_user';
   const { recordKeystroke, recordFileChange } = useSession(userId);
   const { monacoTheme, theme, setTheme, editorFontSize, zoomIn, zoomOut, zoomReset } = useTheme();
+  const { activeProfile: activeEmotionProfile } = useEmotion();
   const recentFolders = typeof window !== 'undefined' && window.recentService ? window.recentService.getRecentFolders() : [];
 
   useEffect(() => {
@@ -84,6 +97,22 @@ const App = () => {
       window.electronAPI.getProjectRoot().then((root) => root && setProjectRoot(root));
     }
   }, []);
+
+  useEffect(() => {
+    const unsubSettings = window.electronAPI?.onMenuSettings?.(() => setCurrentView('settings'));
+    return () => unsubSettings?.();
+  }, []);
+
+  useEffect(() => {
+    const unsubAbout = window.electronAPI?.onMenuAbout?.(() => setShowAbout(true));
+    return () => unsubAbout?.();
+  }, []);
+
+  useEffect(() => {
+    if (showAbout && window.electronAPI?.getAppVersion) {
+      window.electronAPI.getAppVersion().then((v) => setAppVersion(v || '1.0.0'));
+    }
+  }, [showAbout]);
 
   useEffect(() => {
     if (pendingGoToLine == null || !activeTabId) return;
@@ -365,6 +394,22 @@ const App = () => {
     }
   }, [projectRoot, openFileInEditor, handleOpenFolder]);
 
+  const handleNewFileFromTemplate = useCallback(async (filename, content) => {
+    if (!projectRoot || !window.electronAPI?.createFile) return;
+    try {
+      const sep = projectRoot.includes('\\') ? '\\' : '/';
+      const path = `${projectRoot.replace(/[/\\]+$/, '')}${sep}${filename.replace(/^\//, '')}`;
+      const parts = path.replace(/\\/g, '/').split('/');
+      const name = parts.pop();
+      const dirPath = parts.join(sep);
+      await window.electronAPI.createFile({ dirPath, name });
+      if (window.electronAPI.saveFile) await window.electronAPI.saveFile(path, content);
+      await openFileInEditor({ path, name });
+    } catch (e) {
+      window.toast?.(e?.message || 'Failed to create file');
+    }
+  }, [projectRoot, openFileInEditor]);
+
   const handleSelectWorkspaceResult = useCallback(async ({ path, name, line }) => {
     const tab = openTabs.find((t) => t.path === path);
     if (tab) {
@@ -380,10 +425,13 @@ const App = () => {
     { key: 'p', ctrlKey: true, shiftKey: true, action: () => setCommandPaletteOpen(true) },
     { key: 'p', ctrlKey: true, action: (e) => { e.preventDefault(); setQuickOpenOpen(true); } },
     { key: 'n', ctrlKey: true, action: (e) => { e.preventDefault(); handleNewFile(); } },
+    { key: 'n', ctrlKey: true, shiftKey: true, action: (e) => { e.preventDefault(); setCreateLauncherOpen(true); } },
     { key: 's', ctrlKey: true, action: (e) => { e.preventDefault(); saveActiveTab(); } },
     { key: 'o', ctrlKey: true, action: (e) => { e.preventDefault(); handleOpenFolder(); } },
     { key: 'g', ctrlKey: true, action: (e) => { e.preventDefault(); setGoToLineOpen(true); setGoToLineValue(''); } },
     { key: 'f', ctrlKey: true, shiftKey: true, action: (e) => { e.preventDefault(); switchView('search'); setFocusSearchRequest((n) => n + 1); } },
+    { key: 'f', ctrlKey: true, shiftKey: false, action: (e) => { e.preventDefault(); if (activeTabId) editorApiRef.current?.triggerFind(); } },
+    { key: 'h', ctrlKey: true, action: (e) => { e.preventDefault(); if (activeTabId) editorApiRef.current?.triggerReplace(); } },
     { key: 'F', shiftKey: true, altKey: true, action: (e) => { e.preventDefault(); editorApiRef.current?.formatDocument(); } },
     { key: '=', ctrlKey: true, action: (e) => { e.preventDefault(); zoomIn(); } },
     { key: '-', ctrlKey: true, action: (e) => { e.preventDefault(); zoomOut(); } },
@@ -414,13 +462,45 @@ const App = () => {
       setShowAIAssistant(true);
       setTimeout(() => setInitialAIPrompt(null), 500);
     }
+    else if (cmdId === 'classify-selection') {
+      const text = editorSelection?.trim() || openTabs.find((t) => t.id === activeTabId)?.content?.trim() || '';
+      if (text) classifySelection(text).then((r) => { window.toast?.(`Classified: ${r.label} (${Math.round((r.confidence || 0) * 100)}%)`); }).catch(() => { window.toast?.('Classification failed'); });
+      else window.toast?.('Select text or open a file to classify');
+    }
+    else if (cmdId === 'classify-and-ask-ai') {
+      const text = editorSelection?.trim() || openTabs.find((t) => t.id === activeTabId)?.content?.trim() || '';
+      if (text) {
+        classifySelection(text).then((r) => {
+          setInitialAIPrompt(`Classification: ${r.label}. Based on this, help me with the content.`);
+          setShowAIAssistant(true);
+          setTimeout(() => setInitialAIPrompt(null), 500);
+        });
+      } else window.toast?.('Select text first');
+    }
     else if (cmdId === 'keybindings') switchView('keybindings');
     else if (cmdId === 'extensions') switchView('extensions');
     else if (cmdId === 'outline') switchView('outline');
     else if (cmdId === 'go-to-line') setGoToLineOpen(true);
     else if (cmdId === 'format-document') editorApiRef.current?.formatDocument();
+    else if (cmdId === 'run-preview') {
+      const tab = openTabs.find((t) => t.id === activeTabId);
+      if (tab) {
+        saveActiveTab().then(async () => {
+          const r = await runOrPreview({ path: tab.path, content: tab.content, name: tab.name }, projectRoot);
+          if (r.ok) { setBottomPanelOpen(true); setBottomPanelTab('terminal'); }
+          window.toast?.(r.ok ? r.message : r.message);
+        });
+      } else window.toast?.('Open a file first');
+    }
+    else if (cmdId === 'find-in-file') editorApiRef.current?.triggerFind();
+    else if (cmdId === 'replace-in-file') editorApiRef.current?.triggerReplace();
     else if (cmdId === 'focus-search') { switchView('search'); setFocusSearchRequest((n) => n + 1); }
-    else if (cmdId === 'settings') switchView('integrations');
+    else if (cmdId === 'settings') switchView('settings');
+    else if (cmdId === 'open-visual') switchView('visual');
+    else if (cmdId === 'open-emotion') switchView('emotion');
+    else if (cmdId === 'open-finetuning') { setBottomPanelOpen(true); setBottomPanelTab('finetuning'); }
+    else if (cmdId === 'create-anything') setCreateLauncherOpen(true);
+    else if (cmdId === 'open-guide') switchView('guide');
     else if (cmdId === 'new-task') {
       const title = window.prompt('Task title');
       if (title) window.taskService?.createTask(title).then(() => loadFiles());
@@ -497,6 +577,33 @@ const App = () => {
         >
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
             <path d="M4 4h16v2H4zM4 10h16v2H4zM4 16h10v2H4z"/>
+          </svg>
+        </div>
+        <div 
+          className={`activity-item ${currentView === 'emotion' ? 'active' : ''}`}
+          onClick={() => switchView('emotion')}
+          title="Emotion — deepiri-emotion"
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>
+          </svg>
+        </div>
+        <div 
+          className={`activity-item ${currentView === 'visual' ? 'active' : ''}`}
+          onClick={() => switchView('visual')}
+          title="Visual — No-code canvas"
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+          </svg>
+        </div>
+        <div 
+          className={`activity-item ${currentView === 'guide' ? 'active' : ''}`}
+          onClick={() => switchView('guide')}
+          title="Guide — What's new"
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/>
           </svg>
         </div>
         <div 
@@ -683,6 +790,32 @@ const App = () => {
               <CyrexEmbed />
             ) : currentView === 'pipelines' ? (
               <PipelinesView />
+            ) : currentView === 'guide' ? (
+              <GuideView />
+            ) : currentView === 'settings' ? (
+              <Settings />
+            ) : currentView === 'emotion' ? (
+              <EmotionPanel onOpenAIChat={() => setShowAIAssistant(true)} />
+            ) : currentView === 'visual' ? (
+              <VisualCanvas
+                onExportToFile={async (filename, content) => {
+                  if (window.electronAPI?.createFile && projectRoot) {
+                    try {
+                      const sep = projectRoot.includes('\\') ? '\\' : '/';
+                      const path = `${projectRoot}${sep}${filename}`;
+                      await window.electronAPI.createFile({ dirPath: projectRoot, name: filename });
+                      if (window.electronAPI.saveFile) await window.electronAPI.saveFile(path, content);
+                      openFileInEditor({ path, name: filename });
+                    } catch (e) {
+                      navigator.clipboard?.writeText(content);
+                      window.toast?.(e?.message || 'Copied to clipboard (save failed)');
+                    }
+                  } else {
+                    navigator.clipboard?.writeText(content);
+                    window.toast?.('Copied to clipboard');
+                  }
+                }}
+              />
             ) : currentView === 'search' ? (
               <SearchPanel
                 openTabs={openTabs}
@@ -715,6 +848,49 @@ const App = () => {
                     <button type="button" className="editor-ai-chip" onClick={() => { setInitialAIPrompt(editorSelection?.trim() ? 'Explain the selected code.' : 'Explain this file.'); setShowAIAssistant(true); setTimeout(() => setInitialAIPrompt(null), 500); }} title="Explain">Explain</button>
                     <button type="button" className="editor-ai-chip" onClick={() => { setInitialAIPrompt(editorSelection?.trim() ? 'Refactor the selected code for clarity and best practices.' : 'Refactor this file for clarity and best practices.'); setShowAIAssistant(true); setTimeout(() => setInitialAIPrompt(null), 500); }} title="Refactor">Refactor</button>
                     <button type="button" className="editor-ai-chip" onClick={() => { setInitialAIPrompt(editorSelection?.trim() ? 'Add unit tests for the selected code.' : 'Add unit tests for this file.'); setShowAIAssistant(true); setTimeout(() => setInitialAIPrompt(null), 500); }} title="Add tests">Add tests</button>
+                    <VoiceInput onTranscript={(t) => editorApiRef.current?.insertTextAtCursor(t)} disabled={!activeTabId} />
+                    <button
+                      type="button"
+                      className="editor-ai-chip"
+                      title="Run or preview (HTML in browser, Node/Python in terminal)"
+                      onClick={async () => {
+                        if (!activeTab) return;
+                        await saveActiveTab();
+                        const r = await runOrPreview({ path: activeTab.path, content: activeTab.content, name: activeTab.name }, projectRoot);
+                        if (r.ok) { setBottomPanelOpen(true); setBottomPanelTab('terminal'); }
+                        window.toast?.(r.ok ? r.message : r.message);
+                      }}
+                    >
+                      Run
+                    </button>
+                    <button
+                      type="button"
+                      className="editor-ai-chip"
+                      title="Classify selection (intent/domain)"
+                      onClick={async () => {
+                        const text = editorSelection?.trim() || activeTab?.content?.trim() || '';
+                        if (!text) { window.toast?.('Select text or open a file to classify'); return; }
+                        const r = await classifySelection(text);
+                        window.toast?.(`Classified: ${r.label} (${Math.round((r.confidence || 0) * 100)}%)`);
+                      }}
+                    >
+                      Classify
+                    </button>
+                    <button
+                      type="button"
+                      className="editor-ai-chip"
+                      title="Classify selection then ask AI"
+                      onClick={async () => {
+                        const text = editorSelection?.trim() || activeTab?.content?.trim() || '';
+                        if (!text) { window.toast?.('Select text first'); return; }
+                        const r = await classifySelection(text);
+                        setInitialAIPrompt(`Classification: ${r.label}. Based on this, help me with the selected content.`);
+                        setShowAIAssistant(true);
+                        setTimeout(() => setInitialAIPrompt(null), 500);
+                      }}
+                    >
+                      Classify & Ask AI
+                    </button>
                   </div>
                 </div>
               <MonacoEditor
@@ -755,8 +931,18 @@ const App = () => {
                 onCommandPalette={() => setCommandPaletteOpen(true)}
                 onQuickOpen={() => setQuickOpenOpen(true)}
                 onOpenAIChat={() => setShowAIAssistant(true)}
+                onOpenVisual={() => switchView('visual')}
+                onOpenEmotion={() => switchView('emotion')}
+                onOpenCreateLauncher={() => setCreateLauncherOpen(true)}
                 recentFolders={recentFolders}
-                onOpenRecentFolder={(path) => setProjectRoot(path)}
+                onOpenRecentFolder={async (path) => {
+                  try {
+                    await window.electronAPI?.setProjectRoot?.(path);
+                    setProjectRoot(path);
+                  } catch (e) {
+                    console.error(e);
+                  }
+                }}
               />
             )}
           </div>
@@ -768,6 +954,7 @@ const App = () => {
                   currentContent={activeTab.content}
                   selection={editorSelection}
                   initialPrompt={initialAIPrompt}
+                  agentProfile={activeEmotionProfile}
                   onApplyEdit={(content) => {
                     if (activeTabId) updateTabContent(activeTabId, content);
                   }}
@@ -794,11 +981,13 @@ const App = () => {
             <button type="button" className={`bottom-panel-tab ${bottomPanelTab === 'terminal' ? 'active' : ''}`} onClick={() => setBottomPanelTab('terminal')}>Terminal</button>
             <button type="button" className={`bottom-panel-tab ${bottomPanelTab === 'output' ? 'active' : ''}`} onClick={() => setBottomPanelTab('output')}>Output</button>
             <button type="button" className={`bottom-panel-tab ${bottomPanelTab === 'problems' ? 'active' : ''}`} onClick={() => setBottomPanelTab('problems')}>Problems</button>
+            <button type="button" className={`bottom-panel-tab ${bottomPanelTab === 'finetuning' ? 'active' : ''}`} onClick={() => setBottomPanelTab('finetuning')}>Fine-tune</button>
             <button type="button" className="icon-btn" style={{ marginLeft: 'auto' }} onClick={() => setBottomPanelOpen(false)}>×</button>
           </div>
           <div className="bottom-panel-content">
             {bottomPanelTab === 'terminal' && <TerminalPanel projectRoot={projectRoot} />}
             {bottomPanelTab === 'output' && <OutputPanel logs={outputLogs} onClear={() => setOutputLogs([])} />}
+            {bottomPanelTab === 'finetuning' && <FineTuningPanel projectRoot={projectRoot} />}
             {bottomPanelTab === 'problems' && (
               <ProblemsPanel
                 problems={problems}
@@ -807,6 +996,16 @@ const App = () => {
             )}
           </div>
         </div>
+      )}
+
+      {createLauncherOpen && (
+        <CreateLauncher
+          onClose={() => setCreateLauncherOpen(false)}
+          onOpenVisual={() => { switchView('visual'); setCreateLauncherOpen(false); }}
+          onOpenEmotion={() => { switchView('emotion'); setCreateLauncherOpen(false); }}
+          onNewFileFromTemplate={handleNewFileFromTemplate}
+          projectRoot={projectRoot}
+        />
       )}
 
       <QuickOpen
@@ -850,6 +1049,17 @@ const App = () => {
 
       <Notifications />
 
+      {showAbout && (
+        <div className="about-backdrop" onClick={() => setShowAbout(false)} role="dialog" aria-modal="true">
+          <div className="about-dialog" onClick={(e) => e.stopPropagation()}>
+            <h2>Deepiri Emotion</h2>
+            <p className="about-version">Version {appVersion}</p>
+            <p className="about-desc">AI-powered desktop IDE. Code, Visual canvas, Emotion agents, Cyrex &amp; Helox.</p>
+            <button type="button" className="about-close" onClick={() => setShowAbout(false)}>Close</button>
+          </div>
+        </div>
+      )}
+
       {/* Mission Cards */}
       <div className="mission-container">
         {activeMissions.map(mission => (
@@ -862,12 +1072,15 @@ const App = () => {
         ))}
       </div>
 
+      <ClassificationPanel selection={editorSelection} />
+
       <StatusBar
         cursorPosition={cursorPosition}
         language={activeTab ? getLanguage(activeTab.name) : (activeFile ? getLanguageFromFile(activeFile.name) : null)}
         projectRoot={projectRoot}
         problemsCount={problems.length}
         wordCount={activeTab?.content != null ? (activeTab.content.trim().split(/\s+/).filter(Boolean).length) : null}
+        editorFontSize={editorFontSize}
         theme={theme}
         onThemeCycle={() => {
           const opts = ['dark', 'light', 'hc'];

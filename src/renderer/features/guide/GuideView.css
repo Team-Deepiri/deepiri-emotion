@@ -1,0 +1,25 @@
+.guide-view {
+  height: 100%;
+  overflow: auto;
+  padding: 24px;
+  background: #1e1e1e;
+}
+
+.guide-content {
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.guide-text {
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #ccc;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  margin: 0;
+}
+
+.guide-text {
+  color: #e0e0e0;
+}

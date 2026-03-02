@@ -1,4 +1,4 @@
-# Deepiri IDE Desktop — Documentation
+# Deepiri Emotion Desktop — Documentation
 
 | Document | Description |
 |----------|-------------|

@@ -125,6 +125,16 @@ export default function MonacoEditor({
         formatDocument() {
           if (!editorRef.current) return;
           editorRef.current.getAction('editor.action.formatDocument')?.run();
+        },
+        triggerFind() {
+          if (!editorRef.current) return;
+          editorRef.current.focus();
+          editorRef.current.getAction('editor.action.startFind')?.run();
+        },
+        triggerReplace() {
+          if (!editorRef.current) return;
+          editorRef.current.focus();
+          editorRef.current.getAction('editor.action.startFindReplaceAction')?.run();
         }
       });
     }

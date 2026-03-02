@@ -1,6 +1,20 @@
-# Deepiri IDE
+# Deepiri Emotion
 
-**AI-powered desktop IDE** with task management, gamification, Cyrex AI, and Helox pipelines. Built with Electron, React, and Monaco Editor.
+**AI-powered desktop IDE** you can download, install, and use. Workspace, Monaco editor, AI chat, terminal, and optional Cyrex/Helox backends.
+
+---
+
+## Download & install
+
+**End users:** Get a built installer and run the IDE with no dev setup.
+
+| Platform | Build command (on that OS) | Installer output |
+|----------|----------------------------|------------------|
+| **Windows** | `npm install && npm run build:win` | `dist/Deepiri Emotion Setup 1.0.0.exe` — run to install, then launch from Start or Desktop. |
+| **macOS** | `npm install && npm run build:mac` | `dist/Deepiri Emotion-1.0.0.dmg` — open and drag to Applications. |
+| **Linux** | `npm install && npm run build:linux` | `dist/deepiri-emotion-desktop_1.0.0_amd64.deb` — `sudo dpkg -i …` or `dist/Deepiri Emotion-1.0.0.AppImage` — `chmod +x` and run. |
+
+After install, open **Deepiri Emotion** like any other app. Open a folder to start coding; use **File → Settings** to change theme or API URLs. No backend is required for editing and terminal; AI and tasks use optional services (see [docs/install.md](docs/install.md)).
 
 ---
 
@@ -52,7 +66,7 @@ Output is in **`dist/`**. See **[docs/install.md](docs/install.md)** for exact f
 ## Project structure
 
 ```
-deepiri-ide-desktop/
+deepiri-emotion-desktop/
 ├── src/
 │   ├── main.js              # Electron main process (IPC, window, shell, file system)
 │   ├── preload.js           # Bridge (window.electronAPI)

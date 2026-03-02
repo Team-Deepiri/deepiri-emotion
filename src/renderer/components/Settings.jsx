@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import { useTheme } from '../context/ThemeContext';
+import { useNotifications } from '../context/NotificationContext';
 
 const Settings = () => {
+  const { theme, setTheme, editorFontSize, setEditorFontSize } = useTheme();
+  const { success } = useNotifications();
   const [settings, setSettings] = useState({
     apiUrl: 'http://localhost:5000/api',
     aiServiceUrl: 'http://localhost:8000',
@@ -12,19 +16,37 @@ const Settings = () => {
   });
 
   useEffect(() => {
-    loadSettings();
-  }, []);
+    setSettings(prev => ({ ...prev, theme: theme || 'dark', fontSize: editorFontSize ?? 14 }));
+  }, [theme, editorFontSize]);
 
-  const loadSettings = () => {
+  useEffect(() => {
     const saved = localStorage.getItem('deepiri_settings');
     if (saved) {
-      setSettings({ ...settings, ...JSON.parse(saved) });
+      try {
+        setSettings(prev => ({ ...prev, ...JSON.parse(saved) }));
+      } catch (_) {}
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (window.electronAPI?.getConfig) {
+      window.electronAPI.getConfig().then((cfg) => {
+        if (cfg) {
+          setSettings(prev => ({
+            ...prev,
+            apiUrl: cfg.apiBaseUrl || prev.apiUrl,
+            aiServiceUrl: cfg.aiServiceUrl || prev.aiServiceUrl
+          }));
+        }
+      });
+    }
+  }, []);
 
   const saveSettings = () => {
     localStorage.setItem('deepiri_settings', JSON.stringify(settings));
-    alert('Settings saved!');
+    setTheme(settings.theme);
+    setEditorFontSize(settings.fontSize);
+    success('Settings saved.');
   };
 
   const handleChange = (key, value) => {
@@ -114,7 +136,7 @@ const Settings = () => {
             <select value={settings.theme} onChange={(e) => handleChange('theme', e.target.value)}>
               <option value="dark">Dark</option>
               <option value="light">Light</option>
-              <option value="auto">Auto</option>
+              <option value="hc">High Contrast</option>
             </select>
           </div>
         </div>

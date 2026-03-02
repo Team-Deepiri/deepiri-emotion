@@ -1,7 +1,7 @@
 {
-  "name": "desktop-ide-deepiri",
+  "name": "deepiri-emotion-desktop",
   "version": "1.0.0",
-  "description": "Deepiri IDE — AI-powered desktop IDE with Cyrex AI and Helox pipelines",
+  "description": "Deepiri Emotion — AI-powered desktop IDE with Cyrex AI and Helox pipelines",
   "main": "src/main.js",
   "type": "module",
   "engines": {
@@ -17,6 +17,7 @@
   },
   "scripts": {
     "start": "electron .",
+    "start:prod": "npm run build:renderer && electron .",
     "dev": "electron . --dev",
     "dev:renderer": "vite",
     "build:renderer": "vite build",
@@ -68,8 +69,8 @@
     "vitest": "^2.1.6"
   },
   "build": {
-    "appId": "com.deepiri.desktop",
-    "productName": "Deepiri IDE",
+    "appId": "com.deepiri.emotion",
+    "productName": "Deepiri Emotion",
     "copyright": "Deepiri Team",
     "directories": {
       "output": "dist",
@@ -104,7 +105,7 @@
       "uninstallerIcon": "assets/icon.ico",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Deepiri IDE"
+      "shortcutName": "Deepiri Emotion"
     },
     "mac": {
       "target": [

@@ -1,0 +1,234 @@
+/* deepiri-emotion: Emotional AI panel */
+
+.emotion-panel {
+  padding: 16px;
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+.emotion-panel-header h2 {
+  font-size: 18px;
+  margin: 0 0 4px 0;
+  color: #fff;
+}
+
+.emotion-subtitle {
+  font-size: 12px;
+  color: #858585;
+  margin: 0 0 20px 0;
+}
+
+.emotion-section {
+  margin-bottom: 24px;
+}
+
+.emotion-section h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: #858585;
+  margin: 0 0 10px 0;
+}
+
+.emotion-agent-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.emotion-agent-card {
+  position: relative;
+  padding: 10px 14px;
+  background: #2d2d2d;
+  border: 1px solid #454545;
+  border-radius: 6px;
+  color: #ccc;
+  text-align: left;
+  cursor: pointer;
+  min-width: 120px;
+}
+
+.emotion-agent-card:hover {
+  background: #37373d;
+  border-color: #555;
+}
+
+.emotion-agent-card.active {
+  border-color: #0ea5e9;
+  background: rgba(14, 165, 233, 0.15);
+  color: #fff;
+}
+
+.emotion-agent-name {
+  display: block;
+  font-weight: 600;
+  color: inherit;
+}
+
+.emotion-agent-role {
+  font-size: 11px;
+  color: #858585;
+}
+
+.emotion-agent-remove {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  background: none;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 0;
+  line-height: 1;
+}
+
+.emotion-agent-remove:hover {
+  color: #f44336;
+}
+
+.emotion-add-form {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.emotion-add-form input {
+  flex: 1;
+  padding: 6px 10px;
+  background: #3c3c3c;
+  border: 1px solid #555;
+  border-radius: 4px;
+  color: #fff;
+}
+
+.emotion-btn-secondary {
+  padding: 6px 12px;
+  background: #3c3c3c;
+  border: 1px solid #555;
+  border-radius: 4px;
+  color: #ccc;
+  cursor: pointer;
+}
+
+.emotion-btn-secondary:hover {
+  background: #454545;
+  color: #fff;
+}
+
+.emotion-prop-row {
+  margin-bottom: 10px;
+}
+
+.emotion-prop-row label {
+  display: block;
+  font-size: 11px;
+  color: #858585;
+  margin-bottom: 4px;
+}
+
+.emotion-prop-row select {
+  width: 100%;
+  padding: 6px 8px;
+  background: #3c3c3c;
+  border: 1px solid #454545;
+  border-radius: 4px;
+  color: #fff;
+}
+
+.emotion-traits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.emotion-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  background: #3c3c3c;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.emotion-tag-remove {
+  padding: 0;
+  background: none;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.emotion-tag-remove:hover {
+  color: #f44336;
+}
+
+.emotion-trait-add {
+  display: flex;
+  gap: 6px;
+}
+
+.emotion-trait-add input {
+  width: 100px;
+  padding: 4px 8px;
+  background: #3c3c3c;
+  border: 1px solid #454545;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 11px;
+}
+
+.emotion-system-prompt {
+  width: 100%;
+  padding: 8px;
+  background: #3c3c3c;
+  border: 1px solid #454545;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 11px;
+  resize: vertical;
+  min-height: 60px;
+}
+
+.emotion-personality,
+.emotion-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: #ccc;
+}
+
+.emotion-tag {
+  padding: 2px 8px;
+  background: #3c3c3c;
+  border-radius: 4px;
+}
+
+.emotion-hint {
+  font-size: 11px;
+  color: #858585;
+  margin: 8px 0 0 0;
+}
+
+.emotion-actions {
+  margin-top: 24px;
+}
+
+.emotion-btn-primary {
+  padding: 10px 18px;
+  background: linear-gradient(135deg, #0e639c, #503cb4);
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.emotion-btn-primary:hover {
+  filter: brightness(1.15);
+}

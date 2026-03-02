@@ -1,29 +1,56 @@
 /**
- * Plugin System for Deepiri IDE
- * Sandboxed plugin runtime with permissions
+ * Plugin System for Deepiri Emotion
+ * Sandboxed plugin runtime with capability-based permissions (NeuralGPTOS-inspired).
+ * Permissions: tasks, challenges, ui, storage, fabric_send, fabric_recv, memory_read, api_request
  */
+const PLUGIN_CAPS = {
+    tasks: ['tasks_create'],
+    challenges: ['challenges_generate'],
+    ui: ['fabric_send'],
+    storage: [],
+    fabric_send: ['fabric_send'],
+    fabric_recv: ['fabric_recv'],
+    memory_read: ['memory_read'],
+    api_request: ['api_request']
+};
+
+function resolvePluginCaps(permissions) {
+    let caps = [];
+    for (const p of permissions || []) {
+        const list = PLUGIN_CAPS[p] || (p.startsWith('cap:') ? [p.slice(4)] : []);
+        caps = caps.concat(list);
+    }
+    return [...new Set(caps)];
+}
+
 class PluginSystem {
     constructor() {
         this.plugins = new Map();
         this.permissions = new Map();
+        this.capabilities = new Map();
         this.sandbox = this.createSandbox();
     }
 
     createSandbox() {
+        const self = this;
         return {
             api: {
                 tasks: {
-                    create: (task) => this.createTask(task),
-                    list: () => this.listTasks(),
-                    update: (id, updates) => this.updateTask(id, updates)
+                    create: (task) => self.createTask(task),
+                    list: () => self.listTasks(),
+                    update: (id, updates) => self.updateTask(id, updates)
                 },
                 challenges: {
-                    generate: (taskId) => this.generateChallenge(taskId),
-                    start: (challengeId) => this.startChallenge(challengeId)
+                    generate: (taskId) => self.generateChallenge(taskId),
+                    start: (challengeId) => self.startChallenge(challengeId)
                 },
                 ui: {
-                    showNotification: (message) => this.showNotification(message),
-                    openPanel: (panelId) => this.openPanel(panelId)
+                    showNotification: (message) => self.showNotification(message),
+                    openPanel: (panelId) => self.openPanel(panelId)
+                },
+                fabric: {
+                    send: (subject, data) => self.fabricSend(subject, data),
+                    subscribe: (pattern, handler) => self.fabricSubscribe(pattern, handler)
                 }
             },
             storage: {
@@ -33,8 +60,38 @@ class PluginSystem {
         };
     }
 
+    _checkCap(pluginId, cap) {
+        const caps = this.capabilities.get(pluginId) || [];
+        if (!caps.includes(cap)) {
+            console.warn(`Plugin ${pluginId} lacks capability: ${cap}`);
+            return false;
+        }
+        return true;
+    }
+
+    fabricSend(subject, data) {
+        if (typeof window.electronAPI?.fabricSend !== 'function') return Promise.resolve();
+        return window.electronAPI.fabricSend(subject || 'plugin/event', data);
+    }
+
+    fabricSubscribe(pattern, handler) {
+        if (typeof window.electronAPI?.fabricSubscribe !== 'function' || typeof window.electronAPI?.onFabricMessage !== 'function') return () => {};
+        const state = { subId: null };
+        window.electronAPI.fabricSubscribe(pattern || '*').then((r) => { state.subId = r?.subscriptionId; });
+        const unsub = window.electronAPI.onFabricMessage((msg) => {
+            if (!pattern || pattern === '*' || msg.subject === pattern) handler(msg);
+        });
+        return () => {
+            unsub?.();
+            if (state.subId != null) window.electronAPI.fabricUnsubscribe?.({ subscriptionId: state.subId });
+        };
+    }
+
     registerPlugin(pluginId, pluginCode, permissions = []) {
         try {
+            const caps = resolvePluginCaps(permissions);
+            this.capabilities.set(pluginId, caps);
+
             const pluginFunction = new Function('sandbox', `
                 ${pluginCode}
                 return { init, destroy, onMessage };
@@ -61,6 +118,7 @@ class PluginSystem {
         }
         this.plugins.delete(pluginId);
         this.permissions.delete(pluginId);
+        this.capabilities.delete(pluginId);
     }
 
     sendMessage(pluginId, message) {
@@ -85,8 +143,24 @@ class PluginSystem {
         });
     }
 
+    async updateTask(id, updates) {
+        return await window.electronAPI.apiRequest({
+            method: 'PATCH',
+            endpoint: `/tasks/${id}`,
+            data: updates
+        });
+    }
+
     async generateChallenge(taskId) {
         return await window.electronAPI.generateChallenge({ taskId });
+    }
+
+    startChallenge(challengeId) {
+        return window.electronAPI.apiRequest({
+            method: 'POST',
+            endpoint: '/challenge/start',
+            data: { challenge_id: challengeId }
+        });
     }
 
     showNotification(message) {

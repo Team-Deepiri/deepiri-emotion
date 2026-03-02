@@ -10,6 +10,7 @@ export default function StatusBar({
   problemsCount = 0,
   theme = 'dark',
   wordCount = null,
+  editorFontSize = null,
   onThemeCycle,
   showAIAssistant,
   onAIClick,
@@ -27,6 +28,9 @@ export default function StatusBar({
         <span className="status-item">{language || 'plaintext'}</span>
         {wordCount != null && (
           <span className="status-item" title="Word count">{wordCount} words</span>
+        )}
+        {editorFontSize != null && (
+          <span className="status-item" title="Editor font size (Ctrl+Plus/Minus to zoom)">{editorFontSize}px</span>
         )}
         <span className="status-item">Tab size: {tabSize}</span>
         <span className="status-item">{encoding}</span>
@@ -57,7 +61,7 @@ export default function StatusBar({
             AI
           </span>
         )}
-        <span className="status-item">Deepiri IDE</span>
+        <span className="status-item">Deepiri Emotion</span>
       </div>
     </div>
   );

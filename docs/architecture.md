@@ -1,4 +1,4 @@
-# Deepiri IDE Desktop — Architecture
+# Deepiri Emotion Desktop — Architecture
 
 High-level architecture of the desktop application and how it fits into the Deepiri platform.
 

@@ -1,0 +1,71 @@
+.finetuning-panel {
+  padding: 20px;
+  max-width: 420px;
+}
+
+.finetuning-panel h2 {
+  font-size: 16px;
+  margin: 0 0 8px 0;
+  color: #fff;
+}
+
+.finetuning-desc {
+  font-size: 12px;
+  color: #858585;
+  margin: 0 0 20px 0;
+}
+
+.finetuning-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.finetuning-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.finetuning-form label span {
+  font-size: 11px;
+  color: #858585;
+}
+
+.finetuning-form input {
+  padding: 8px 10px;
+  background: #3c3c3c;
+  border: 1px solid #454545;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 13px;
+}
+
+.finetuning-actions {
+  margin-top: 8px;
+}
+
+.finetuning-btn {
+  padding: 8px 16px;
+  background: #3c3c3c;
+  border: 1px solid #454545;
+  border-radius: 4px;
+  color: #ccc;
+  cursor: pointer;
+}
+
+.finetuning-btn.primary {
+  background: linear-gradient(135deg, #0e639c, #503cb4);
+  border-color: transparent;
+  color: #fff;
+}
+
+.finetuning-btn.primary:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.finetuning-message {
+  margin-top: 16px;
+  font-size: 12px;
+  color: #858585;
+}

@@ -321,6 +321,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   getProjectRoot: () => ipcRenderer.invoke('get-project-root'),
+  setProjectRoot: (path) => ipcRenderer.invoke('set-project-root', path),
+  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   listDirectory: (path) => ipcRenderer.invoke('list-directory', path),
   createFile: (opts) => ipcRenderer.invoke('create-file', opts),
   createFolder: (opts) => ipcRenderer.invoke('create-folder', opts),
@@ -330,15 +332,42 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   runCommand: (opts) => ipcRenderer.invoke('run-command', opts),
   cancelCommand: () => ipcRenderer.invoke('cancel-command'),
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
   onCommandOutput: (cb) => {
     const sub = (event, data) => cb(data);
     ipcRenderer.on('command-output', sub);
     return () => ipcRenderer.removeListener('command-output', sub);
   },
   onCommandExit: (cb) => {
-    const sub = (event, data) => cb(data);
+    const sub = (event, data) => => cb(data);
     ipcRenderer.on('command-exit', sub);
     return () => ipcRenderer.removeListener('command-exit', sub);
+  },
+
+  // Fabric bus (in-process semantic routing, NeuralGPTOS-inspired)
+  fabricSend: (subject, data) => ipcRenderer.invoke('fabric-send', { subject, data }),
+  fabricSubscribe: (subjectPattern) => ipcRenderer.invoke('fabric-subscribe', { subjectPattern }),
+  fabricUnsubscribe: (opts) => ipcRenderer.invoke('fabric-unsubscribe', opts || {}),
+  onFabricMessage: (cb) => {
+    const sub = (event, { subject, payload }) => cb({ subject, payload });
+    ipcRenderer.on('fabric-message', sub);
+    return () => ipcRenderer.removeListener('fabric-message', sub);
+  },
+
+  // Neural memory (local vector store for RAG/cache)
+  neuralMemoryStore: (opts) => ipcRenderer.invoke('neural-memory-store', opts),
+  neuralMemoryQuery: (opts) => ipcRenderer.invoke('neural-memory-query', opts),
+  neuralMemoryClear: (opts) => ipcRenderer.invoke('neural-memory-clear', opts || {}),
+
+  onMenuSettings: (cb) => {
+    const sub = () => cb();
+    ipcRenderer.on('menu-settings', sub);
+    return () => ipcRenderer.removeListener('menu-settings', sub);
+  },
+  onMenuAbout: (cb) => {
+    const sub = () => cb();
+    ipcRenderer.on('menu-about', sub);
+    return () => ipcRenderer.removeListener('menu-about', sub);
   }
 });
 

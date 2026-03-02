@@ -1,15 +1,18 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNotifications } from '../../context/NotificationContext';
+import VoiceInput from '../multimodal/VoiceInput';
+import { setEmotionalStateFromChat } from '../emotion/emotionService';
 
 /**
  * Cursor-style context-aware AI chat: knows current file and selection.
- * Apply button replaces selection (or whole file) with AI suggestion.
+ * Optional agentProfile (deepiri-emotion) for personality-aware replies.
  */
 export default function AIChatPanel({
   currentFile = null,
   currentContent = '',
   selection = null,
   initialPrompt = null,
+  agentProfile = null,
   onApplyEdit,
   onInsertAtCursor,
   onShowDiff
@@ -59,6 +62,13 @@ export default function AIChatPanel({
         file_content: (currentContent || '').slice(0, 8000),
         selection: selection || null
       };
+      if (agentProfile) {
+        payload.agent_id = agentProfile.id;
+        payload.agent_name = agentProfile.name;
+        payload.agent_tone = agentProfile.tone;
+        payload.agent_personality = agentProfile.personality;
+        if (agentProfile.systemPrompt) payload.agent_system_prompt = agentProfile.systemPrompt;
+      }
 
       const res = await api.aiRequest({
         endpoint: '/agent/chat',
@@ -67,6 +77,8 @@ export default function AIChatPanel({
 
       const reply = res?.data?.reply ?? res?.data?.content ?? res?.data?.message ?? (typeof res?.data === 'string' ? res.data : 'No response.');
       setMessages((prev) => [...prev, { role: 'assistant', content: reply, raw: res?.data }]);
+      const sentiment = typeof reply === 'string' && (reply.length > 100 || /\b(great|thanks|helpful|perfect)\b/i.test(reply)) ? 0.3 : 0;
+      setEmotionalStateFromChat({ sentiment, messageLength: reply?.length || 0 });
     } catch (err) {
       const msg = err?.response?.data?.detail ?? err?.message ?? 'Request failed.';
       setMessages((prev) => [...prev, { role: 'assistant', content: `Error: ${msg}` }]);
@@ -86,7 +98,7 @@ export default function AIChatPanel({
   return (
     <div className="ai-chat-panel">
       <div className="ai-chat-header">
-        <span>AI Chat</span>
+        <span>{agentProfile ? `Chat with ${agentProfile.name}` : 'AI Chat'}</span>
         <span className="ai-chat-context" title={contextSummary}>{contextSummary}</span>
       </div>
       <div className="ai-chat-messages">
@@ -98,14 +110,17 @@ export default function AIChatPanel({
         {messages.map((m, i) => (
           <div key={i} className={`ai-chat-message ${m.role}`}>
             <div className="ai-chat-message-content">{m.content}</div>
-            {m.role === 'assistant' && m.content && currentFile && (
+            {m.role === 'assistant' && m.content && (
               <div className="ai-chat-message-actions">
-                {onApplyEdit && (
+                <button type="button" className="ai-chat-copy" onClick={() => { navigator.clipboard?.writeText(m.content); success('Copied to clipboard'); }} title="Copy reply">
+                  Copy
+                </button>
+                {currentFile && onApplyEdit && (
                   <button type="button" className="ai-chat-apply" onClick={() => handleApply(m.content)}>
                     Apply to file
                   </button>
                 )}
-                {onShowDiff && currentContent !== undefined && (
+                {currentFile && onShowDiff && currentContent !== undefined && (
                   <button type="button" className="ai-chat-diff" onClick={() => onShowDiff(currentContent, m.content)}>
                     Show diff
                   </button>
@@ -123,6 +138,10 @@ export default function AIChatPanel({
         <div ref={endRef} />
       </div>
       <form className="ai-chat-input-row" onSubmit={(e) => { e.preventDefault(); sendMessage(); }}>
+        <VoiceInput
+          onTranscript={(t) => setInput((prev) => (prev ? `${prev} ${t}` : t))}
+          disabled={loading}
+        />
         <input
           ref={inputRef}
           type="text"
