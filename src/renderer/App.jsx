@@ -867,6 +867,15 @@ const App = () => {
         language={activeTab ? getLanguage(activeTab.name) : (activeFile ? getLanguageFromFile(activeFile.name) : null)}
         projectRoot={projectRoot}
         problemsCount={problems.length}
+        wordCount={activeTab?.content != null ? (activeTab.content.trim().split(/\s+/).filter(Boolean).length) : null}
+        theme={theme}
+        onThemeCycle={() => {
+          const opts = ['dark', 'light', 'hc'];
+          setTheme(opts[(opts.indexOf(theme) + 1) % opts.length]);
+        }}
+        showAIAssistant={showAIAssistant}
+        onAIClick={() => setShowAIAssistant((s) => !s)}
+        onProblemsClick={() => { setBottomPanelOpen(true); setBottomPanelTab('problems'); }}
       />
     </div>
   );

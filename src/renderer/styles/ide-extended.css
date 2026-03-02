@@ -249,4 +249,30 @@
 
 .status-left, .status-right { display: flex; align-items: center; gap: 16px; }
 .status-item { opacity: 0.9; }
-.problems-badge { color: #ffcccc; }
+.status-clickable { cursor: pointer; padding: 0 4px; border-radius: 2px; }
+.status-clickable:hover { background: rgba(255,255,255,0.2); }
+.status-ai.active { font-weight: bold; background: rgba(255,255,255,0.25); }
+.problems-badge { color: #ffcccc; cursor: pointer; }
+.problems-badge:hover { text-decoration: underline; }
+
+/* Go to Line */
+.go-to-line-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 10000; }
+.go-to-line-box { background: #252526; border: 1px solid #454545; border-radius: 6px; padding: 16px; display: flex; align-items: center; gap: 12px; min-width: 280px; }
+.go-to-line-box label { font-size: 12px; color: #ccc; white-space: nowrap; }
+.go-to-line-box input { flex: 1; padding: 6px 10px; background: #3c3c3c; border: 1px solid #454545; color: #fff; border-radius: 4px; }
+.go-to-line-box button { padding: 6px 14px; background: #0e639c; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+.go-to-line-box button:hover { background: #1177bb; }
+
+/* Editor AI bar (Ask AI + quick chips) */
+.editor-ai-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 8px; background: rgba(0,0,0,0.2); border-bottom: 1px solid #333; }
+.editor-ask-ai-btn {
+  padding: 4px 12px; font-size: 12px; background: linear-gradient(135deg, #0e639c, #503cb4);
+  color: #fff; border: none; border-radius: 4px; cursor: pointer;
+}
+.editor-ask-ai-btn:hover { filter: brightness(1.2); }
+.editor-ai-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.editor-ai-chip {
+  padding: 2px 8px; font-size: 11px; background: rgba(255,255,255,0.08); color: #ccc;
+  border: 1px solid #444; border-radius: 3px; cursor: pointer;
+}
+.editor-ai-chip:hover { background: rgba(255,255,255,0.15); color: #fff; border-color: #666; }
