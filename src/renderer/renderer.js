@@ -1,5 +1,5 @@
 /**
- * Deepiri IDE Renderer Process
+ * Deepiri Emotion Renderer Process
  * VS Code-style IDE with gamification
  */
 

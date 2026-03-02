@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-We release security updates for the latest major version of Deepiri IDE Desktop. Older major versions may receive critical fixes on a best-effort basis.
+We release security updates for the latest major version of Deepiri Emotion Desktop. Older major versions may receive critical fixes on a best-effort basis.
 
 ## Reporting a vulnerability
 
@@ -22,4 +22,4 @@ If you believe you have found a security vulnerability, please report it respons
 - File system and shell access are implemented in the main process only; the preload script exposes a whitelisted `window.electronAPI`.
 - Do not commit secrets or `.env` files; use `.env.example` for documented variables. See [.gitignore](.gitignore).
 
-Thank you for helping keep Deepiri IDE and its users safe.
+Thank you for helping keep Deepiri Emotion and its users safe.

@@ -1,6 +1,6 @@
-# Contributing to Deepiri IDE Desktop
+# Contributing to Deepiri Emotion Desktop
 
-Thank you for considering contributing to Deepiri IDE.
+Thank you for considering contributing to Deepiri Emotion.
 
 ## Development setup
 

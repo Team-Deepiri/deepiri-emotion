@@ -1,7 +1,7 @@
 [package]
-name = "deepiri-ide"
+name = "deepiri-emotion"
 version = "1.0.0"
-description = "Deepiri Desktop IDE - AI-Powered Productivity IDE"
+description = "Deepiri Emotion - AI-Powered Productivity IDE"
 authors = ["Deepiri Team"]
 license = "MIT"
 repository = ""
