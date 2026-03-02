@@ -8,11 +8,17 @@ const COMMANDS = [
   { id: 'toggle-terminal', label: 'Toggle Terminal' },
   { id: 'toggle-output', label: 'Toggle Output' },
   { id: 'toggle-problems', label: 'Toggle Problems' },
-  { id: 'toggle-ai', label: 'Toggle AI Assistant' },
+  { id: 'toggle-ai', label: 'Toggle AI Chat (Ask AI)', shortcut: 'Click AI in status bar' },
+  { id: 'ask-ai-explain', label: 'Ask AI: Explain selection or file' },
+  { id: 'ask-ai-refactor', label: 'Ask AI: Refactor selection or file' },
+  { id: 'ask-ai-add-tests', label: 'Ask AI: Add tests for selection or file' },
   { id: 'command-palette', label: 'Command Palette', shortcut: 'Ctrl+Shift+P' },
   { id: 'keybindings', label: 'Open Keyboard Shortcuts' },
   { id: 'extensions', label: 'Open Extensions' },
   { id: 'outline', label: 'Toggle Outline' },
+  { id: 'go-to-line', label: 'Go to Line…', shortcut: 'Ctrl+G' },
+  { id: 'format-document', label: 'Format Document', shortcut: 'Alt+Shift+F' },
+  { id: 'focus-search', label: 'Focus Search in Files', shortcut: 'Ctrl+Shift+F' },
   { id: 'new-task', label: 'New Task' },
   { id: 'settings', label: 'Open Settings' }
 ];

@@ -68,10 +68,15 @@ const App = () => {
   const [diffSuggested, setDiffSuggested] = useState('');
   const [outlineSymbols, setOutlineSymbols] = useState([]);
   const [editorSelection, setEditorSelection] = useState(null);
+  const [pendingGoToLine, setPendingGoToLine] = useState(null);
+  const [focusSearchRequest, setFocusSearchRequest] = useState(0);
+  const [goToLineOpen, setGoToLineOpen] = useState(false);
+  const [goToLineValue, setGoToLineValue] = useState('');
+  const [initialAIPrompt, setInitialAIPrompt] = useState(null);
   const editorApiRef = useRef(null);
   const userId = localStorage.getItem('user_id') || 'default_user';
   const { recordKeystroke, recordFileChange } = useSession(userId);
-  const { monacoTheme } = useTheme();
+  const { monacoTheme, theme, setTheme, editorFontSize, zoomIn, zoomOut, zoomReset } = useTheme();
   const recentFolders = typeof window !== 'undefined' && window.recentService ? window.recentService.getRecentFolders() : [];
 
   useEffect(() => {
@@ -79,6 +84,15 @@ const App = () => {
       window.electronAPI.getProjectRoot().then((root) => root && setProjectRoot(root));
     }
   }, []);
+
+  useEffect(() => {
+    if (pendingGoToLine == null || !activeTabId) return;
+    const t = setTimeout(() => {
+      editorApiRef.current?.goToLine(pendingGoToLine);
+      setPendingGoToLine(null);
+    }, 200);
+    return () => clearTimeout(t);
+  }, [activeTabId, pendingGoToLine]);
 
   const initializeApp = async () => {
     try {
@@ -729,6 +743,34 @@ const App = () => {
       />
 
       <CommandPalette isOpen={commandPaletteOpen} onClose={() => setCommandPaletteOpen(false)} onCommand={handleCommand} />
+
+      {goToLineOpen && (
+        <div className="go-to-line-backdrop" onClick={() => setGoToLineOpen(false)}>
+          <div className="go-to-line-box" onClick={(e) => e.stopPropagation()}>
+            <label>Go to line (Ctrl+G)</label>
+            <input
+              type="text"
+              value={goToLineValue}
+              onChange={(e) => setGoToLineValue(e.target.value.replace(/\D/g, ''))}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') setGoToLineOpen(false);
+                if (e.key === 'Enter') {
+                  const line = parseInt(goToLineValue, 10);
+                  if (line > 0) editorApiRef.current?.goToLine(line);
+                  setGoToLineOpen(false);
+                }
+              }}
+              placeholder="Line number"
+              autoFocus
+            />
+            <button type="button" onClick={() => {
+              const line = parseInt(goToLineValue, 10);
+              if (line > 0) editorApiRef.current?.goToLine(line);
+              setGoToLineOpen(false);
+            }}>Go</button>
+          </div>
+        </div>
+      )}
 
       <Notifications />
 

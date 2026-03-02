@@ -2,12 +2,16 @@ import React, { useState } from 'react';
 
 const DEFAULT_KEYBINDINGS = [
   { command: 'Open Folder', keys: 'Ctrl+O', category: 'File' },
+  { command: 'New File', keys: 'Ctrl+N', category: 'File' },
   { command: 'Save', keys: 'Ctrl+S', category: 'File' },
   { command: 'Command Palette', keys: 'Ctrl+Shift+P', category: 'View' },
-  { command: 'Quick Open', keys: 'Ctrl+P', category: 'View' },
+  { command: 'Quick Open (Go to File)', keys: 'Ctrl+P', category: 'View' },
+  { command: 'Go to Line', keys: 'Ctrl+G', category: 'View' },
+  { command: 'Focus Search in Files', keys: 'Ctrl+Shift+F', category: 'View' },
+  { command: 'Format Document', keys: 'Alt+Shift+F', category: 'Editor' },
   { command: 'Toggle Terminal', keys: '', category: 'View' },
-  { command: 'Toggle AI Assistant', keys: '', category: 'View' },
-  { command: 'New Task', keys: 'Ctrl+N', category: 'Task' },
+  { command: 'Toggle AI Assistant', keys: 'Click AI in status bar', category: 'View' },
+  { command: 'New Task', keys: '', category: 'Task' },
   { command: 'Generate Challenge', keys: 'Ctrl+Shift+N', category: 'Task' }
 ];
 
