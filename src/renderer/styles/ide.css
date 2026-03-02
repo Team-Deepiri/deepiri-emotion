@@ -19,6 +19,14 @@ body {
     width: 100vw;
 }
 
+.ide-main-row {
+    display: flex;
+    flex-direction: row;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
 .activity-bar {
     width: 48px;
     background: #333333;

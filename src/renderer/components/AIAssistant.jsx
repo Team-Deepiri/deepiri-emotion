@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { aiService } from '../services/aiService';
 
 const AIAssistant = ({ onHint, onCodeComplete }) => {
   const [messages, setMessages] = useState([]);
@@ -36,14 +35,17 @@ const AIAssistant = ({ onHint, onCodeComplete }) => {
     try {
       let response;
       
-      if (input.toLowerCase().includes('hint')) {
+      const aiService = window.aiService;
+      if (aiService && input.toLowerCase().includes('hint')) {
         const task = input.replace(/hint|give me a hint/gi, '').trim();
-        response = await window.aiService.getLLMHint(task);
-      } else if (input.toLowerCase().includes('complete')) {
+        response = await aiService.getLLMHint(task);
+      } else if (aiService && input.toLowerCase().includes('complete')) {
         const code = input.replace(/complete|finish/gi, '').trim();
-        response = await window.aiService.completeCode(code, 'javascript');
+        response = await aiService.completeCode(code, 'javascript');
+      } else if (aiService) {
+        response = await aiService.getLLMHint(input);
       } else {
-        response = await window.aiService.getLLMHint(input);
+        response = 'AI service not available. Start the Cyrex backend or check settings.';
       }
 
       setMessages(prev => [...prev, {

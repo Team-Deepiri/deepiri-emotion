@@ -70,6 +70,23 @@ const IntegrationPanel = () => {
     }
   };
 
+  const handleDisconnect = async (provider) => {
+    if (!window.confirm(`Disconnect ${provider}?`)) return;
+    setLoading(true);
+    try {
+      await window.electronAPI.apiRequest({
+        method: 'POST',
+        endpoint: '/integrations/disconnect',
+        data: { provider }
+      });
+      setIntegrations((prev) => prev.filter((i) => i.provider !== provider));
+    } catch (error) {
+      setIntegrations((prev) => prev.map((i) => i.provider === provider ? { ...i, connected: false } : i));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const providers = [
     { id: 'github', name: 'GitHub', icon: '🐙', color: '#24292e' },
     { id: 'notion', name: 'Notion', icon: '📝', color: '#000000' },
@@ -105,7 +122,7 @@ const IntegrationPanel = () => {
                     <button onClick={() => handleSync(provider.id)} disabled={loading}>
                       Sync
                     </button>
-                    <button onClick={() => {}}>Disconnect</button>
+                    <button onClick={() => handleDisconnect(provider.id)} disabled={loading}>Disconnect</button>
                   </>
                 ) : (
                   <button onClick={() => handleConnect(provider.id)} disabled={loading}>

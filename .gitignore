@@ -35,12 +35,14 @@ node_modules/
 # ========================================
 coverage/
 *.lcov
+.vitest/
 
 # ========================================
-# PRODUCTION
+# PRODUCTION / BUILD ARTIFACTS
 # ========================================
 build/
 dist/
+dist-renderer/
 web-build/
 
 # ========================================
@@ -114,8 +116,11 @@ build/
 # OS & EDITOR
 # ========================================
 .DS_Store
+Thumbs.db
+*.bak
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
 

@@ -276,12 +276,32 @@ contextBridge.exposeInMainWorld('electronAPI', {
         await writeTextFile(path, content);
         return { success: true };
       } else {
-        return await ipcRenderer.invoke('save-file', { path, content });
+        const payload = typeof path === 'object' && path !== null && 'path' in path
+          ? path
+          : { path, content };
+        return await ipcRenderer.invoke('save-file', payload);
       }
     } catch (error) {
       console.error('Save file error:', error);
       throw error;
     }
+  },
+
+  // Config (API URLs, Helox path, Cyrex UI URL)
+  getConfig: () => ipcRenderer.invoke('get-config'),
+
+  // Helox pipelines
+  runHeloxPipeline: (options) => ipcRenderer.invoke('run-helox-pipeline', options),
+  cancelHeloxPipeline: () => ipcRenderer.invoke('cancel-helox-pipeline'),
+  onHeloxOutput: (cb) => {
+    const sub = (event, data) => cb(data);
+    ipcRenderer.on('helox-output', sub);
+    return () => ipcRenderer.removeListener('helox-output', sub);
+  },
+  onHeloxExit: (cb) => {
+    const sub = (event, data) => cb(data);
+    ipcRenderer.on('helox-exit', sub);
+    return () => ipcRenderer.removeListener('helox-exit', sub);
   },
 
   // IDE Utilities
@@ -298,6 +318,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
       console.error('Open project error:', error);
       throw error;
     }
+  },
+
+  getProjectRoot: () => ipcRenderer.invoke('get-project-root'),
+  listDirectory: (path) => ipcRenderer.invoke('list-directory', path),
+  createFile: (opts) => ipcRenderer.invoke('create-file', opts),
+  createFolder: (opts) => ipcRenderer.invoke('create-folder', opts),
+  deletePath: (path) => ipcRenderer.invoke('delete-path', path),
+  renamePath: (opts) => ipcRenderer.invoke('rename-path', opts),
+  searchInFolder: (rootDir, query, opts) => ipcRenderer.invoke('search-in-folder', rootDir, query, opts),
+
+  runCommand: (opts) => ipcRenderer.invoke('run-command', opts),
+  cancelCommand: () => ipcRenderer.invoke('cancel-command'),
+  onCommandOutput: (cb) => {
+    const sub = (event, data) => cb(data);
+    ipcRenderer.on('command-output', sub);
+    return () => ipcRenderer.removeListener('command-output', sub);
+  },
+  onCommandExit: (cb) => {
+    const sub = (event, data) => cb(data);
+    ipcRenderer.on('command-exit', sub);
+    return () => ipcRenderer.removeListener('command-exit', sub);
   }
 });
 

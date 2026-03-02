@@ -1,153 +1,19 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Deepiri IDE</title>
-    <link rel="stylesheet" href="styles/ide.css">
-    <link rel="stylesheet" href="styles/missions.css">
-    <link rel="stylesheet" href="styles/components.css">
-    <link rel="stylesheet" href="styles/assistant.css">
-    <link rel="stylesheet" href="styles/editor.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Deepiri IDE</title>
+  <style>
+    #app-loading { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #1e1e1e; color: #ccc; font-family: system-ui, sans-serif; }
+    #app-loading .spinner { width: 32px; height: 32px; border: 3px solid #333; border-top-color: #0ea5e9; border-radius: 50%; animation: app-spin 0.8s linear infinite; margin-right: 12px; }
+    @keyframes app-spin { to { transform: rotate(360deg); } }
+  </style>
 </head>
 <body>
-    <div id="app">
-        <div class="ide-container">
-            <!-- Activity Bar (Left) -->
-            <div class="activity-bar">
-                <div class="activity-item active" data-view="explorer">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                        <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
-                    </svg>
-                </div>
-                <div class="activity-item" data-view="search">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                        <circle cx="11" cy="11" r="8"/>
-                        <path d="m21 21-4.35-4.35"/>
-                    </svg>
-                </div>
-                <div class="activity-item" data-view="challenges">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                        <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-                        <path d="M2 17l10 5 10-5"/>
-                        <path d="M2 12l10 5 10-5"/>
-                    </svg>
-                </div>
-                <div class="activity-item" data-view="gamification">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                        <path d="M6 9H4.5a2.5 2.5 0 010-5H6"/>
-                        <path d="M18 9h1.5a2.5 2.5 0 000-5H18"/>
-                        <path d="M7.5 12h9"/>
-                        <path d="M12 7.5v9"/>
-                        <circle cx="12" cy="12" r="10"/>
-                    </svg>
-                </div>
-            </div>
-
-            <!-- Sidebar -->
-            <div class="sidebar" id="sidebar">
-                <div class="sidebar-content" id="explorer-view">
-                    <div class="sidebar-header">
-                        <span>EXPLORER</span>
-                        <button class="sidebar-action">⋮</button>
-                    </div>
-                    <div class="file-tree" id="file-tree">
-                        <div class="tree-item">
-                            <span class="tree-icon">📁</span>
-                            <span>Projects</span>
-                        </div>
-                        <div class="tree-item">
-                            <span class="tree-icon">📁</span>
-                            <span>Tasks</span>
-                        </div>
-                        <div class="tree-item">
-                            <span class="tree-icon">📁</span>
-                            <span>Challenges</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="sidebar-content hidden" id="challenges-view">
-                    <div class="sidebar-header">
-                        <span>CHALLENGES</span>
-                    </div>
-                    <div class="challenge-list" id="challenge-list">
-                        <!-- Challenges will be loaded here -->
-                    </div>
-                </div>
-
-                <div class="sidebar-content hidden" id="gamification-view">
-                    <div class="sidebar-header">
-                        <span>GAMIFICATION</span>
-                    </div>
-                    <div class="gamification-panel">
-                        <div class="stats-card">
-                            <div class="stat-label">Points</div>
-                            <div class="stat-value" id="points-value">0</div>
-                        </div>
-                        <div class="stats-card">
-                            <div class="stat-label">Level</div>
-                            <div class="stat-value" id="level-value">1</div>
-                        </div>
-                        <div class="stats-card">
-                            <div class="stat-label">Streak</div>
-                            <div class="stat-value" id="streak-value">0</div>
-                        </div>
-                        <div class="badges-section">
-                            <div class="section-title">Badges</div>
-                            <div class="badges-list" id="badges-list"></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Editor Area -->
-            <div class="editor-area">
-                <!-- Tabs -->
-                <div class="tabs-container">
-                    <div class="tabs" id="tabs">
-                        <!-- Tabs will be added dynamically -->
-                    </div>
-                </div>
-
-                <!-- Editor -->
-                <div class="editor-container">
-                    <div class="editor" id="editor">
-                        <div class="editor-content">
-                            <div class="welcome-screen" id="welcome-screen">
-                                <h1>Deepiri IDE</h1>
-                                <p>AI-Powered Productivity IDE</p>
-                                <div class="quick-actions">
-                                    <button class="action-btn" id="new-task-btn">New Task</button>
-                                    <button class="action-btn" id="new-challenge-btn">Generate Challenge</button>
-                                    <button class="action-btn" id="open-project-btn">Open Project</button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Status Bar (Bottom) -->
-            <div class="status-bar">
-                <div class="status-item">
-                    <span id="challenge-status">No active challenge</span>
-                </div>
-                <div class="status-item">
-                    <span id="points-display">0 points</span>
-                </div>
-                <div class="status-item">
-                    <span id="timer-display">00:00</span>
-                </div>
-                <div class="status-item right">
-                    <span>Ready</span>
-                </div>
-            </div>
-        </div>
-    </div>
-    <script src="renderer.js"></script>
-    <script src="mission-system.js"></script>
-    <script src="plugins/plugin-system.js"></script>
+  <div id="app">
+    <div id="app-loading"><div class="spinner"></div><span>Loading Deepiri IDE…</span></div>
+  </div>
+  <script type="module" src="./main.jsx"></script>
 </body>
 </html>
-

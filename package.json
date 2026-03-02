@@ -1,17 +1,35 @@
 {
   "name": "desktop-ide-deepiri",
   "version": "1.0.0",
-  "description": "Deepiri Desktop IDE - AI-Powered Productivity Gamification IDE",
+  "description": "Deepiri IDE — AI-powered desktop IDE with Cyrex AI and Helox pipelines",
   "main": "src/main.js",
   "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/deepiri/deepiri-ide-desktop.git"
+  },
+  "homepage": "https://github.com/deepiri/deepiri-ide-desktop#readme",
+  "bugs": {
+    "url": "https://github.com/deepiri/deepiri-ide-desktop/issues"
+  },
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
-    "build": "electron-builder",
-    "build:win": "electron-builder --win",
-    "build:mac": "electron-builder --mac",
-    "build:linux": "electron-builder --linux",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev:renderer": "vite",
+    "build:renderer": "vite build",
+    "build:icons": "node scripts/generate-icons.cjs",
+    "build": "npm run build:icons && npm run build:renderer && electron-builder",
+    "build:win": "npm run build:icons && npm run build:renderer && electron-builder --win",
+    "build:mac": "npm run build:icons && npm run build:renderer && electron-builder --mac",
+    "build:linux": "npm run build:icons && npm run build:renderer && electron-builder --linux",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix"
   },
   "keywords": [
     "productivity",
@@ -23,35 +41,110 @@
   "author": "Deepiri Team",
   "license": "MIT",
   "dependencies": {
-    "electron": "^28.0.0",
+    "@monaco-editor/react": "^4.7.0",
     "axios": "^1.6.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
     "socket.io-client": "^4.7.4"
   },
   "devDependencies": {
-    "electron-builder": "^24.9.1"
+    "@eslint/js": "^9.15.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.0.1",
+    "@vitejs/plugin-react": "^4.2.1",
+    "@vitest/coverage-v8": "^2.1.9",
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1",
+    "eslint": "^9.15.0",
+    "eslint-plugin-react": "^7.37.2",
+    "eslint-plugin-react-hooks": "^5.0.0",
+    "eslint-plugin-react-refresh": "^0.4.14",
+    "globals": "^15.12.0",
+    "icon-gen": "^5.0.0",
+    "jimp": "^1.6.0",
+    "jsdom": "^25.0.1",
+    "to-ico": "^1.1.5",
+    "vite": "^5.0.0",
+    "vitest": "^2.1.6"
   },
   "build": {
     "appId": "com.deepiri.desktop",
     "productName": "Deepiri IDE",
+    "copyright": "Deepiri Team",
     "directories": {
-      "output": "dist"
+      "output": "dist",
+      "buildResources": "assets"
     },
     "files": [
       "src/**/*",
+      "dist-renderer/**",
+      "assets/**/*",
       "package.json"
     ],
+    "extraMetadata": {
+      "main": "src/main.js"
+    },
     "win": {
-      "target": "nsis",
-      "icon": "assets/icon.ico"
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "publisherName": "Deepiri"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Deepiri IDE"
     },
     "mac": {
-      "target": "dmg",
-      "icon": "assets/icon.icns"
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "pkg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.developer-tools"
     },
     "linux": {
-      "target": "AppImage",
-      "icon": "assets/icon.png"
-    }
+      "target": [
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.png",
+      "category": "Development",
+      "maintainer": "Deepiri Team"
+    },
+    "publish": null
   }
 }
-
