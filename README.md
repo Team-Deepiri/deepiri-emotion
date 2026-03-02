@@ -124,7 +124,7 @@ The app runs without `.env`; these are for custom endpoints and keys.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Apache-2.0 — see [LICENSE](LICENSE).
 
 ---
 

@@ -39,7 +39,7 @@
     "electron"
   ],
   "author": "Deepiri Team",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
     "axios": "^1.6.0",

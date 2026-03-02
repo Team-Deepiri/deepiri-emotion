@@ -55,4 +55,4 @@ Use the [GitHub issue tracker](https://github.com/deepiri/deepiri-ide-desktop/is
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the same [MIT License](LICENSE) that covers this project.
+By contributing, you agree that your contributions will be licensed under the same [Apache License 2.0](LICENSE) that covers this project.
