@@ -18,7 +18,10 @@ function modelLabel(aiSettings) {
   return p;
 }
 
+const DEFAULT_SESSION = 'default';
+
 export default function AIChatPanel({
+  projectRoot = null,
   currentFile = null,
   currentContent = '',
   selection = null,
@@ -28,10 +31,12 @@ export default function AIChatPanel({
   onInsertAtCursor,
   onShowDiff
 }) {
+  const sessionId = projectRoot || DEFAULT_SESSION;
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [aiSettings, setAiSettings] = useState(null);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const endRef = useRef(null);
   const inputRef = useRef(null);
   const { success, error } = useNotifications();
@@ -39,6 +44,24 @@ export default function AIChatPanel({
   useEffect(() => {
     api.getAiSettings().then((s) => s && setAiSettings(s)).catch(() => {});
   }, []);
+
+  const sessionIdRef = useRef(sessionId);
+  useEffect(() => {
+    if (sessionIdRef.current !== sessionId) {
+      sessionIdRef.current = sessionId;
+      setHistoryLoaded(false);
+    }
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (historyLoaded) return;
+    setHistoryLoaded(true);
+    api.getChatHistory(sessionId, 50).then((res) => {
+      if (res?.success && Array.isArray(res.data) && res.data.length > 0) {
+        setMessages(res.data.map((row) => ({ role: row.role, content: row.content })));
+      }
+    }).catch(() => {});
+  }, [sessionId, historyLoaded]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -64,6 +87,7 @@ export default function AIChatPanel({
     setMessages((prev) => [...prev, { role: 'user', content: text }]);
     setInput('');
     setLoading(true);
+    api.appendChatMessage({ role: 'user', content: text, sessionId }).catch(() => {});
 
     try {
       const messagesForApi = [...messages, { role: 'user', content: text }];
@@ -88,6 +112,7 @@ export default function AIChatPanel({
 
       const reply = res?.data?.reply ?? res?.data?.content ?? '';
       setMessages((prev) => [...prev, { role: 'assistant', content: reply, raw: res?.data }]);
+      api.appendChatMessage({ role: 'assistant', content: reply, sessionId }).catch(() => {});
       const sentiment = typeof reply === 'string' && (reply.length > 100 || /\b(great|thanks|helpful|perfect)\b/i.test(reply)) ? 0.3 : 0;
       setEmotionalStateFromChat({ sentiment, messageLength: reply?.length || 0 });
     } catch (err) {
@@ -107,6 +132,12 @@ export default function AIChatPanel({
     }
   };
 
+  const handleClearHistory = () => {
+    api.clearChatHistory(sessionId).catch(() => {});
+    setMessages([]);
+    success('Chat history cleared');
+  };
+
   return (
     <div className="ai-chat-panel">
       <div className="ai-chat-header">
@@ -117,6 +148,9 @@ export default function AIChatPanel({
             Model: {modelLabel(aiSettings)}
           </span>
         )}
+        <button type="button" className="ai-chat-clear-history" onClick={handleClearHistory} title="Clear saved chat history for this session">
+          Clear history
+        </button>
       </div>
       <div className="ai-chat-messages">
         {messages.length === 0 && (
