@@ -136,6 +136,9 @@ export const api = {
   cancelHeloxPipeline: guard('cancelHeloxPipeline', (a) => a.cancelHeloxPipeline?.()),
   onHeloxOutput: onEvent('onHeloxOutput', (a, cb) => a.onHeloxOutput?.(cb)),
   onHeloxExit: onEvent('onHeloxExit', (a, cb) => a.onHeloxExit?.(cb)),
+
+  // Extensions
+  listExtensions: guard('listExtensions', (a) => a.listExtensions?.() ?? []),
 };
 
 export default api;

@@ -1,5 +1,8 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+// IPC channel names: single source in src/shared/ipcChannels.js (main process uses IPC.*).
+// Preload keeps string literals in sync; when adding channels, update ipcChannels.js and here.
+
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -425,6 +428,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('menu-save', sub);
     return () => ipcRenderer.removeListener('menu-save', sub);
   },
+  onOpenFileFromCli: (cb) => {
+    const sub = (_event, path) => cb(path);
+    ipcRenderer.on('open-file-from-cli', sub);
+    return () => ipcRenderer.removeListener('open-file-from-cli', sub);
+  },
 
   // AI provider settings (stored in main process userData)
   getAiSettings: async () => {
@@ -446,7 +454,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getUsage: () => ipcRenderer.invoke('get-usage'),
   getUsageLimits: () => ipcRenderer.invoke('get-usage-limits'),
   setUsageLimits: (limits) => ipcRenderer.invoke('set-usage-limits', limits),
-  resetUsage: () => ipcRenderer.invoke('reset-usage')
+  resetUsage: () => ipcRenderer.invoke('reset-usage'),
+  listExtensions: () => ipcRenderer.invoke('list-extensions')
 });
 
 // Expose IDE global utilities
