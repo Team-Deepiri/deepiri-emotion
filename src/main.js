@@ -13,6 +13,8 @@ import axios from 'axios';
 import { createAgentRuntime } from './agentRuntime.js';
 import { createNeuralMemory } from './neuralMemory.js';
 import { IDE_CAPABILITIES } from './capabilities.js';
+import { listWorkspaceFiles, parseExcludePatterns } from './indexing.js';
+import { SEARCH_MAX_RESULTS } from './shared/constants.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -288,13 +290,71 @@ async function saveAiSettings(settings) {
   await writeFile(AI_SETTINGS_PATH, JSON.stringify(settings, null, 2), 'utf-8');
 }
 
+// Auto-detect Cyrex and Ollama runtimes (probe with short timeout)
+const DETECT_TIMEOUT_MS = 1800;
+const CYREX_PROBE_URLS = [AI_SERVICE_URL, 'http://localhost:8000', 'http://127.0.0.1:8000'];
+const OLLAMA_PROBE_URL = 'http://localhost:11434';
+
+async function probeUrl(url, path) {
+  const base = url.replace(/\/$/, '');
+  const target = path.startsWith('http') ? path : base + (path.startsWith('/') ? path : '/' + path);
+  try {
+    const res = await axios.get(target, { timeout: DETECT_TIMEOUT_MS, validateStatus: () => true });
+    return res.status < 500;
+  } catch {
+    return false;
+  }
+}
+
+async function detectRuntime() {
+  const out = { cyrex: { url: null, available: false }, ollama: { url: null, available: false } };
+  for (const url of CYREX_PROBE_URLS) {
+    if (await probeUrl(url, '/')) {
+      out.cyrex.url = url.replace(/\/$/, '');
+      out.cyrex.available = true;
+      break;
+    }
+    try {
+      const r = await axios.post(url.replace(/\/$/, '') + '/agent/chat', { prompt: '' }, { timeout: 800, validateStatus: () => true });
+      if (r.status === 200 || r.status === 400 || r.status === 422) {
+        out.cyrex.url = url.replace(/\/$/, '');
+        out.cyrex.available = true;
+        break;
+      }
+    } catch { /* skip */ }
+  }
+  try {
+    const r = await axios.get(OLLAMA_PROBE_URL + '/api/tags', { timeout: 1200, validateStatus: () => true });
+    if (r.status === 200) {
+      out.ollama.url = OLLAMA_PROBE_URL;
+      out.ollama.available = true;
+    }
+  } catch { /* skip */ }
+  return out;
+}
+
+ipcMain.handle('detect-runtime', async () => detectRuntime());
+
 ipcMain.handle('get-ai-settings', async () => {
-  return await loadAiSettings();
+  const s = await loadAiSettings();
+  const detected = await detectRuntime();
+  const defaultUrl = AI_SERVICE_URL.replace(/\/$/, '');
+  const cyrexWanted = s.provider === 'cyrex' || (s.provider === 'local' && s.localType === 'cyrex');
+  const cyrexUrlEmptyOrDefault = !s.localCyrexUrl || s.localCyrexUrl.replace(/\/$/, '') === defaultUrl;
+  if (cyrexWanted && cyrexUrlEmptyOrDefault && detected.cyrex.available && detected.cyrex.url) {
+    s.localCyrexUrl = detected.cyrex.url;
+  }
+  if ((s.provider === 'local' && s.localType === 'ollama') && (!s.localOllamaUrl || s.localOllamaUrl.replace(/\/$/, '') === 'http://localhost:11434') && detected.ollama.available && detected.ollama.url) {
+    s.localOllamaUrl = detected.ollama.url;
+  }
+  s._detectedRuntime = detected;
+  return s;
 });
 
 ipcMain.handle('set-ai-settings', async (event, settings) => {
   const current = await loadAiSettings();
   const merged = { ...current, ...settings };
+  delete merged._detectedRuntime;
   await saveAiSettings(merged);
   return merged;
 });
@@ -777,10 +837,10 @@ ipcMain.handle('set-project-root', (event, path) => {
 
 ipcMain.handle('get-project-root', () => projectRoot);
 
-const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'dist-renderer', 'build', '.next', '__pycache__', '.venv', 'venv']);
+const SKIP_DIRS = parseExcludePatterns();
 const TEXT_EXT = new Set(['js', 'jsx', 'ts', 'tsx', 'json', 'md', 'html', 'css', 'scss', 'py', 'rs', 'go', 'java', 'c', 'cpp', 'h', 'hpp', 'yaml', 'yml', 'sh', 'bash', 'sql', 'xml', 'txt', 'log', 'env']);
 
-async function searchInFolderRecursive(rootDir, query, opts, results, maxResults = 500) {
+async function searchInFolderRecursive(rootDir, query, opts, results, maxResults = SEARCH_MAX_RESULTS) {
   if (results.length >= maxResults) return;
   let entries;
   try {
@@ -837,35 +897,8 @@ ipcMain.handle('search-in-folder', async (event, rootDir, query, opts = {}) => {
 });
 
 // --- File system (for real file tree) ---
-async function listWorkspaceFilesRecursive(rootDir, relativeDir, out, maxFiles = 2000) {
-  if (out.length >= maxFiles) return;
-  let entries;
-  try {
-    entries = await readdir(rootDir, { withFileTypes: true });
-  } catch {
-    return;
-  }
-  for (const e of entries) {
-    if (out.length >= maxFiles) break;
-    const fullPath = join(rootDir, e.name);
-    const rel = relativeDir ? `${relativeDir}/${e.name}` : e.name;
-    if (e.isDirectory()) {
-      if (SKIP_DIRS.has(e.name)) continue;
-      out.push({ path: fullPath, name: e.name, isDirectory: true, relativePath: rel });
-      await listWorkspaceFilesRecursive(fullPath, rel, out, maxFiles);
-    } else {
-      out.push({ path: fullPath, name: e.name, isDirectory: false, relativePath: rel });
-    }
-  }
-}
-
-ipcMain.handle('list-workspace-files', async (event, rootDir) => {
-  if (!rootDir) return { files: [], totalFiles: 0, totalFolders: 0 };
-  const files = [];
-  await listWorkspaceFilesRecursive(rootDir, '', files);
-  const totalFiles = files.filter((f) => !f.isDirectory).length;
-  const totalFolders = files.filter((f) => f.isDirectory).length;
-  return { files, totalFiles, totalFolders };
+ipcMain.handle('list-workspace-files', async (event, rootDir, excludePatterns) => {
+  return listWorkspaceFiles(rootDir, excludePatterns);
 });
 
 ipcMain.handle('list-directory', async (event, dirPath) => {

@@ -5,6 +5,7 @@
 # BUT allow example files to be committed (env.example, env.example.*, etc.)
 .env
 .env.*
+.cursor
 !.env.example
 !.env.example.*
 .env.local
