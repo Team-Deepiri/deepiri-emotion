@@ -63,5 +63,15 @@ export const IPC = {
   RUN_HELOX_PIPELINE: 'run-helox-pipeline',
   CANCEL_HELOX_PIPELINE: 'cancel-helox-pipeline',
   // Extensions
-  LIST_EXTENSIONS: 'list-extensions'
+  LIST_EXTENSIONS: 'list-extensions',
+  // Local DB (sql.js in userData)
+  DB_GET_CHAT_HISTORY: 'db-get-chat-history',
+  DB_APPEND_CHAT_MESSAGE: 'db-append-chat-message',
+  DB_CLEAR_CHAT_HISTORY: 'db-clear-chat-history',
+  // Integrations (connect / sync)
+  GET_INTEGRATION_STATUS: 'get-integration-status',
+  CONNECT_INTEGRATION: 'connect-integration',
+  DISCONNECT_INTEGRATION: 'disconnect-integration',
+  SYNC_INTEGRATION: 'sync-integration',
+  INTEGRATION_SUPPORTED: 'integration-supported'
 };

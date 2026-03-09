@@ -17,6 +17,8 @@ import { registerPlatformService } from './services/platformService.js';
 import { registerHeloxService } from './services/heloxService.js';
 import { registerShellService } from './services/shellService.js';
 import { registerExtensionsService } from './services/extensionsService.js';
+import { registerIntegrationService } from './services/integrationService.js';
+import { registerDbService } from './services/dbService.js';
 
 let mainWindow = null;
 
@@ -82,6 +84,9 @@ export function createApp() {
   const launchArgs = getLaunchArgs();
   if (launchArgs.folder) {
     setProjectRoot(launchArgs.folder);
+    mainWindow.webContents.once('did-finish-load', () => {
+      mainWindow.webContents.send('project-root-changed', launchArgs.folder);
+    });
   }
   if (launchArgs.file && mainWindow) {
     mainWindow.webContents.once('did-finish-load', () => {
@@ -106,4 +111,6 @@ export function createApp() {
   registerHeloxService(ipcMain, { getMainWindow });
   registerShellService(ipcMain, {});
   registerExtensionsService(ipcMain, {});
+  registerIntegrationService(ipcMain, {});
+  registerDbService(ipcMain);
 }

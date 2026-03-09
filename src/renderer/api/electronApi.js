@@ -138,7 +138,21 @@ export const api = {
   onHeloxExit: onEvent('onHeloxExit', (a, cb) => a.onHeloxExit?.(cb)),
 
   // Extensions
-  listExtensions: guard('listExtensions', (a) => a.listExtensions?.() ?? []),
+  listExtensions: guard('listExtensions', (a) => a.listExtensions?.() ?? { installed: [], available: [] }),
+  getIntegrationStatus: guard('getIntegrationStatus', (a) => a.getIntegrationStatus?.() ?? { connected: {} }),
+  connectIntegration: guard('connectIntegration', (a, payload) => a.connectIntegration?.(payload)),
+  disconnectIntegration: guard('disconnectIntegration', (a, id) => a.disconnectIntegration?.(id)),
+  syncIntegration: guard('syncIntegration', (a, payload) => a.syncIntegration?.(payload)),
+  integrationSupported: guard('integrationSupported', (a, id) => a.integrationSupported?.(id)),
+
+  // CLI launch: open file when app is started with a file path (e.g. emotion-desktop -- /path/to/file)
+  onOpenFileFromCli: onEvent('onOpenFileFromCli', (a, cb) => a.onOpenFileFromCli?.(cb)),
+  onProjectRootChanged: onEvent('onProjectRootChanged', (a, cb) => a.onProjectRootChanged?.(cb)),
+
+  // Local DB (chat history)
+  getChatHistory: guard('getChatHistory', (a, sessionId, limit) => a.getChatHistory?.(sessionId, limit)),
+  appendChatMessage: guard('appendChatMessage', (a, payload) => a.appendChatMessage?.(payload)),
+  clearChatHistory: guard('clearChatHistory', (a, sessionId) => a.clearChatHistory?.(sessionId)),
 };
 
 export default api;

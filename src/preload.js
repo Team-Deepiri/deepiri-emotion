@@ -433,6 +433,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('open-file-from-cli', sub);
     return () => ipcRenderer.removeListener('open-file-from-cli', sub);
   },
+  onProjectRootChanged: (cb) => {
+    const sub = (_event, path) => cb(path);
+    ipcRenderer.on('project-root-changed', sub);
+    return () => ipcRenderer.removeListener('project-root-changed', sub);
+  },
 
   // AI provider settings (stored in main process userData)
   getAiSettings: async () => {
@@ -455,7 +460,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getUsageLimits: () => ipcRenderer.invoke('get-usage-limits'),
   setUsageLimits: (limits) => ipcRenderer.invoke('set-usage-limits', limits),
   resetUsage: () => ipcRenderer.invoke('reset-usage'),
-  listExtensions: () => ipcRenderer.invoke('list-extensions')
+  listExtensions: () => ipcRenderer.invoke('list-extensions'),
+  getChatHistory: (sessionId, limit) => ipcRenderer.invoke('db-get-chat-history', sessionId, limit),
+  appendChatMessage: (payload) => ipcRenderer.invoke('db-append-chat-message', payload),
+  clearChatHistory: (sessionId) => ipcRenderer.invoke('db-clear-chat-history', sessionId),
+  getIntegrationStatus: () => ipcRenderer.invoke('get-integration-status'),
+  connectIntegration: (payload) => ipcRenderer.invoke('connect-integration', payload),
+  disconnectIntegration: (id) => ipcRenderer.invoke('disconnect-integration', id),
+  syncIntegration: (payload) => ipcRenderer.invoke('sync-integration', payload),
+  integrationSupported: (id) => ipcRenderer.invoke('integration-supported', id)
 });
 
 // Expose IDE global utilities
