@@ -1,6 +1,6 @@
 /**
  * Deepiri Emotion Renderer Process
- * VS Code-style IDE with gamification
+ * IDE-style app with gamification
  */
 
 class DeepiriIDE {
@@ -107,9 +107,9 @@ class DeepiriIDE {
         editor.innerHTML = `
             <div class="editor-content">
                 <div style="padding: 20px;">
-                    <h2 style="color: #4ec9b0; margin-bottom: 16px;">${challenge.title}</h2>
-                    <p style="color: #cccccc; margin-bottom: 24px;">${challenge.description}</p>
-                    <div style="background: #2d2d2d; padding: 16px; border-radius: 4px; margin-bottom: 16px;">
+                    <h2 style="color: #5ba3d0; margin-bottom: 16px;">${challenge.title}</h2>
+                    <p style="color: #c5dceb; margin-bottom: 24px;">${challenge.description}</p>
+                    <div style="background: #243b4a; padding: 16px; border-radius: 6px; margin-bottom: 16px; border: 1px solid #2a4a5e;">
                         <div style="margin-bottom: 8px;"><strong>Difficulty:</strong> ${challenge.difficulty}</div>
                         <div style="margin-bottom: 8px;"><strong>Points Reward:</strong> ${challenge.pointsReward}</div>
                         <div><strong>Time Limit:</strong> ${challenge.configuration?.timeLimit || 'N/A'} minutes</div>

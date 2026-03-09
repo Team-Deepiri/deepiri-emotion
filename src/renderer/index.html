@@ -5,8 +5,27 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Deepiri Emotion</title>
   <style>
-    #app-loading { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #1e1e1e; color: #ccc; font-family: system-ui, sans-serif; }
-    #app-loading .spinner { width: 32px; height: 32px; border: 3px solid #333; border-top-color: #0ea5e9; border-radius: 50%; animation: app-spin 0.8s linear infinite; margin-right: 12px; }
+    #app-loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: linear-gradient(165deg, #151f2b 0%, #1e3a4d 50%, #162d3d 100%);
+      color: #c5dceb;
+      font-family: "Segoe UI", "SF Pro Display", -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+      font-size: 13px;
+      -webkit-font-smoothing: antialiased;
+    }
+    #app-loading .spinner {
+      width: 36px;
+      height: 36px;
+      border: 3px solid #2a4a5e;
+      border-top-color: #5ba3d0;
+      border-right-color: #e67e22;
+      border-radius: 50%;
+      animation: app-spin 0.7s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+      margin-right: 14px;
+    }
     @keyframes app-spin { to { transform: rotate(360deg); } }
   </style>
 </head>
