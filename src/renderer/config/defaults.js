@@ -1,32 +1,19 @@
 /**
- * Default configuration values.
+ * Default configuration values. Shared defaults from src/shared; renderer-only below.
  */
-export const DEFAULT_AI_SETTINGS = {
-  provider: 'cyrex',
-  openaiApiKey: '',
-  anthropicApiKey: '',
-  googleApiKey: '',
-  openaiModel: 'gpt-4o-mini',
-  anthropicModel: 'claude-3-5-sonnet-20241022',
-  googleModel: 'gemini-1.5-flash',
-  localType: 'cyrex',
-  localCyrexUrl: 'http://localhost:8000',
-  localOllamaUrl: 'http://localhost:11434',
-  localOllamaModel: 'llama3.2'
-};
+export {
+  DEFAULT_AI_SETTINGS,
+  DEFAULT_APP_SETTINGS,
+  DEFAULT_TABS_SETTINGS,
+  DEFAULT_INDEXING_SETTINGS,
+  DEFAULT_TOOLS_SETTINGS,
+  DEFAULT_SKIP_DIRS
+} from '../../shared/defaults.js';
 
 export const DEFAULT_USAGE_LIMITS = {
   rateLimitRequestsPerMinute: 0,
   dailyLimitRequests: 0,
   dailyLimitTokens: 0
-};
-
-export const DEFAULT_APP_SETTINGS = {
-  apiUrl: 'http://localhost:5000/api',
-  aiServiceUrl: 'http://localhost:8000',
-  theme: 'dark',
-  autoSave: true,
-  fontSize: 14
 };
 
 export const DEFAULT_ACCOUNT_SETTINGS = {
@@ -35,25 +22,7 @@ export const DEFAULT_ACCOUNT_SETTINGS = {
   avatarUrl: ''
 };
 
-export const DEFAULT_TABS_SETTINGS = {
-  doubleClickToClose: false,
-  showFullPathInTab: false,
-  confirmCloseUnsaved: true
-};
-
 export const DEFAULT_NETWORKING_SETTINGS = {
   proxyUrl: '',
   offlineMode: false
-};
-
-export const DEFAULT_INDEXING_SETTINGS = {
-  indexOnOpen: true,
-  excludePatterns: 'node_modules, .git, dist',
-  docSources: []
-};
-
-export const DEFAULT_TOOLS_SETTINGS = {
-  nodePath: '',
-  pythonPath: '',
-  gitPath: ''
 };
