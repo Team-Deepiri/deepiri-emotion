@@ -1,5 +1,11 @@
 import React from 'react';
 
+const DEFAULT_ZOOM_FONT = 14;
+function zoomPercent(fontSize) {
+  if (fontSize == null) return null;
+  return Math.round((fontSize / DEFAULT_ZOOM_FONT) * 100);
+}
+
 export default function StatusBar({
   cursorPosition,
   language,
@@ -12,12 +18,17 @@ export default function StatusBar({
   wordCount = null,
   editorFontSize = null,
   onThemeCycle,
+  onZoomClick,
   showAIAssistant,
   onAIClick,
-  onProblemsClick
+  onProblemsClick,
+  onTerminalClick,
+  onOutputClick,
+  onPanelClick
 }) {
   const line = cursorPosition?.lineNumber ?? '—';
   const col = cursorPosition?.column ?? '—';
+  const zoom = zoomPercent(editorFontSize);
 
   return (
     <div className="status-bar">
@@ -29,8 +40,17 @@ export default function StatusBar({
         {wordCount != null && (
           <span className="status-item" title="Word count">{wordCount} words</span>
         )}
-        {editorFontSize != null && (
-          <span className="status-item" title="Editor font size (Ctrl+Plus/Minus to zoom)">{editorFontSize}px</span>
+        {zoom != null && (
+          <span
+            className="status-item status-clickable"
+            title="Editor zoom (Ctrl+Plus/Minus). Click to zoom in."
+            onClick={onZoomClick}
+          >
+            Zoom: {zoom}%
+          </span>
+        )}
+        {editorFontSize != null && zoom == null && (
+          <span className="status-item" title="Editor font size">{editorFontSize}px</span>
         )}
         <span className="status-item">Tab size: {tabSize}</span>
         <span className="status-item">{encoding}</span>
@@ -44,6 +64,15 @@ export default function StatusBar({
           <span className="status-item status-clickable" onClick={onThemeCycle} title="Cycle theme">
             {theme === 'dark' ? '🌙' : theme === 'light' ? '☀️' : '◐'} {theme}
           </span>
+        )}
+        {onTerminalClick && (
+          <span className="status-item status-clickable" onClick={onTerminalClick} title="Toggle Terminal (Ctrl+`)" role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && onTerminalClick()} aria-label="Toggle Terminal">Terminal</span>
+        )}
+        {onOutputClick && (
+          <span className="status-item status-clickable" onClick={onOutputClick} title="Toggle Output" role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && onOutputClick()} aria-label="Toggle Output">Output</span>
+        )}
+        {onPanelClick && (
+          <span className="status-item status-clickable" onClick={onPanelClick} title="Toggle Panel (Ctrl+J)" role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && onPanelClick()} aria-label="Toggle bottom panel">Panel</span>
         )}
       </div>
       <div className="status-right">

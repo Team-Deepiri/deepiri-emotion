@@ -175,7 +175,7 @@ class PluginSystem {
 }
 
 // Example plugin: Pomodoro Timer
-const pomodoroPlugin = `
+const _pomodoroPlugin = `
 function init() {
     console.log('Pomodoro plugin initialized');
     sandbox.api.ui.showNotification('Pomodoro timer ready!');

@@ -13,7 +13,7 @@ export async function classifyText(text) {
       const label = result?.label ?? result?.category ?? result?.classification ?? 'unknown';
       const confidence = typeof result?.confidence === 'number' ? result.confidence : 0.8;
       return { label, confidence, raw: result };
-    } catch (e) {
+    } catch {
       return fallbackClassify(text);
     }
   }

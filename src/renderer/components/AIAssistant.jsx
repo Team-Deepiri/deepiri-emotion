@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 
-const AIAssistant = ({ onHint, onCodeComplete }) => {
+const AIAssistant = ({ onHint: _onHint, onCodeComplete: _onCodeComplete }) => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -53,7 +53,7 @@ const AIAssistant = ({ onHint, onCodeComplete }) => {
         type: 'assistant',
         content: response
       }]);
-    } catch (error) {
+    } catch {
       setMessages(prev => [...prev, {
         id: Date.now() + 1,
         type: 'assistant',

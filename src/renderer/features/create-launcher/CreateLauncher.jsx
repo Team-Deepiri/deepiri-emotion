@@ -18,7 +18,7 @@ const TEMPLATES = [
 
 export default function CreateLauncher({ onClose, onOpenVisual, onOpenEmotion, onNewFileFromTemplate, projectRoot }) {
   const [choice, setChoice] = useState(null);
-  const [template, setTemplate] = useState(null);
+  const [_template, setTemplate] = useState(null);
   const ref = useRef(null);
 
   useEffect(() => {

@@ -1,34 +1,6 @@
 import React, { useRef, useCallback } from 'react';
 import Editor from '@monaco-editor/react';
-
-const LANGUAGE_MAP = {
-  js: 'javascript',
-  jsx: 'javascript',
-  ts: 'typescript',
-  tsx: 'typescript',
-  py: 'python',
-  json: 'json',
-  md: 'markdown',
-  html: 'html',
-  css: 'css',
-  scss: 'scss',
-  yaml: 'yaml',
-  yml: 'yaml',
-  sh: 'shell',
-  bash: 'shell',
-  rs: 'rust',
-  go: 'go',
-  java: 'java',
-  c: 'c',
-  cpp: 'cpp',
-  h: 'c',
-  hpp: 'cpp'
-};
-
-function getLanguage(filename) {
-  const ext = (filename || '').split('.').pop() || '';
-  return LANGUAGE_MAP[ext] || 'plaintext';
-}
+import { getLanguage } from '../../utils/editorLanguage';
 
 function fetchDocumentSymbols(editor, monaco, onSymbolsChange) {
   const model = editor.getModel();
@@ -102,7 +74,7 @@ export default function MonacoEditor({
             severity: m.severity === monaco.MarkerSeverity.Error ? 'error' : m.severity === monaco.MarkerSeverity.Warning ? 'warning' : 'info'
           })));
         };
-        const disposable = monaco.editor.onDidChangeMarkers((resources) => {
+        const _disposable = monaco.editor.onDidChangeMarkers((resources) => {
           if (resources.some((r) => r.toString() === uri.toString())) update();
         });
         update();
@@ -175,5 +147,3 @@ export default function MonacoEditor({
     </div>
   );
 }
-
-export { getLanguage };

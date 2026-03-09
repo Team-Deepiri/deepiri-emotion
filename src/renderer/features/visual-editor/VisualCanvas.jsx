@@ -24,10 +24,10 @@ export default function VisualCanvas({ onExportToFile }) {
   const [history, setHistory] = useState(() => [JSON.parse(JSON.stringify(getStoredCanvas(PROJECT_ID)))]);
   const [selectedId, setSelectedId] = useState(null);
   const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [pan, _setPan] = useState({ x: 0, y: 0 });
   const [dragNode, setDragNode] = useState(null);
   const [dragOffset, setDragOffset] = useState({ dx: 0, dy: 0 });
-  const [isDraggingFromPalette, setIsDraggingFromPalette] = useState(null);
+  const [_isDraggingFromPalette, setIsDraggingFromPalette] = useState(null);
   const [clipboardNodes, setClipboardNodes] = useState([]);
   const canvasRef = useRef(null);
 
@@ -374,8 +374,8 @@ export default function VisualCanvas({ onExportToFile }) {
 }
 
 function VisualNode({ node, isSelected, zoom, onSelect, onMouseDown }) {
-  const def = COMPONENT_DEFS[node.type];
-  const { width = 160, height = 40, x = 0, y = 0, props = {} } = node;
+  const _def = COMPONENT_DEFS[node.type];
+  const { width = 160, height = 40, x: _x = 0, y: _y = 0, props = {} } = node;
 
   return (
     <div

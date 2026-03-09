@@ -3,8 +3,8 @@
  * Centralized API communication
  */
 
-const API_BASE = process.env.API_URL || 'http://localhost:5000/api';
-const AI_SERVICE_BASE = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+const _API_BASE = process.env.API_URL || 'http://localhost:5000/api';
+const _AI_SERVICE_BASE = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 
 export const api = {
   async request(method, endpoint, data = null) {

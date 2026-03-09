@@ -44,7 +44,7 @@ export function startVoiceInput({ onResult, onError, onEnd }) {
   return () => {
     try {
       recognition?.abort();
-    } catch (_) {}
+    } catch { /* ignore */ }
     recognition = null;
   };
 }
@@ -52,6 +52,6 @@ export function startVoiceInput({ onResult, onError, onEnd }) {
 export function stopVoiceInput() {
   try {
     recognition?.stop();
-  } catch (_) {}
+  } catch { /* ignore */ }
   recognition = null;
 }

@@ -7,6 +7,16 @@ import { setEmotionalStateFromChat } from '../emotion/emotionService';
  * Cursor-style context-aware AI chat: knows current file and selection.
  * Optional agentProfile (deepiri-emotion) for personality-aware replies.
  */
+function modelLabel(aiSettings) {
+  if (!aiSettings) return null;
+  const p = aiSettings.provider || 'cyrex';
+  if (p === 'openai') return aiSettings.openaiModel || 'gpt-4o-mini';
+  if (p === 'anthropic') return aiSettings.anthropicModel || 'claude-3-5-sonnet';
+  if (p === 'google') return aiSettings.googleModel || 'gemini-1.5-flash';
+  if (p === 'local') return aiSettings.localOllamaModel || aiSettings.localCyrexUrl || 'Local';
+  return p;
+}
+
 export default function AIChatPanel({
   currentFile = null,
   currentContent = '',
@@ -20,9 +30,16 @@ export default function AIChatPanel({
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [aiSettings, setAiSettings] = useState(null);
   const endRef = useRef(null);
   const inputRef = useRef(null);
   const { success, error } = useNotifications();
+
+  useEffect(() => {
+    if (window.electronAPI?.getAiSettings) {
+      window.electronAPI.getAiSettings().then((s) => s && setAiSettings(s));
+    }
+  }, []);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -51,8 +68,38 @@ export default function AIChatPanel({
 
     try {
       const api = window.electronAPI;
+      const useUnified = api?.chatCompletion;
+
+      if (useUnified) {
+        const messagesForApi = [...messages, { role: 'user', content: text }];
+        const res = await api.chatCompletion({
+          messages: messagesForApi,
+          context: contextSummary,
+          fileContent: (currentContent || '').slice(0, 12000),
+          agentProfile: agentProfile ? {
+            id: agentProfile.id,
+            name: agentProfile.name,
+            tone: agentProfile.tone,
+            personality: agentProfile.personality,
+            systemPrompt: agentProfile.systemPrompt
+          } : null
+        });
+
+        if (!res.success) {
+          setMessages((prev) => [...prev, { role: 'assistant', content: `Error: ${res.error || 'Request failed'}` }]);
+          error(res.error || 'Request failed');
+          return;
+        }
+
+        const reply = res?.data?.reply ?? res?.data?.content ?? '';
+        setMessages((prev) => [...prev, { role: 'assistant', content: reply, raw: res?.data }]);
+        const sentiment = typeof reply === 'string' && (reply.length > 100 || /\b(great|thanks|helpful|perfect)\b/i.test(reply)) ? 0.3 : 0;
+        setEmotionalStateFromChat({ sentiment, messageLength: reply?.length || 0 });
+        return;
+      }
+
       if (!api?.aiRequest) {
-        setMessages((prev) => [...prev, { role: 'assistant', content: 'AI backend not configured. Set Cyrex URL in settings.' }]);
+        setMessages((prev) => [...prev, { role: 'assistant', content: 'AI not configured. Open API & Model (activity bar) or Settings → AI Provider and set an API key or local URL (e.g. Cyrex/Ollama).' }]);
         return;
       }
 
@@ -100,6 +147,11 @@ export default function AIChatPanel({
       <div className="ai-chat-header">
         <span>{agentProfile ? `Chat with ${agentProfile.name}` : 'AI Chat'}</span>
         <span className="ai-chat-context" title={contextSummary}>{contextSummary}</span>
+        {aiSettings && (
+          <span className="ai-chat-model" title="Current model (change in Settings → AI Provider)">
+            Model: {modelLabel(aiSettings)}
+          </span>
+        )}
       </div>
       <div className="ai-chat-messages">
         {messages.length === 0 && (

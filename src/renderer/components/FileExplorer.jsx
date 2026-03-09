@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-const FileExplorer = ({ files = [], onFileSelect, onFileCreate, onFileDelete }) => {
+const FileExplorer = ({ files = [], onFileSelect, onFileCreate, onFileDelete: _onFileDelete }) => {
   const [expanded, setExpanded] = useState({});
   const [selected, setSelected] = useState(null);
 

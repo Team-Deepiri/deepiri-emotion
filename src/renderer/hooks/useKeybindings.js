@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 export function useKeybindings(bindings) {
   useEffect(() => {
     const handler = (e) => {
-      for (const { key, ctrlKey, shiftKey, metaKey, altKey, action } of bindings) {
+      for (const { key, ctrlKey, shiftKey, metaKey: _metaKey, altKey, action } of bindings) {
         const mod = e.ctrlKey || e.metaKey;
         const shift = e.shiftKey;
         const keyMatch = key === e.key || (key.length === 1 && key.toLowerCase() === e.key?.toLowerCase());

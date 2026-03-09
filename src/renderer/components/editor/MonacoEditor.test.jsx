@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getLanguage } from './MonacoEditor';
+import { getLanguage } from '../../utils/editorLanguage';
 
 describe('getLanguage', () => {
   it('returns javascript for .js and .jsx', () => {

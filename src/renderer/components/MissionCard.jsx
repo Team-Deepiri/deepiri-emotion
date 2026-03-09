@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 
 const MissionCard = ({ mission, onComplete, onAbandon }) => {
   const [timeRemaining, setTimeRemaining] = useState(mission.duration * 60);
-  const [progress, setProgress] = useState(mission.progress || {});
+  const [progress, _setProgress] = useState(mission.progress || {});
 
   useEffect(() => {
     const interval = setInterval(() => {

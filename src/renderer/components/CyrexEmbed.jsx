@@ -28,20 +28,19 @@ export default function CyrexEmbed() {
 
   if (error) {
     return (
-      <div className="cyrex-embed-fallback" style={{ padding: 24, color: '#ccc', textAlign: 'center' }}>
+      <div className="cyrex-embed-fallback">
         <p>Cyrex interface could not be loaded.</p>
-        <p style={{ fontSize: 12 }}>{error}</p>
+        <p>{error}</p>
         <p>Run the Cyrex interface on port 5175 (e.g. in <code>diri-cyrex/cyrex-interface</code>: <code>npm run dev</code>).</p>
       </div>
     );
   }
 
   return (
-    <div className="cyrex-embed" style={{ width: '100%', height: '100%', minHeight: 400 }}>
+    <div className="cyrex-embed">
       <iframe
         title="Cyrex AI Interface"
         src={url}
-        style={{ width: '100%', height: '100%', border: 'none', background: '#1e1e1e' }}
         onError={() => setError('Failed to load Cyrex')}
       />
     </div>

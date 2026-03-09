@@ -7,7 +7,7 @@ import React from 'react';
 export default function DiffView({ original, suggested, fileName = '', onApply, onReject }) {
   const origLines = (original || '').split('\n');
   const suggLines = (suggested || '').split('\n');
-  const maxLines = Math.max(origLines.length, suggLines.length);
+  const _maxLines = Math.max(origLines.length, suggLines.length);
 
   return (
     <div className="diff-view">

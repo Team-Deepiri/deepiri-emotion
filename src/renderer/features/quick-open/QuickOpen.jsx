@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
  * Cursor-style Quick Open: Ctrl+P for files, type to filter.
  * Shows open tabs + recent files + (if project) placeholder for full search.
  */
-export default function QuickOpen({ isOpen, onClose, openTabs = [], projectRoot, onSelectFile, onSelectTab }) {
+export default function QuickOpen({ isOpen, onClose, openTabs = [], projectRoot: _projectRoot, onSelectFile, onSelectTab }) {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef(null);

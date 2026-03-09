@@ -151,7 +151,7 @@ class AIService {
           try {
             const meta = JSON.parse(cached.results[0].metadata || '{}');
             if (meta.task === task && meta.query === query) return meta.response;
-          } catch (_) {}
+          } catch { /* ignore */ }
         }
       }
       const result = await window.electronAPI.apiRequest({

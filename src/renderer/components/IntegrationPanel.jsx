@@ -80,7 +80,7 @@ const IntegrationPanel = () => {
         data: { provider }
       });
       setIntegrations((prev) => prev.filter((i) => i.provider !== provider));
-    } catch (error) {
+    } catch {
       setIntegrations((prev) => prev.map((i) => i.provider === provider ? { ...i, connected: false } : i));
     } finally {
       setLoading(false);

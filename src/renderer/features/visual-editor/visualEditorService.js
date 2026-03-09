@@ -87,7 +87,7 @@ export function getStoredCanvas(projectId = 'default') {
       const canvas = data[projectId] || data.default;
       if (canvas && Array.isArray(canvas.nodes)) return canvas;
     }
-  } catch (_) {}
+  } catch { /* ignore */ }
   return { nodes: [], viewport: { zoom: 1, panX: 0, panY: 0 } };
 }
 

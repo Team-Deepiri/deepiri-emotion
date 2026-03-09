@@ -1,13 +1,18 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { escapeRegex } from '../../utils/string';
+import SearchResultItem from '../../features/search/SearchResultItem';
+import Spinner from '../ui/Spinner';
 
 export default function SearchPanel({
   openTabs = [],
   projectRoot,
   onSelectTab,
   onSelectWorkspaceResult,
+  onReplaceAll,
   focusRequest
 }) {
   const [query, setQuery] = useState('');
+  const [replaceText, setReplaceText] = useState('');
   const [scope, setScope] = useState('open'); // 'open' | 'workspace'
   const [caseSensitive, setCaseSensitive] = useState(false);
   const [wholeWord, setWholeWord] = useState(false);
@@ -22,16 +27,12 @@ export default function SearchPanel({
     }
   }, [focusRequest]);
 
-  function escapeRe(s) {
-    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  }
-
   const searchInOpenTabs = () => {
     if (!query.trim()) {
       setResults([]);
       return;
     }
-    const q = escapeRe(query);
+    const q = escapeRegex(query);
     const re = wholeWord
       ? new RegExp(`\\b${q}\\b`, caseSensitive ? 'g' : 'gi')
       : new RegExp(q, caseSensitive ? 'g' : 'gi');
@@ -89,6 +90,12 @@ export default function SearchPanel({
     }
   };
 
+  const canReplace = scope === 'open' && results.some((r) => r.tabId != null) && query.trim();
+  const handleReplaceAll = () => {
+    if (!canReplace || !onReplaceAll || !replaceText.trim()) return;
+    onReplaceAll(results.filter((r) => r.tabId != null), replaceText, { caseSensitive, wholeWord, query: query.trim() });
+  };
+
   return (
     <div className="search-panel">
       <div className="search-header">
@@ -101,8 +108,27 @@ export default function SearchPanel({
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && runSearch()}
         />
-        <button type="button" className="btn-primary" onClick={runSearch} disabled={searching}>
-          {searching ? 'Searching…' : 'Search'}
+        <button type="button" className={`btn-primary ${searching ? 'search-btn-loading' : ''}`} onClick={runSearch} disabled={searching}>
+          {searching ? <><Spinner size={14} /> Searching…</> : 'Search'}
+        </button>
+      </div>
+      <div className="search-replace-row">
+        <input
+          type="text"
+          className="search-input search-replace-input"
+          placeholder="Replace (open files only)"
+          value={replaceText}
+          onChange={(e) => setReplaceText(e.target.value)}
+          disabled={scope !== 'open'}
+        />
+        <button
+          type="button"
+          className="btn-primary"
+          onClick={handleReplaceAll}
+          disabled={!canReplace}
+          title="Replace all in open files"
+        >
+          Replace All
         </button>
       </div>
       <div className="search-options">
@@ -133,14 +159,11 @@ export default function SearchPanel({
           <div className="search-result-count">{results.length} result(s)</div>
         )}
         {results.slice(0, 200).map((r, i) => (
-          <div
+          <SearchResultItem
             key={r.tabId ? `${r.tabId}-${r.line}-${i}` : `${r.path}-${r.line}-${i}`}
-            className="search-result-item"
+            result={r}
             onClick={() => handleResultClick(r)}
-          >
-            <span className="result-file">{r.name}:{r.line}</span>
-            <span className="result-preview">{r.text}</span>
-          </div>
+          />
         ))}
         {results.length > 200 && (
           <div className="search-more">… and {results.length - 200} more</div>

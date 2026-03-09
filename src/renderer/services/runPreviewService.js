@@ -39,7 +39,7 @@ export async function runOrPreview({ path: filePath, content, name }, projectRoo
     try {
       await api.runCommand({ command: `python "${filePath}"`, cwd });
       return { ok: true, message: 'Running in terminal' };
-    } catch (e) {
+    } catch {
       try {
         await api.runCommand({ command: `python3 "${filePath}"`, cwd });
         return { ok: true, message: 'Running in terminal' };

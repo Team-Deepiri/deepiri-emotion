@@ -6,7 +6,7 @@ import React, { useState, useCallback } from 'react';
 import { isVoiceSupported, startVoiceInput, stopVoiceInput } from './multimodalService.js';
 import './multimodal.css';
 
-export default function VoiceInput({ onTranscript, placeholder = 'Say something...', disabled }) {
+export default function VoiceInput({ onTranscript, placeholder: _placeholder = 'Say something...', disabled }) {
   const [listening, setListening] = useState(false);
   const [interim, setInterim] = useState('');
   const stopRef = React.useRef(null);

@@ -111,7 +111,7 @@ function TreeEntry({ entry, depth, selectedPath, onSelect, onRefresh, onCreateFi
       {entry.isDirectory && expanded && (
         <div className="tree-children">
           {loading ? (
-            <div style={{ paddingLeft: `${(depth + 1) * 12 + 8}px`, color: '#666' }}>Loading…</div>
+            <div className="tree-loading-indent" style={{ paddingLeft: `${(depth + 1) * 12 + 8}px` }}>Loading…</div>
           ) : (
             children.map((child) => (
               <TreeEntry
@@ -149,7 +149,7 @@ function TreeEntry({ entry, depth, selectedPath, onSelect, onRefresh, onCreateFi
   );
 }
 
-export default function WorkspaceFileExplorer({ projectRoot, selectedPath, onSelectFile, onRefresh }) {
+export default function WorkspaceFileExplorer({ projectRoot, selectedPath, onSelectFile, onRefresh: _onRefresh, refreshTrigger = 0 }) {
   const [rootEntries, setRootEntries] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -171,7 +171,7 @@ export default function WorkspaceFileExplorer({ projectRoot, selectedPath, onSel
 
   useEffect(() => {
     loadRoot();
-  }, [loadRoot, projectRoot]);
+  }, [loadRoot, projectRoot, refreshTrigger]);
 
   if (!projectRoot) {
     return (
