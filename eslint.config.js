@@ -5,8 +5,19 @@ import reactRefresh from 'eslint-plugin-react-refresh';
 import globals from 'globals';
 
 export default [
-  { ignores: ['dist/**', 'dist-renderer/**', 'node_modules/**', '**/*.test.js', '**/*.test.jsx'] },
+  { ignores: ['dist/**', 'dist-renderer/**', 'node_modules/**', '**/*.test.js', '**/*.test.jsx', 'cli/run.js'] },
   js.configs.recommended,
+  {
+    files: ['cli/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      globals: { ...globals.node }
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }]
+    }
+  },
   {
     files: ['src/**/*.js', 'src/**/*.jsx'],
     languageOptions: {

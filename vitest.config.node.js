@@ -8,7 +8,7 @@ export default defineConfig({
   root: __dirname,
   test: {
     environment: 'node',
-    include: ['src/**/*.test.node.js'],
+    include: ['src/**/*.test.node.js', 'cli/**/*.test.node.js'],
     globals: true
   }
 });
