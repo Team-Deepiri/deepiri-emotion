@@ -1,0 +1,131 @@
+/* Pipelines view — design tokens */
+
+.pipelines-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 16px;
+}
+
+.pipelines-sidebar-section {
+  margin-bottom: 16px;
+}
+
+.pipelines-sidebar-section .sidebar-header {
+  margin-bottom: 8px;
+}
+
+.pipelines-desc {
+  font-size: var(--font-size-small);
+  color: var(--tab-inactiveForeground);
+  margin: 0 0 12px 0;
+}
+
+.pipelines-field {
+  margin-bottom: 8px;
+}
+
+.pipelines-field label {
+  display: block;
+  font-size: var(--font-size-caption);
+  color: var(--tab-inactiveForeground);
+  margin-bottom: 4px;
+}
+
+.pipelines-select {
+  width: 100%;
+  padding: 8px;
+  background: var(--input-background);
+  color: var(--input-foreground);
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  font-size: var(--font-size-small);
+}
+
+.pipelines-select:focus {
+  outline: none;
+  border-color: var(--focusBorder);
+}
+
+.pipelines-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.pipelines-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: var(--font-size-small);
+}
+
+.pipelines-btn-run {
+  background: var(--button-background);
+  color: var(--button-foreground);
+}
+
+.pipelines-btn-run:hover:not(:disabled) {
+  background: var(--button-hoverBackground);
+}
+
+.pipelines-btn-run:disabled {
+  background: var(--tab-inactiveBackground);
+  color: var(--tab-inactiveForeground);
+  cursor: not-allowed;
+}
+
+.pipelines-btn-cancel {
+  background: var(--error-background);
+  color: var(--error-foreground);
+  border: 1px solid var(--error-foreground);
+}
+
+.pipelines-btn-cancel:hover {
+  background: var(--error-background);
+}
+
+.pipelines-helox-path {
+  font-size: var(--font-size-caption);
+  color: var(--tab-inactiveForeground);
+  margin-top: 8px;
+  margin-bottom: 0;
+}
+
+.pipelines-output {
+  flex: 1;
+  min-height: 200px;
+  background: var(--editor-background);
+  border-radius: 4px;
+  padding: 12px;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-small);
+}
+
+.pipelines-output-empty {
+  color: var(--tab-inactiveForeground);
+}
+
+.pipelines-output-line {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.pipelines-output-line.stderr {
+  color: var(--error-foreground);
+}
+
+.pipelines-output-line.system {
+  color: var(--accent-foreground);
+}
+
+.pipelines-output-line.stdout {
+  color: var(--sidebar-foreground);
+}
+
+.pipelines-exit {
+  margin: 0;
+  color: var(--accent-foreground);
+}
