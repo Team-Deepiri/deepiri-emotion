@@ -61,7 +61,7 @@
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.0.1",
     "@vitejs/plugin-react": "^4.2.1",
-    "@vitest/coverage-v8": "^2.1.9",
+    "@vitest/coverage-v8": "^4.1.4",
     "electron": "^28.0.0",
     "electron-builder": "^24.9.1",
     "esbuild": "^0.24.0",
@@ -74,8 +74,8 @@
     "jimp": "^1.6.0",
     "jsdom": "^25.0.1",
     "to-ico": "^1.1.5",
-    "vite": "^5.0.0",
-    "vitest": "^2.1.6"
+    "vite": "^8.0.8",
+    "vitest": "^4.1.4"
   },
   "build": {
     "appId": "com.deepiri.emotion",
