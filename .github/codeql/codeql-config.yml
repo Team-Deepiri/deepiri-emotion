@@ -1,0 +1,21 @@
+# CodeQL config for deepiri-emotion repository.
+name: deepiri-emotion-codeql
+
+# Focus analysis on primary JavaScript/TypeScript code directories.
+paths:
+  - src
+  - cli
+  - scripts
+
+# Exclude generated/build/runtime artifact paths for this repository.
+paths-ignore:
+  - '**/node_modules/**'
+  - '**/dist/**'
+  - '**/build/**'
+  - '**/coverage/**'
+  - '**/logs/**'
+  - '**/*.min.js'
+  - '**/src-tauri/target/**'
+  - '**/.vite/**'
+  - '**/.turbo/**'
+  - '**/.cache/**'
