@@ -105,7 +105,10 @@ export function runCommandTool(command, cwd = DEFAULT_CWD) {
 export function parseToolIntent(text) {
   const raw = (text || '').trim();
   const t = raw.toLowerCase();
-  const readMatch = t.match(/read\s+file\s+(.+)/) || t.match(/read\s+(.+\.\w+)/);
+  // const readMatch = t.match(/read\s+file\s+(.+)/) || t.match(/read\s+(.+\.\w+)/);
+  const readMatch =
+  t.match(/read\s+file\s+([^\s,]+)/) ||
+  t.match(/read\s+([^\s,]+\.\w+)/);
   if (readMatch) {
     return { tool: 'read_file', args: { filePath: readMatch[1].trim() } };
   }
@@ -118,4 +121,24 @@ export function parseToolIntent(text) {
     return { tool: 'run_command', args: { command: runMatch[1].trim() } };
   }
   return null;
+}
+
+/**
+ * Execute a tool by name.
+ * Used for future agent loop (not active yet).
+ */
+export async function executeTool(tool, args = {}, cwd = DEFAULT_CWD) {
+  if (tool === 'read_file') {
+    return readFileTool(args.filePath, cwd);
+  }
+
+  if (tool === 'search') {
+    return searchTool(args.query, cwd);
+  }
+
+  if (tool === 'run_command') {
+    return runCommandTool(args.command, cwd);
+  }
+
+  return { error: `Unknown tool: ${tool}` };
 }
