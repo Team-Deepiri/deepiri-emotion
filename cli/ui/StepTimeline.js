@@ -17,7 +17,7 @@ export function StepTimeline({ steps }) {
     ...steps.slice(-5).map((s, i) =>
       React.createElement(
         Text,
-        { key: s.id || i, dimColor: s.status === 'running' },
+        { key: `${s.id || 'step'}-${i}`, dimColor: s.status === 'running' },
         ' ',
         STEP_ICONS[s.type] || '•',
         ' ',
