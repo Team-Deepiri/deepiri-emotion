@@ -333,6 +333,22 @@ export function attachAgentRunner(bus, config = {}) {
 
         const isFinalAnswer = lastResponse.trim().startsWith('FINAL_ANSWER:');
 
+        if (loopToolIntent && loopToolIntent.tool === 'explain') {
+          const explainResult = await executeTool('explain', loopToolIntent.args);
+          bus.emit(EVENTS.AGENT_STEP, {
+            id: `step-${Date.now()}`,
+            type: 'teach',
+            status: 'complete',
+            message: explainResult.concept || 'Explanation',
+            concept: explainResult.concept,
+            explanation: explainResult.explanation,
+            example: explainResult.example || null,
+            category: explainResult.category
+          });
+          agentContext = `${agentContext}\n\n[Explanation delivered: ${explainResult.concept}]`;
+          continue;
+        }
+
         if (loopToolIntent) {
           bus.emit(EVENTS.AGENT_STATUS, {
             status: 'tool_running',
