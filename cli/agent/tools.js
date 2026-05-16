@@ -187,6 +187,15 @@ export function parseToolIntent(text) {
 }
 
 /**
+ * Explain tool: returns structured educational content.
+ * The LLM calls this in teach mode to surface reasoning, concepts, or best practices.
+ * No side effects — just returns the args as a structured object.
+ */
+export function explainTool({ concept, explanation, example = null, category = 'code_concept' }) {
+  return { concept, explanation, example, category };
+}
+
+/**
  * Execute a tool by name.
  * Used for future agent loop (not active yet).
  */
@@ -205,6 +214,10 @@ export async function executeTool(tool, args = {}, cwd = DEFAULT_CWD) {
 
   if (tool === 'run_command') {
     return runCommandTool(args.command, cwd);
+  }
+
+  if (tool === 'explain') {
+    return explainTool(args);
   }
 
   return { error: `Unknown tool: ${tool}` };
