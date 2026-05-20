@@ -5,6 +5,7 @@ import { EVENTS } from '../core/eventBus.js';
 import { streamLLM } from './llmStream.js';
 import { parseToolIntent, executeTool } from './tools.js';
 import { createSimplePlan } from './planner.js';
+import { detectSupportNeed } from './support.js';
 
 /**
  * @param {import('events').EventEmitter} bus
@@ -28,6 +29,12 @@ export function attachAgentRunner(bus, config = {}) {
     let steps = 0;
     const MAX_STEPS = 5;
     if (!text?.trim()) return;
+
+    const supportNeed = detectSupportNeed(text);
+    bus.emit(EVENTS.SUPPORT_MODE_CHANGED, supportNeed.needsSupport
+      ? { active: true, severity: supportNeed.severity, signals: supportNeed.signals }
+      : { active: false }
+    );
 
     bus.emit(EVENTS.AGENT_STATUS, { status: 'thinking', message: 'Thinking...' });
     bus.emit(EVENTS.AGENT_STEP, {
@@ -223,6 +230,18 @@ export function attachAgentRunner(bus, config = {}) {
         Give the best answer possible from the information already gathered, starting with FINAL_ANSWER:.
         `;
 
+        const supportPacingInstructions = supportNeed.needsSupport ? `
+
+        [Guided Support Mode]
+        The user may need more pacing assistance this turn. Adjust your response:
+        - Offer one safe next step at a time — do not list multiple options at once
+        - Keep explanations concise and grounded in the actual files
+        - Clearly flag risky or irreversible actions before suggesting them
+        - Avoid long multi-step procedures unless the user explicitly asks for them
+        - Use a calm, direct tone and skip unnecessary preamble
+        ` : '';
+
+        const fullInstructions = agentInstructions + supportPacingInstructions;
         const teachInstructions = teachMode ? `
 
         TEACH MODE (active):
