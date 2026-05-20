@@ -223,7 +223,44 @@ export function attachAgentRunner(bus, config = {}) {
         Give the best answer possible from the information already gathered, starting with FINAL_ANSWER:.
         `;
 
-        const simplePlan = createSimplePlan(text); 
+        const teachInstructions = teachMode ? `
+
+        TEACH MODE (active):
+        You are in Teach Mode. As you work, you must call the explain tool to surface educational content.
+
+        WHEN TO CALL explain:
+        - After reading a file that contains an important pattern or concept worth teaching
+        - When you encounter a design decision the developer would benefit from understanding
+        - When the answer involves a code flow or architectural pattern (event bus, agentic loop, tool dispatch, etc.)
+
+        HOW TO CALL explain:
+        Output a JSON tool call — and only that, no other text:
+        {
+          "tool": "explain",
+          "args": {
+            "concept": "<short concept name>",
+            "explanation": "<2-3 sentences: why this pattern exists and what it does>",
+            "example": "<short code snippet from a file you actually read this session, or null>",
+            "category": "<one of: agent_reasoning | code_concept | best_practice>"
+          }
+        }
+
+        CATEGORY GUIDE:
+        - agent_reasoning: why you chose this tool, file, or approach — your reasoning process
+        - code_concept: a meaningful code or architecture pattern found in files you have read this session
+        - best_practice: safe or project-aligned implementation guidance drawn from the actual codebase
+
+        EXPLAIN CALL RULES:
+        - Only call explain when you have read actual code in this session (not from general knowledge)
+        - Use real code from the files you have read as examples
+        - Do not repeat concepts you have already explained this turn
+        - Maximum 2 explain calls per user turn — stop calling explain after 2
+        - After each explain call, continue reasoning toward the final answer
+        ` : '';
+
+        const fullInstructions = agentInstructions + teachInstructions;
+
+        const simplePlan = createSimplePlan(text);
 
         let plannedToolContext = '';
 
@@ -239,7 +276,7 @@ export function attachAgentRunner(bus, config = {}) {
         }
 
       const promptForLlm = toolContext
-          ? `${agentInstructions}
+          ? `${fullInstructions}
 
         [Planning guidance]
         ${JSON.stringify(simplePlan, null, 2)}
@@ -248,7 +285,7 @@ export function attachAgentRunner(bus, config = {}) {
         ${text}
         ${toolContext}
         ${plannedToolContext}`
-          : `${agentInstructions}
+          : `${fullInstructions}
 
         [Planning guidance]
         ${JSON.stringify(simplePlan, null, 2)}
@@ -260,6 +297,8 @@ export function attachAgentRunner(bus, config = {}) {
       let agentContext = promptForLlm;
       const visitedFiles = new Set();
       const usedToolCalls = new Set();
+      let teachCallCount = 0;
+      const MAX_TEACH_CALLS = 2;
 
       while (steps < MAX_STEPS) {
         steps++;
@@ -334,6 +373,14 @@ export function attachAgentRunner(bus, config = {}) {
         const isFinalAnswer = lastResponse.trim().startsWith('FINAL_ANSWER:');
 
         if (loopToolIntent && loopToolIntent.tool === 'explain') {
+          if (teachCallCount >= MAX_TEACH_CALLS) {
+            agentContext = `${agentContext}
+
+        [System note]
+        Teach mode explain cap reached (${MAX_TEACH_CALLS} calls this turn). Do not call explain again.`;
+            continue;
+          }
+          teachCallCount++;
           const explainResult = await executeTool('explain', loopToolIntent.args);
           bus.emit(EVENTS.AGENT_STEP, {
             id: `step-${Date.now()}`,
