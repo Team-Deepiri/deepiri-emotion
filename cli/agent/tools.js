@@ -1,10 +1,12 @@
 /**
- * CLI tools: read_file, search, run_command. Used by runner to emit TOOL_START/TOOL_END.
+ * CLI tools: read_file, search, run_command, create_file, write_file, edit_file.
+ * Used by runner to emit TOOL_START/TOOL_END.
  */
 import { readFile, readdir, stat } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
 import { spawn } from 'child_process';
+import { createFileTool, writeFileTool, editFileTool } from './fileEdit.js';
 
 const DEFAULT_CWD = process.cwd();
 const RUN_TIMEOUT_MS = 30_000;
@@ -218,6 +220,18 @@ export async function executeTool(tool, args = {}, cwd = DEFAULT_CWD) {
 
   if (tool === 'explain') {
     return explainTool(args);
+  }
+
+  if (tool === 'create_file') {
+    return createFileTool(args.filePath, args.content, cwd);
+  }
+
+  if (tool === 'write_file') {
+    return writeFileTool(args.filePath, args.content, cwd, args.allowOverwrite === true);
+  }
+
+  if (tool === 'edit_file') {
+    return editFileTool(args.filePath, args.oldString, args.newString, cwd);
   }
 
   return { error: `Unknown tool: ${tool}` };
