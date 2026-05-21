@@ -12,7 +12,8 @@ export const INITIAL_STATE = {
   inputBuffer: '',
   error: null,
   teachMode: false,
-  supportMode: false
+  supportMode: false,
+  activeMode: null
 };
 
 export const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];

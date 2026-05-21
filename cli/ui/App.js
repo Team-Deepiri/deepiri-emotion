@@ -76,6 +76,10 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
       setState((s) => ({ ...s, supportMode: active }));
     };
 
+    const onModeChanged = ({ activeMode }) => {
+      setState((s) => ({ ...s, activeMode }));
+    };
+
     eventBus.on(EVENTS.USER_MESSAGE, onUserMessage);
     eventBus.on(EVENTS.LLM_TOKEN, onLlmToken);
     eventBus.on(EVENTS.LLM_DONE, onLlmDone);
@@ -85,6 +89,7 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
     eventBus.on(EVENTS.SPINNER_TICK, onSpinnerTick);
     eventBus.on(EVENTS.TEACH_MODE_CHANGED, onTeachModeChanged);
     eventBus.on(EVENTS.SUPPORT_MODE_CHANGED, onSupportModeChanged);
+    eventBus.on(EVENTS.MODE_CHANGED, onModeChanged);
 
     const spinnerTimer = setInterval(() => {
       eventBus.emit(EVENTS.SPINNER_TICK);
@@ -100,6 +105,7 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
       eventBus.off(EVENTS.SPINNER_TICK, onSpinnerTick);
       eventBus.off(EVENTS.TEACH_MODE_CHANGED, onTeachModeChanged);
       eventBus.off(EVENTS.SUPPORT_MODE_CHANGED, onSupportModeChanged);
+      eventBus.off(EVENTS.MODE_CHANGED, onModeChanged);
       clearInterval(spinnerTimer);
     };
   }, [eventBus]);
@@ -131,13 +137,14 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
       messages: state.messages,
       streamingMessage: state.streamingMessage
     }),
-    React.createElement(StepTimeline, { steps: state.steps }),
+    React.createElement(StepTimeline, { steps: state.steps, activeMode: state.activeMode }),
     React.createElement(StatusBar, {
       agentStatus: state.agentStatus,
       statusMessage: state.statusMessage,
       spinnerFrame: state.spinnerFrame,
       teachMode: state.teachMode,
-      supportMode: state.supportMode
+      supportMode: state.supportMode,
+      activeMode: state.activeMode
     }),
     React.createElement(Box, { marginTop: 1 },
       React.createElement(PromptInput, {

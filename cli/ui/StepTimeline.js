@@ -1,5 +1,6 @@
 import React from 'react';
 import { Box, Text } from 'ink';
+import { MODES } from '../core/modes.js';
 
 const STEP_ICONS = {
   thinking: '🧠',
@@ -15,12 +16,12 @@ const CATEGORY_LABELS = {
   best_practice: 'Best Practice'
 };
 
-export function StepTimeline({ steps }) {
+export function StepTimeline({ steps, activeMode }) {
   if (!steps.length) return null;
 
-  const visibleSteps = steps.filter(
-    (s) => s.type !== 'thinking' && s.type !== 'tool_call' && s.type !== 'tool_result'
-  );
+  const visibleSteps = activeMode === MODES.DEBUG
+    ? steps
+    : steps.filter((s) => s.type !== 'thinking' && s.type !== 'tool_call' && s.type !== 'tool_result');
 
   if (!visibleSteps.length) return null;
 
