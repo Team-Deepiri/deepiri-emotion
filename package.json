@@ -73,9 +73,12 @@
     "icon-gen": "^5.0.0",
     "jimp": "^1.6.0",
     "jsdom": "^25.0.1",
-    "to-ico": "^1.1.5",
+    "png-to-ico": "^3.0.1",
     "vite": "^8.0.8",
     "vitest": "^4.1.4"
+  },
+  "overrides": {
+    "dompurify": "3.4.0"
   },
   "build": {
     "appId": "com.deepiri.emotion",
