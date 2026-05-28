@@ -110,7 +110,6 @@ paths-ignore:
   - '**/coverage/**'
   - '**/logs/**'
   - '**/*.min.js'
-  - '**/src-tauri/target/**'
   - '**/.vite/**'
   - '**/.turbo/**'
   - '**/.cache/**'
