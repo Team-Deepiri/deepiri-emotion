@@ -1,6 +1,6 @@
 # Renderer API layer
 
-Single place for all communication with the Electron (or Tauri) bridge.
+Single place for all communication with the Electron bridge.
 
 ## Use the facade
 

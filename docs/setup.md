@@ -55,13 +55,6 @@ npm run setup:install                     # Same as --install-only via npm
 | **Git** | To clone the repo. |
 | **OS for building installers** | Build **Windows** on Windows, **macOS** on macOS, **Linux** on Linux. |
 
-Optional for **Tauri** build (alternative to Electron):
-
-| Requirement | Notes |
-|-------------|--------|
-| **Rust** | [rustup](https://rustup.rs/) — `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` then `cargo --version`. |
-| **Tauri CLI** (optional) | For Tauri dev/build: `cargo install tauri-cli` or use npm script if present. |
-
 ---
 
 ## 2. Clone and install
@@ -236,24 +229,7 @@ Then open a folder in the app and use Tasks, AI Chat, Cyrex tab, and Pipelines.
 
 ---
 
-## 8. Tauri (alternative to Electron)
-
-The project includes a **Tauri** backend in `src-tauri/`. You can build and run the same UI with Tauri instead of Electron.
-
-**Prerequisites:** Rust toolchain (`rustup`), then in the repo:
-
-```bash
-npm install
-# Build/run Tauri (exact command may depend on your Tauri setup)
-cd src-tauri && cargo build
-# Or from repo root, if you have a script: npm run tauri dev
-```
-
-The renderer is shared; when running under Tauri, the preload uses `window.__TAURI__` and calls Rust commands for file, project, config, and session. See `src-tauri/README.md` for the backend layout.
-
----
-
-## 9. Verify setup (lint, test, build)
+## 8. Verify setup (lint, test, build)
 
 Before committing or distributing, run:
 
@@ -274,7 +250,7 @@ Optional:
 
 ---
 
-## 10. First run checklist
+## 9. First run checklist
 
 1. **Launch** — From installer or `npm run dev` (with `npm run dev:renderer` in another terminal).
 2. **Welcome** — Use “Open Folder” to choose a project directory (or “Recent” if you’ve opened one before).
