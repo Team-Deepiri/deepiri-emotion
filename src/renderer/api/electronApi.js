@@ -1,5 +1,5 @@
 /**
- * Centralized access to the Electron (or Tauri) bridge.
+ * Centralized access to the Electron bridge.
  * Use this module instead of window.electronAPI for null-safety and consistency.
  *
  * - getElectronAPI(): raw bridge or null (use when you need to pass the object).

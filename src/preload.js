@@ -9,14 +9,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // API Requests
   apiRequest: async ({ method, endpoint, data, headers = {} }) => {
     try {
-      if (window.__TAURI__) {
-        // Tauri environment
-        const { invoke } = window.__TAURI__.tauri;
-        return await invoke('api_request', { method, endpoint, data });
-      } else {
-        // Electron environment
-        return await ipcRenderer.invoke('api-request', { method, endpoint, data, headers });
-      }
+      return await ipcRenderer.invoke('api-request', { method, endpoint, data, headers });
     } catch (error) {
       console.error('API request error:', error);
       throw error;
@@ -26,16 +19,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // AI Requests
   aiRequest: async ({ endpoint, data, headers = {} }) => {
     try {
-      if (window.__TAURI__) {
-        const { invoke } = window.__TAURI__.tauri;
-        return await invoke('api_request', { 
-          method: 'POST', 
-          endpoint: `/ai${endpoint}`, 
-          data 
-        });
-      } else {
-        return await ipcRenderer.invoke('ai-request', { endpoint, data, headers });
-      }
+      return await ipcRenderer.invoke('ai-request', { endpoint, data, headers });
     } catch (error) {
       console.error('AI request error:', error);
       throw error;
@@ -45,12 +29,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Task Management
   createTask: async (title, description = '', type = 'manual') => {
     try {
-      if (window.__TAURI__) {
-        const { invoke } = window.__TAURI__.tauri;
-        return await invoke('create_task', { title, description, task_type: type });
-      } else {
-        return await ipcRenderer.invoke('create-task', { title, description, type });
-      }
+      return await ipcRenderer.invoke('create-task', { title, description, type });
     } catch (error) {
       console.error('Create task error:', error);
       throw error;
@@ -59,12 +38,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   getTasks: async () => {
     try {
-      if (window.__TAURI__) {
-        const { invoke } = window.__TAURI__.tauri;
-        return await invoke('get_tasks');
-      } else {
-        return await ipcRenderer.invoke('get-tasks');
-      }
+      return await ipcRenderer.invoke('get-tasks');
     } catch (error) {
       console.error('Get tasks error:', error);
       throw error;
@@ -74,16 +48,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Challenge Management
   generateChallenge: async (taskData) => {
     try {
-      if (window.__TAURI__) {
-        const { invoke } = window.__TAURI__.tauri;
-        return await invoke('api_request', {
-          method: 'POST',
-          endpoint: '/challenge/generate',
-          data: { task: taskData }
-        });
-      } else {
-        return await ipcRenderer.invoke('generate-challenge', taskData);
-      }
+      return await ipcRenderer.invoke('generate-challenge', taskData);
     } catch (error) {
       console.error('Generate challenge error:', error);
       throw error;
@@ -92,12 +57,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   generateChallengeLocal: async (taskId) => {
     try {
-      if (window.__TAURI__) {
-        const { invoke } = window.__TAURI__.tauri;
-        return await invoke('generate_challenge_local', { task_id: taskId });
-      } else {
-        return await ipcRenderer.invoke('generate-challenge-local', taskId);
-      }
+      return await ipcRenderer.invoke('generate-challenge-local', taskId);
     } catch (error) {
       console.error('Generate local challenge error:', error);
       throw error;
@@ -107,16 +67,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Task Classification
   classifyTask: async (task, description = null) => {
     try {
-      if (window.__TAURI__) {
-        const { invoke } = window.__TAURI__.tauri;
-        return await invoke('api_request', {
-          method: 'POST',
-          endpoint: '/task/classify',
-          data: { task, description }
-        });
-      } else {
-        return await ipcRenderer.invoke('classify-task', { task, description });
-      }
+      return await ipcRenderer.invoke('classify-task', { task, description });
     } catch (error) {
       console.error('Classify task error:', error);
       throw error;
@@ -126,12 +77,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Gamification
   awardPoints: async (points) => {
     try {
-      if (window.__TAURI__) {
-        const { invoke } = window.__TAURI__.tauri;
-        return await invoke('award_points', { points });
-      } else {
-        return await ipcRenderer.invoke('award-points', points);
-      }
+      return await ipcRenderer.invoke('award-points', points);
     } catch (error) {
       console.error('Award points error:', error);
       throw error;
@@ -140,12 +86,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   getGamificationState: async () => {
     try {
-      if (window.__TAURI__) {
-        const { invoke } = window.__TAURI__.tauri;
-        return await invoke('get_gamification_state');
-      } else {
-        return await ipcRenderer.invoke('get-gamification-state');
-      }
+      return await ipcRenderer.invoke('get-gamification-state');
     } catch (error) {
       console.error('Get gamification state error:', error);
       throw error;
@@ -155,12 +96,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Integrations
   syncGithubIssues: async (repo = '', token = null) => {
     try {
-      if (window.__TAURI__) {
-        const { invoke } = window.__TAURI__.tauri;
-        return await invoke('sync_github_issues', { repo, token });
-      } else {
-        return await ipcRenderer.invoke('sync-github-issues', { repo, token });
-      }
+      return await ipcRenderer.invoke('sync-github-issues', { repo, token });
     } catch (error) {
       console.error('Sync GitHub issues error:', error);
       throw error;
@@ -170,12 +106,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // LLM
   getLLMHint: async (task) => {
     try {
-      if (window.__TAURI__) {
-        const { invoke } = window.__TAURI__.tauri;
-        return await invoke('get_llm_hint', { task });
-      } else {
-        return await ipcRenderer.invoke('get-llm-hint', task);
-      }
+      return await ipcRenderer.invoke('get-llm-hint', task);
     } catch (error) {
       console.error('Get LLM hint error:', error);
       return 'Hint generation unavailable';
@@ -184,12 +115,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   completeCode: async (code, language) => {
     try {
-      if (window.__TAURI__) {
-        const { invoke } = window.__TAURI__.tauri;
-        return await invoke('complete_code', { code, language });
-      } else {
-        return await ipcRenderer.invoke('complete-code', { code, language });
-      }
+      return await ipcRenderer.invoke('complete-code', { code, language });
     } catch (error) {
       console.error('Complete code error:', error);
       return code;
@@ -199,12 +125,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Session Recording
   startSession: async (userId) => {
     try {
-      if (window.__TAURI__) {
-        const { invoke } = window.__TAURI__.tauri;
-        return await invoke('start_session', { user_id: userId });
-      } else {
-        return await ipcRenderer.invoke('start-session', userId);
-      }
+      return await ipcRenderer.invoke('start-session', userId);
     } catch (error) {
       console.error('Start session error:', error);
       throw error;
@@ -213,12 +134,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   recordKeystroke: async (key, file, line, column) => {
     try {
-      if (window.__TAURI__) {
-        const { invoke } = window.__TAURI__.tauri;
-        await invoke('record_keystroke', { key, file, line, column });
-      } else {
-        await ipcRenderer.invoke('record-keystroke', { key, file, line, column });
-      }
+      await ipcRenderer.invoke('record-keystroke', { key, file, line, column });
     } catch (error) {
       console.error('Record keystroke error:', error);
     }
@@ -226,12 +142,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   recordFileChange: async (file, changeType, details) => {
     try {
-      if (window.__TAURI__) {
-        const { invoke } = window.__TAURI__.tauri;
-        await invoke('record_file_change', { file, change_type: changeType, details: details ?? null });
-      } else {
-        await ipcRenderer.invoke('record-file-change', { file, changeType, details });
-      }
+      await ipcRenderer.invoke('record-file-change', { file, changeType, details });
     } catch (error) {
       console.error('Record file change error:', error);
     }
@@ -239,12 +150,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   endSession: async () => {
     try {
-      if (window.__TAURI__) {
-        const { invoke } = window.__TAURI__.tauri;
-        return await invoke('end_session');
-      } else {
-        return await ipcRenderer.invoke('end-session');
-      }
+      return await ipcRenderer.invoke('end-session');
     } catch (error) {
       console.error('End session error:', error);
       throw error;
@@ -254,12 +160,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // File System
   openFile: async (path) => {
     try {
-      if (window.__TAURI__) {
-        const { readTextFile } = window.__TAURI__.fs;
-        return await readTextFile(path);
-      } else {
-        return await ipcRenderer.invoke('open-file', path);
-      }
+      return await ipcRenderer.invoke('open-file', path);
     } catch (error) {
       console.error('Open file error:', error);
       throw error;
@@ -268,16 +169,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   saveFile: async (path, content) => {
     try {
-      if (window.__TAURI__) {
-        const { writeTextFile } = window.__TAURI__.fs;
-        await writeTextFile(path, content);
-        return { success: true };
-      } else {
-        const payload = typeof path === 'object' && path !== null && 'path' in path
-          ? path
-          : { path, content };
-        return await ipcRenderer.invoke('save-file', payload);
-      }
+      const payload = typeof path === 'object' && path !== null && 'path' in path
+        ? path
+        : { path, content };
+      return await ipcRenderer.invoke('save-file', payload);
     } catch (error) {
       console.error('Save file error:', error);
       throw error;
@@ -304,12 +199,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // IDE Utilities
   openProject: async () => {
     try {
-      if (window.__TAURI__) {
-        const { open } = window.__TAURI__.dialog;
-        return await open({ directory: true });
-      } else {
-        return await ipcRenderer.invoke('open-project');
-      }
+      return await ipcRenderer.invoke('open-project');
     } catch (error) {
       console.error('Open project error:', error);
       throw error;
@@ -317,53 +207,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   getProjectRoot: async () => {
-    if (window.__TAURI__) {
-      const { invoke } = window.__TAURI__.tauri;
-      return await invoke('get_project_root');
-    }
     return await ipcRenderer.invoke('get-project-root');
   },
   setProjectRoot: async (path) => {
-    if (window.__TAURI__) {
-      const { invoke } = window.__TAURI__.tauri;
-      return await invoke('set_project_root', { path: path ?? null });
-    }
     return await ipcRenderer.invoke('set-project-root', path);
   },
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   listDirectory: async (path) => {
-    if (window.__TAURI__) {
-      const { invoke } = window.__TAURI__.tauri;
-      const entries = await invoke('list_directory', { dirPath: path });
-      return entries;
-    }
     return await ipcRenderer.invoke('list-directory', path);
   },
   listWorkspaceFiles: async (rootDir, excludePatterns) => {
-    if (window.__TAURI__) {
-      const { invoke } = window.__TAURI__.tauri;
-      return await invoke('list_workspace_files', { rootDir, excludePatterns: excludePatterns ?? null });
-    }
     return await ipcRenderer.invoke('list-workspace-files', rootDir, excludePatterns);
   },
   createFile: async (opts) => {
-    if (window.__TAURI__) {
-      const { invoke } = window.__TAURI__.tauri;
-      const o = typeof opts === 'object' && opts !== null ? opts : {};
-      const dir_path = o.dirPath ?? o.dir_path ?? '';
-      const name = o.name ?? '';
-      return await invoke('create_file', { dir_path, name });
-    }
     return await ipcRenderer.invoke('create-file', opts);
   },
   createFolder: async (opts) => {
-    if (window.__TAURI__) {
-      const { invoke } = window.__TAURI__.tauri;
-      const o = typeof opts === 'object' && opts !== null ? opts : {};
-      const dir_path = o.dirPath ?? o.dir_path ?? '';
-      const name = o.name ?? '';
-      return await invoke('create_folder', { dir_path, name });
-    }
     return await ipcRenderer.invoke('create-folder', opts);
   },
   deletePath: (path) => ipcRenderer.invoke('delete-path', path),
@@ -441,18 +300,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // AI provider settings (stored in main process userData)
   getAiSettings: async () => {
-    if (window.__TAURI__) {
-      const { invoke } = window.__TAURI__.tauri;
-      return await invoke('get_ai_settings');
-    }
     return await ipcRenderer.invoke('get-ai-settings');
   },
   detectRuntime: () => ipcRenderer.invoke('detect-runtime'),
   setAiSettings: async (settings) => {
-    if (window.__TAURI__) {
-      const { invoke } = window.__TAURI__.tauri;
-      return await invoke('set_ai_settings', { settings });
-    }
     return await ipcRenderer.invoke('set-ai-settings', settings);
   },
   chatCompletion: (opts) => ipcRenderer.invoke('chat-completion', opts),

@@ -112,7 +112,7 @@ deepiri-emotion-desktop/
 
 | Doc | Content |
 |-----|---------|
-| **[docs/setup.md](docs/setup.md)** | **Full setup guide** — prerequisites, clone, dev run, build, optional backends, env, Tauri, verify. |
+| **[docs/setup.md](docs/setup.md)** | **Full setup guide** — prerequisites, clone, dev run, build, optional backends, env, verify. |
 | **[docs/install.md](docs/install.md)** | Installers, dev setup, optional backends, Terminal CLI (2.2b). |
 | **[docs/architecture.md](docs/architecture.md)** | Tech stack, main vs renderer, optional services, security, packaging. |
 | **[docs/local-storage.md](docs/local-storage.md)** | Where user data is stored (userData, localStorage, SQLite); when to add a DB. |

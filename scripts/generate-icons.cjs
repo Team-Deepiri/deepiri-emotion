@@ -19,9 +19,8 @@ async function main() {
   console.log('Created', pngPath);
 
   // 2) PNG -> ICO for Windows
-  const toIco = require('to-ico');
-  const pngBuf = fs.readFileSync(pngPath);
-  const icoBuf = await toIco(pngBuf, { resize: true });
+  const { default: pngToIco } = await import('png-to-ico');
+  const icoBuf = await pngToIco(pngPath);
   fs.writeFileSync(path.join(ASSETS, 'icon.ico'), icoBuf);
   console.log('Created assets/icon.ico');
 
