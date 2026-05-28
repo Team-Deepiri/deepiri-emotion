@@ -7,20 +7,33 @@
   height: 35px;
   min-height: 35px;
   padding: 0 4px;
-  background: var(--editorGroupHeader-tabsBackground);
+  background: linear-gradient(180deg, var(--editorGroupHeader-tabsBackground) 0%, rgba(19, 31, 45, 0.95) 100%);
   border-bottom: 1px solid var(--tab-border);
   flex-shrink: 0;
+  position: relative;
 }
+
+.menu-bar::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, rgba(91, 163, 208, 0.1) 50%, transparent 100%);
+}
+
 .menu-bar-item-wrap { position: relative; }
 .menu-bar-trigger {
-  padding: 4px 10px;
+  padding: 6px 12px;
   margin: 0 2px;
   border: none;
   background: transparent;
   color: var(--tab-inactiveForeground);
   font-size: var(--font-size-small);
   cursor: pointer;
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
+  transition: all var(--duration-fast) var(--ease-out);
 }
 .menu-bar-trigger:hover { background: var(--tab-hoverBackground); color: var(--sidebar-foreground); }
 .menu-bar-trigger.open { background: var(--tab-activeBackground); color: var(--tab-activeForeground); }
@@ -33,29 +46,119 @@
   overflow-y: auto;
   background: var(--surface-elevated);
   border: 1px solid var(--input-border);
-  border-radius: 4px;
-  box-shadow: var(--shadow-modal);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xl);
   z-index: 10000;
   padding: 4px 0;
-  margin-top: 2px;
+  margin-top: 4px;
+  animation: dropdownIn 0.15s var(--ease-out);
 }
+
+@keyframes dropdownIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .menu-bar-option {
   display: flex;
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  padding: 6px 12px;
+  padding: 8px 14px;
   border: none;
   background: none;
   color: var(--sidebar-foreground);
   cursor: pointer;
   font-size: var(--font-size-small);
   text-align: left;
+  transition: background var(--duration-fast) var(--ease-out);
 }
 .menu-bar-option:hover { background: var(--list-hoverBackground); }
 .menu-bar-option-label { flex: 1; }
-.menu-bar-shortcut { font-size: var(--font-size-caption); color: var(--tab-inactiveForeground); margin-left: 16px; }
+.menu-bar-shortcut { font-size: var(--font-size-caption); color: var(--tab-inactiveForeground); margin-left: 16px; font-family: var(--font-mono); }
 .menu-bar-divider { height: 1px; background: var(--panel-border); margin: 4px 0; }
+
+/* File explorer modern styling */
+.file-explorer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.file-explorer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--sidebarSectionHeader-background);
+  border-bottom: 1px solid var(--sidebar-border);
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--sidebarSectionHeader-foreground);
+}
+
+.file-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.file-action-btn {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--sidebar-foreground);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  font-size: 16px;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.file-action-btn:hover {
+  background: var(--list-hoverBackground);
+  color: var(--accent-foreground);
+}
+
+.tree-node {
+  user-select: none;
+}
+
+.tree-chevron {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--tab-inactiveForeground);
+  flex-shrink: 0;
+}
+
+.tree-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-badge {
+  padding: 1px 6px;
+  background: var(--accent-background);
+  color: var(--accent-foreground);
+  border-radius: var(--radius-pill);
+  font-size: 10px;
+  font-weight: 600;
+}
 
 .editor-tabs {
   display: flex;

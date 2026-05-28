@@ -2,9 +2,10 @@
  * API Utilities
  * Centralized API communication
  */
+import { ENDPOINTS } from '../api/endpoints.js';
 
-const _API_BASE = process.env.API_URL || 'http://localhost:5000/api';
-const _AI_SERVICE_BASE = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+const _API_BASE = ENDPOINTS.DEFAULT_API_BASE;
+const _AI_SERVICE_BASE = ENDPOINTS.DEFAULT_AI_SERVICE;
 
 export const api = {
   async request(method, endpoint, data = null) {

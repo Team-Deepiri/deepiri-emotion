@@ -1,16 +1,10 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import CodeEditor from './components/CodeEditor';
 import FileExplorer from './components/FileExplorer';
-import ChallengePanel from './components/ChallengePanel';
-import GamificationWidget from './components/GamificationWidget';
 import TaskManager from './components/TaskManager';
 import AIAssistant from './components/AIAssistant';
 import Settings from './components/Settings';
 import ApiModelsPage from './components/ApiModelsPage';
-import MissionCard from './components/MissionCard';
-import CyrexEmbed from './components/CyrexEmbed';
-import PipelinesView from './components/PipelinesView';
-import MonacoEditor from './components/editor/MonacoEditor';
 import EditorTabs from './components/editor/EditorTabs';
 import WorkspaceFileExplorer from './components/workspace/WorkspaceFileExplorer';
 import WorkspaceHeader from './components/workspace/WorkspaceHeader';
@@ -25,7 +19,6 @@ import SearchPanel from './components/panels/SearchPanel';
 import OutlinePanel from './components/panels/OutlinePanel';
 import KeybindingsPanel from './components/panels/KeybindingsPanel';
 import ExtensionsPanel from './components/panels/ExtensionsPanel';
-import FineTuningPanel from './components/panels/FineTuningPanel';
 import ToolsPanel from './components/panels/ToolsPanel';
 import ClassificationPanel from './components/panels/ClassificationPanel';
 import DebugConsolePanel from './components/panels/DebugConsolePanel';
@@ -33,13 +26,8 @@ import PortsPanel from './components/panels/PortsPanel';
 import MenuBar from './components/MenuBar';
 import WelcomeScreen from './components/WelcomeScreen';
 import QuickOpen from './features/quick-open/QuickOpen';
-import AIChatPanel from './features/ai-chat/AIChatPanel';
-import DiffView from './features/generation/DiffView';
 import { EmotionPanel, useEmotion } from './features/emotion';
-import { VisualCanvas } from './features/visual-editor';
-import CreateLauncher from './features/create-launcher/CreateLauncher';
 import VoiceInput from './features/multimodal/VoiceInput';
-import GuideView from './features/guide/GuideView';
 import Breadcrumbs from './components/Breadcrumbs';
 import Notifications from './components/Notifications';
 import { ResizeHandleVertical, ResizeHandleHorizontal } from './components/ResizeHandle';
@@ -52,7 +40,6 @@ import { STORAGE_KEYS } from './constants/storageKeys';
 import { getJSON } from './utils/storage';
 import { DEFAULT_TABS_SETTINGS } from './config';
 import './services/aiService';
-import './services/challengeService';
 import './services/taskService';
 import './integrations/github';
 import './integrations/notion';
@@ -62,6 +49,20 @@ import { runHooks, HOOK_NAMES } from './services/hooksRegistry';
 import { registerBuiltinTools } from './services/toolsRegistry';
 import { api, getElectronAPI } from './api';
 
+const MonacoEditor = lazy(() => import('./components/editor/MonacoEditor'));
+const CyrexEmbed = lazy(() => import('./components/CyrexEmbed'));
+const PipelinesView = lazy(() => import('./components/PipelinesView'));
+const AIChatPanel = lazy(() => import('./features/ai-chat/AIChatPanel'));
+const DiffView = lazy(() => import('./features/generation/DiffView'));
+const FineTuningPanel = lazy(() => import('./components/panels/FineTuningPanel'));
+const VisualCanvas = lazy(() => import('./features/visual-editor').then((m) => ({ default: m.VisualCanvas })));
+const CreateLauncher = lazy(() => import('./features/create-launcher/CreateLauncher'));
+const GuideView = lazy(() => import('./features/guide/GuideView'));
+
+function LazyFallback({ label = 'Loading…' }) {
+  return <div className="monaco-loading" style={{ padding: 24 }}>{label}</div>;
+}
+
 let tabIdCounter = 0;
 function nextTabId() {
   return `tab-${++tabIdCounter}`;
@@ -70,12 +71,9 @@ function nextTabId() {
 const App = () => {
   const [activeFile, setActiveFile] = useState(null);
   const [files, setFiles] = useState([]);
-  const [_challenges, setChallenges] = useState([]);
-  const [_activeChallenge, setActiveChallenge] = useState(null);
   const [sessionId, setSessionId] = useState(null);
   const [currentView, setCurrentView] = useState('explorer');
   const [showAIAssistant, setShowAIAssistant] = useState(false);
-  const [activeMissions, setActiveMissions] = useState([]);
   const [projectRoot, setProjectRoot] = useState(null);
   const [openTabs, setOpenTabs] = useState([]);
   const [activeTabId, setActiveTabId] = useState(null);
@@ -212,18 +210,6 @@ const App = () => {
     registerBuiltinTools();
   }, []);
 
-  const _initializeApp = async () => {
-    try {
-      const userId = localStorage.getItem('user_id') || 'default_user';
-      const session = await api.startSession(userId);
-      setSessionId(session);
-      loadFiles();
-      loadChallenges();
-    } catch (error) {
-      console.error('Initialization error:', error);
-    }
-  };
-
   const loadFiles = async () => {
     try {
       const result = await api.getTasks();
@@ -298,20 +284,6 @@ const App = () => {
     }
   };
 
-  const loadChallenges = async () => {
-    try {
-      const result = await api.apiRequest({
-        method: 'GET',
-        endpoint: '/challenges'
-      });
-      if (result.success) {
-        setChallenges(result.data);
-      }
-    } catch (error) {
-      console.error('Error loading challenges:', error);
-    }
-  };
-
   const handleFileSelect = async (file) => {
     if (file.type === 'file') {
       let content = file.content || '';
@@ -336,16 +308,6 @@ const App = () => {
     }
   };
 
-  const handleChallengeStart = async (challenge) => {
-    setActiveChallenge(challenge);
-    if (window.missionSystem) {
-      window.missionSystem.createMission(
-        { id: challenge.id, title: challenge.title },
-        'coding_sprint'
-      );
-    }
-  };
-
   const handleCodeChange = (code) => {
     if (activeFile) {
       setActiveFile(prev => ({ ...prev, content: code }));
@@ -360,31 +322,6 @@ const App = () => {
       content: task.description || '',
       type: 'task'
     });
-  };
-
-  const handleCreateMission = async (task) => {
-    try {
-      const challenge = await window.challengeService.createChallengeFromTask(task);
-      const mission = await window.challengeService.startChallenge(challenge);
-      if (mission) {
-        setActiveMissions(prev => [...prev, mission]);
-      }
-    } catch (error) {
-      console.error('Mission creation error:', error);
-    }
-  };
-
-  const handleMissionComplete = async (missionId) => {
-    try {
-      await window.challengeService.completeChallenge(missionId, { success: true });
-      setActiveMissions(prev => prev.filter(m => m.id !== missionId));
-    } catch (error) {
-      console.error('Mission completion error:', error);
-    }
-  };
-
-  const handleMissionAbandon = (missionId) => {
-    setActiveMissions(prev => prev.filter(m => m.id !== missionId));
   };
 
   const switchView = (view) => {
@@ -702,24 +639,6 @@ const App = () => {
           </svg>
         </div>
         <div 
-          className={`activity-item ${currentView === 'challenges' ? 'active' : ''}`}
-          onClick={() => switchView('challenges')}
-          title="Challenges"
-        >
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-          </svg>
-        </div>
-        <div 
-          className={`activity-item ${currentView === 'gamification' ? 'active' : ''}`}
-          onClick={() => switchView('gamification')}
-          title="Gamification"
-        >
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <circle cx="12" cy="12" r="10"/>
-          </svg>
-        </div>
-        <div 
           className={`activity-item ${currentView === 'integrations' ? 'active' : ''}`}
           onClick={() => switchView('integrations')}
           title="Integrations"
@@ -864,34 +783,11 @@ const App = () => {
           )}
         </div>
 
-        <div className="sidebar-content hidden" id="challenges-view">
-          <div className="sidebar-header">
-            <span>CHALLENGES</span>
-          </div>
-          <ChallengePanel
-            onChallengeStart={handleChallengeStart}
-            onChallengeComplete={(_id) => {
-              setActiveChallenge(null);
-              loadChallenges();
-            }}
-          />
-        </div>
-
         <div className="sidebar-content hidden" id="tasks-view">
           <div className="sidebar-header">
             <span>TASKS</span>
           </div>
-          <TaskManager
-            onTaskSelect={handleTaskSelect}
-            onCreateMission={handleCreateMission}
-          />
-        </div>
-
-        <div className="sidebar-content hidden" id="gamification-view">
-          <div className="sidebar-header">
-            <span>GAMIFICATION</span>
-          </div>
-          <GamificationWidget />
+          <TaskManager onTaskSelect={handleTaskSelect} />
         </div>
 
         <div className="sidebar-content hidden" id="cyrex-view">
@@ -978,16 +874,18 @@ const App = () => {
         <div className="editor-container">
           <div className="editor-main">
             {showDiffView ? (
-              <DiffView
-                original={diffOriginal}
-                suggested={diffSuggested}
-                fileName={activeTab?.name}
-                onApply={(content) => {
-                  if (activeTabId) updateTabContent(activeTabId, content);
-                  setShowDiffView(false);
-                }}
-                onReject={() => setShowDiffView(false)}
-              />
+              <Suspense fallback={<LazyFallback />}>
+                <DiffView
+                  original={diffOriginal}
+                  suggested={diffSuggested}
+                  fileName={activeTab?.name}
+                  onApply={(content) => {
+                    if (activeTabId) updateTabContent(activeTabId, content);
+                    setShowDiffView(false);
+                  }}
+                  onReject={() => setShowDiffView(false)}
+                />
+              </Suspense>
             ) :             currentView === 'workspace' ? (
               <WorkspaceView
                 projectRoot={projectRoot}
@@ -998,11 +896,17 @@ const App = () => {
                 refreshTrigger={workspaceRefreshTrigger}
               />
             ) : currentView === 'cyrex' ? (
-              <CyrexEmbed />
+              <Suspense fallback={<LazyFallback label="Loading integration…" />}>
+                <CyrexEmbed />
+              </Suspense>
             ) : currentView === 'pipelines' ? (
-              <PipelinesView />
+              <Suspense fallback={<LazyFallback />}>
+                <PipelinesView />
+              </Suspense>
             ) : currentView === 'guide' ? (
-              <GuideView />
+              <Suspense fallback={<LazyFallback />}>
+                <GuideView />
+              </Suspense>
             ) : currentView === 'settings' ? (
               <Settings />
             ) : currentView === 'api-models' ? (
@@ -1010,6 +914,7 @@ const App = () => {
             ) : currentView === 'emotion' ? (
               <EmotionPanel onOpenAIChat={() => setShowAIAssistant(true)} />
             ) : currentView === 'visual' ? (
+              <Suspense fallback={<LazyFallback />}>
               <VisualCanvas
                 onExportToFile={async (filename, content) => {
                   if (projectRoot) {
@@ -1029,6 +934,7 @@ const App = () => {
                   }
                 }}
               />
+              </Suspense>
             ) : currentView === 'search' ? (
               <SearchPanel
                 openTabs={openTabs}
@@ -1107,20 +1013,22 @@ const App = () => {
                     </button>
                   </div>
                 </div>
-              <MonacoEditor
-                path={activeTab.path}
-                value={activeTab.content}
-                onChange={(v) => updateTabContent(activeTab.id, v)}
-                onSave={saveActiveTab}
-                onCursorChange={setCursorPosition}
-                onSelectionChange={setEditorSelection}
-                onSymbolsChange={setOutlineSymbols}
-                onEditorReady={(api) => { editorApiRef.current = api; }}
-                onProblemsChange={setProblems}
-                theme={monacoTheme}
-                fontSize={editorFontSize}
-                height="100%"
-              />
+              <Suspense fallback={<LazyFallback label="Loading editor…" />}>
+                <MonacoEditor
+                  path={activeTab.path}
+                  value={activeTab.content}
+                  onChange={(v) => updateTabContent(activeTab.id, v)}
+                  onSave={saveActiveTab}
+                  onCursorChange={setCursorPosition}
+                  onSelectionChange={setEditorSelection}
+                  onSymbolsChange={setOutlineSymbols}
+                  onEditorReady={(api) => { editorApiRef.current = api; }}
+                  onProblemsChange={setProblems}
+                  theme={monacoTheme}
+                  fontSize={editorFontSize}
+                  height="100%"
+                />
+              </Suspense>
               </>
             ) : activeFile ? (
               <CodeEditor
@@ -1167,23 +1075,25 @@ const App = () => {
           {showAIAssistant && (
             <div className="ai-assistant-panel">
               {activeTab ? (
-                <AIChatPanel
-                  projectRoot={projectRoot}
-                  currentFile={activeTab}
-                  currentContent={activeTab.content}
-                  selection={editorSelection}
-                  initialPrompt={initialAIPrompt}
-                  agentProfile={activeEmotionProfile}
-                  onApplyEdit={(content) => {
-                    if (activeTabId) updateTabContent(activeTabId, content);
-                  }}
-                  onInsertAtCursor={(text) => editorApiRef.current?.insertTextAtCursor(text)}
-                  onShowDiff={(original, suggested) => {
-                    setDiffOriginal(original);
-                    setDiffSuggested(suggested);
-                    setShowDiffView(true);
-                  }}
-                />
+                <Suspense fallback={<LazyFallback label="Loading chat…" />}>
+                  <AIChatPanel
+                    projectRoot={projectRoot}
+                    currentFile={activeTab}
+                    currentContent={activeTab.content}
+                    selection={editorSelection}
+                    initialPrompt={initialAIPrompt}
+                    agentProfile={activeEmotionProfile}
+                    onApplyEdit={(content) => {
+                      if (activeTabId) updateTabContent(activeTabId, content);
+                    }}
+                    onInsertAtCursor={(text) => editorApiRef.current?.insertTextAtCursor(text)}
+                    onShowDiff={(original, suggested) => {
+                      setDiffOriginal(original);
+                      setDiffSuggested(suggested);
+                      setShowDiffView(true);
+                    }}
+                  />
+                </Suspense>
               ) : (
                 <AIAssistant />
               )}
@@ -1213,7 +1123,11 @@ const App = () => {
             {bottomPanelTab === 'output' && <OutputPanel logs={outputLogs} onClear={() => setOutputLogs([])} />}
             {bottomPanelTab === 'debug-console' && <DebugConsolePanel />}
             {bottomPanelTab === 'ports' && <PortsPanel />}
-            {bottomPanelTab === 'finetuning' && <FineTuningPanel projectRoot={projectRoot} />}
+            {bottomPanelTab === 'finetuning' && (
+              <Suspense fallback={<LazyFallback />}>
+                <FineTuningPanel projectRoot={projectRoot} />
+              </Suspense>
+            )}
             {bottomPanelTab === 'tools' && <ToolsPanel />}
             {bottomPanelTab === 'problems' && (
               <ProblemsPanel
@@ -1227,13 +1141,15 @@ const App = () => {
       )}
 
       {createLauncherOpen && (
-        <CreateLauncher
-          onClose={() => setCreateLauncherOpen(false)}
-          onOpenVisual={() => { switchView('visual'); setCreateLauncherOpen(false); }}
-          onOpenEmotion={() => { switchView('emotion'); setCreateLauncherOpen(false); }}
-          onNewFileFromTemplate={handleNewFileFromTemplate}
-          projectRoot={projectRoot}
-        />
+        <Suspense fallback={<LazyFallback />}>
+          <CreateLauncher
+            onClose={() => setCreateLauncherOpen(false)}
+            onOpenVisual={() => { switchView('visual'); setCreateLauncherOpen(false); }}
+            onOpenEmotion={() => { switchView('emotion'); setCreateLauncherOpen(false); }}
+            onNewFileFromTemplate={handleNewFileFromTemplate}
+            projectRoot={projectRoot}
+          />
+        </Suspense>
       )}
 
       <QuickOpen
@@ -1294,18 +1210,6 @@ const App = () => {
           </div>
         </div>
       )}
-
-      {/* Mission Cards */}
-      <div className="mission-container">
-        {activeMissions.map(mission => (
-          <MissionCard
-            key={mission.id}
-            mission={mission}
-            onComplete={handleMissionComplete}
-            onAbandon={handleMissionAbandon}
-          />
-        ))}
-      </div>
 
       <ClassificationPanel selection={editorSelection} />
 

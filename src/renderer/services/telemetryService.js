@@ -3,7 +3,7 @@
  */
 export const telemetryService = {
   recordEvent(name, props = {}) {
-    if (process.env.NODE_ENV === 'development') {
+    if (import.meta.env.DEV) {
       console.debug('[telemetry]', name, props);
     }
   },

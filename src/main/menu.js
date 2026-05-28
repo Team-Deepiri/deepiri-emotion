@@ -62,23 +62,6 @@ export function createMenu(getMainWindow) {
       ]
     },
     {
-      label: 'Gamification',
-      submenu: [
-        {
-          label: 'Dashboard',
-          click: () => getMainWindow()?.webContents?.send('menu-gamification-dashboard')
-        },
-        {
-          label: 'Leaderboard',
-          click: () => getMainWindow()?.webContents?.send('menu-leaderboard')
-        },
-        {
-          label: 'Achievements',
-          click: () => getMainWindow()?.webContents?.send('menu-achievements')
-        }
-      ]
-    },
-    {
       label: 'Help',
       submenu: [
         {

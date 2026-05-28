@@ -4,8 +4,6 @@
 export const ROUTES = {
   EXPLORER: 'explorer',
   TASKS: 'tasks',
-  CHALLENGES: 'challenges',
-  GAMIFICATION: 'gamification',
   INTEGRATIONS: 'integrations',
   CYREX: 'cyrex',
   PIPELINES: 'pipelines',
@@ -23,8 +21,6 @@ export const ROUTES = {
 export const ROUTE_LABELS = {
   [ROUTES.EXPLORER]: 'Explorer',
   [ROUTES.TASKS]: 'Tasks',
-  [ROUTES.CHALLENGES]: 'Challenges',
-  [ROUTES.GAMIFICATION]: 'Gamification',
   [ROUTES.INTEGRATIONS]: 'Integrations',
   [ROUTES.CYREX]: 'Cyrex AI',
   [ROUTES.PIPELINES]: 'Helox Pipelines',

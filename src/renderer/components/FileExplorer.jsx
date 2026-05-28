@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { FileIcon, FolderIcon, ChevronIcon } from './FileIcon';
 
 const FileExplorer = ({ files = [], onFileSelect, onFileCreate, onFileDelete: _onFileDelete }) => {
   const [expanded, setExpanded] = useState({});
@@ -24,19 +25,28 @@ const FileExplorer = ({ files = [], onFileSelect, onFileCreate, onFileDelete: _o
     const isFolder = file.type === 'folder';
 
     return (
-      <div key={file.path} style={{ paddingLeft: `${depth * 16}px` }}>
+      <div key={file.path} className="tree-node" style={{ paddingLeft: `${depth * 12}px` }}>
         <div
-          className={`file-item ${isSelected ? 'selected' : ''}`}
+          className={`tree-item ${isSelected ? 'active' : ''} ${isFolder ? 'folder' : ''}`}
           onClick={() => isFolder ? toggleExpand(file.path) : handleSelect(file)}
         >
-          <span className="file-icon">
-            {isFolder ? (isExpanded ? '📂' : '📁') : '📄'}
+          {isFolder && (
+            <span className="tree-chevron">
+              <ChevronIcon expanded={isExpanded} />
+            </span>
+          )}
+          <span className="tree-icon">
+            {isFolder ? (
+              <FolderIcon open={isExpanded} />
+            ) : (
+              <FileIcon filename={file.name} />
+            )}
           </span>
-          <span className="file-name">{file.name}</span>
+          <span className="tree-name">{file.name}</span>
           {file.badge && <span className="file-badge">{file.badge}</span>}
         </div>
         {isFolder && isExpanded && file.children && (
-          <div>
+          <div className="tree-children">
             {file.children.map(child => renderFile(child, depth + 1))}
           </div>
         )}
@@ -49,7 +59,7 @@ const FileExplorer = ({ files = [], onFileSelect, onFileCreate, onFileDelete: _o
       <div className="file-explorer-header">
         <span>EXPLORER</span>
         <div className="file-actions">
-          <button onClick={onFileCreate} title="New File">+</button>
+          <button onClick={onFileCreate} title="New File" className="file-action-btn">+</button>
         </div>
       </div>
       <div className="file-tree">
@@ -60,4 +70,3 @@ const FileExplorer = ({ files = [], onFileSelect, onFileCreate, onFileDelete: _o
 };
 
 export default FileExplorer;
-

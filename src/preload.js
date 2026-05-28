@@ -45,50 +45,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
   },
 
-  // Challenge Management
-  generateChallenge: async (taskData) => {
-    try {
-      return await ipcRenderer.invoke('generate-challenge', taskData);
-    } catch (error) {
-      console.error('Generate challenge error:', error);
-      throw error;
-    }
-  },
-
-  generateChallengeLocal: async (taskId) => {
-    try {
-      return await ipcRenderer.invoke('generate-challenge-local', taskId);
-    } catch (error) {
-      console.error('Generate local challenge error:', error);
-      throw error;
-    }
-  },
-
   // Task Classification
   classifyTask: async (task, description = null) => {
     try {
       return await ipcRenderer.invoke('classify-task', { task, description });
     } catch (error) {
       console.error('Classify task error:', error);
-      throw error;
-    }
-  },
-
-  // Gamification
-  awardPoints: async (points) => {
-    try {
-      return await ipcRenderer.invoke('award-points', points);
-    } catch (error) {
-      console.error('Award points error:', error);
-      throw error;
-    }
-  },
-
-  getGamificationState: async () => {
-    try {
-      return await ipcRenderer.invoke('get-gamification-state');
-    } catch (error) {
-      console.error('Get gamification state error:', error);
       throw error;
     }
   },
@@ -328,13 +290,6 @@ window.ide = {
     const title = prompt('Enter task title:');
     if (title) {
       await window.electronAPI.createTask(title);
-    }
-  },
-  generateChallenge: async () => {
-    const taskText = prompt('Enter task for challenge:');
-    if (taskText) {
-      const task = await window.electronAPI.createTask(taskText);
-      return await window.electronAPI.generateChallenge(task.data);
     }
   },
   openProject: async () => {

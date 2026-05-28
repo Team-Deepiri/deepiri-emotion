@@ -1,5 +1,5 @@
 /**
- * AI service: settings, usage, chat-completion, detect-runtime, classify-task, generate-challenge.
+ * AI service: settings, usage, chat-completion, detect-runtime, classify-task.
  */
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
@@ -7,25 +7,14 @@ import { dirname, join } from 'path';
 import axios from 'axios';
 import { app } from 'electron';
 import { IPC } from '../../shared/ipcChannels.js';
+import { DEFAULT_AI_SETTINGS } from '../../shared/defaults.js';
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 const AI_SETTINGS_PATH = join(app.getPath('userData'), 'ai-settings.json');
 const USAGE_PATH = join(app.getPath('userData'), 'api-usage.json');
 const USAGE_LIMITS_PATH = join(app.getPath('userData'), 'usage-limits.json');
 
-const defaultAiSettings = () => ({
-  provider: 'cyrex',
-  openaiApiKey: '',
-  anthropicApiKey: '',
-  googleApiKey: '',
-  openaiModel: 'gpt-4o-mini',
-  anthropicModel: 'claude-3-5-sonnet-20241022',
-  googleModel: 'gemini-1.5-flash',
-  localType: 'cyrex',
-  localCyrexUrl: AI_SERVICE_URL,
-  localOllamaUrl: 'http://localhost:11434',
-  localOllamaModel: 'llama3.2'
-});
+const defaultAiSettings = () => ({ ...DEFAULT_AI_SETTINGS });
 
 async function loadAiSettings() {
   try {
@@ -122,9 +111,12 @@ async function recordUsage(inputTokens = 0, outputTokens = 0) {
   await saveUsage(usage);
 }
 
-const DETECT_TIMEOUT_MS = 1800;
-const CYREX_PROBE_URLS = [AI_SERVICE_URL, 'http://localhost:8000', 'http://127.0.0.1:8000'];
-const OLLAMA_PROBE_URL = 'http://localhost:11434';
+const DETECT_TIMEOUT_MS = 600;
+const DETECT_CACHE_MS = 30_000;
+const DEFAULT_OLLAMA_URL = 'http://localhost:11434';
+
+let detectCache = null;
+let detectCacheAt = 0;
 
 async function probeUrl(url, path) {
   const base = url.replace(/\/$/, '');
@@ -137,31 +129,48 @@ async function probeUrl(url, path) {
   }
 }
 
+async function probeCyrexUrl(url) {
+  const normalized = url.replace(/\/$/, '');
+  if (await probeUrl(url, '/')) return normalized;
+  try {
+    const r = await axios.post(normalized + '/agent/chat', { prompt: '' }, { timeout: DETECT_TIMEOUT_MS, validateStatus: () => true });
+    if (r.status === 200 || r.status === 400 || r.status === 422) return normalized;
+  } catch { /* skip */ }
+  return null;
+}
+
 async function detectRuntime() {
+  const s = await loadAiSettings();
   const out = { cyrex: { url: null, available: false }, ollama: { url: null, available: false } };
-  for (const url of CYREX_PROBE_URLS) {
-    if (await probeUrl(url, '/')) {
-      out.cyrex.url = url.replace(/\/$/, '');
+
+  const wantsCyrex = s.provider === 'cyrex' || (s.provider === 'local' && s.localType === 'cyrex');
+  if (wantsCyrex && s.localCyrexUrl?.trim()) {
+    const cyrexUrl = await probeCyrexUrl(s.localCyrexUrl.trim());
+    if (cyrexUrl) {
+      out.cyrex.url = cyrexUrl;
       out.cyrex.available = true;
-      break;
     }
+  }
+
+  const wantsOllama = s.provider === 'local' && s.localType === 'ollama';
+  if (wantsOllama) {
+    const ollamaBase = (s.localOllamaUrl || DEFAULT_OLLAMA_URL).replace(/\/$/, '');
     try {
-      const r = await axios.post(url.replace(/\/$/, '') + '/agent/chat', { prompt: '' }, { timeout: 800, validateStatus: () => true });
-      if (r.status === 200 || r.status === 400 || r.status === 422) {
-        out.cyrex.url = url.replace(/\/$/, '');
-        out.cyrex.available = true;
-        break;
+      const r = await axios.get(`${ollamaBase}/api/tags`, { timeout: DETECT_TIMEOUT_MS, validateStatus: () => true });
+      if (r.status === 200) {
+        out.ollama.url = ollamaBase;
+        out.ollama.available = true;
       }
     } catch { /* skip */ }
   }
-  try {
-    const r = await axios.get(OLLAMA_PROBE_URL + '/api/tags', { timeout: 1200, validateStatus: () => true });
-    if (r.status === 200) {
-      out.ollama.url = OLLAMA_PROBE_URL;
-      out.ollama.available = true;
-    }
-  } catch { /* skip */ }
   return out;
+}
+
+async function detectRuntimeCached() {
+  if (detectCache && Date.now() - detectCacheAt < DETECT_CACHE_MS) return detectCache;
+  detectCache = await detectRuntime();
+  detectCacheAt = Date.now();
+  return detectCache;
 }
 
 /**
@@ -171,23 +180,9 @@ async function detectRuntime() {
 export function registerAiService(ipcMain, deps) {
   const { desktopHeaders, agentRuntime } = deps;
 
-  ipcMain.handle(IPC.DETECT_RUNTIME, async () => detectRuntime());
+  ipcMain.handle(IPC.DETECT_RUNTIME, async () => detectRuntimeCached());
 
-  ipcMain.handle(IPC.GET_AI_SETTINGS, async () => {
-    const s = await loadAiSettings();
-    const detected = await detectRuntime();
-    const defaultUrl = AI_SERVICE_URL.replace(/\/$/, '');
-    const cyrexWanted = s.provider === 'cyrex' || (s.provider === 'local' && s.localType === 'cyrex');
-    const cyrexUrlEmptyOrDefault = !s.localCyrexUrl || s.localCyrexUrl.replace(/\/$/, '') === defaultUrl;
-    if (cyrexWanted && cyrexUrlEmptyOrDefault && detected.cyrex.available && detected.cyrex.url) {
-      s.localCyrexUrl = detected.cyrex.url;
-    }
-    if ((s.provider === 'local' && s.localType === 'ollama') && (!s.localOllamaUrl || s.localOllamaUrl.replace(/\/$/, '') === 'http://localhost:11434') && detected.ollama.available && detected.ollama.url) {
-      s.localOllamaUrl = detected.ollama.url;
-    }
-    s._detectedRuntime = detected;
-    return s;
-  });
+  ipcMain.handle(IPC.GET_AI_SETTINGS, async () => loadAiSettings());
 
   ipcMain.handle(IPC.SET_AI_SETTINGS, async (_event, settings) => {
     const current = await loadAiSettings();
@@ -358,19 +353,4 @@ export function registerAiService(ipcMain, deps) {
     }
   });
 
-  ipcMain.handle(IPC.GENERATE_CHALLENGE, async (_event, taskData) => {
-    try {
-      const response = await axios.post(
-        `${AI_SERVICE_URL}/agent/challenge/generate`,
-        { task: taskData },
-        { headers: desktopHeaders }
-      );
-      return { success: true, data: response.data };
-    } catch (error) {
-      return {
-        success: false,
-        error: error.response?.data || error.message
-      };
-    }
-  });
 }
