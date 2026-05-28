@@ -33,8 +33,6 @@ export default {
   sidebar: {
     explorer: 'Explorer',
     tasks: 'Tasks',
-    challenges: 'Challenges',
-    gamification: 'Gamification',
     integrations: 'Integrations',
     cyrex: 'Cyrex AI',
     pipelines: 'Helox Pipelines',

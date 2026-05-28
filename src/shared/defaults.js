@@ -3,15 +3,15 @@
  * Shared by Electron main and renderer so both sides stay in sync.
  */
 export const DEFAULT_AI_SETTINGS = {
-  provider: 'cyrex',
+  provider: 'openai',
   openaiApiKey: '',
   anthropicApiKey: '',
   googleApiKey: '',
   openaiModel: 'gpt-4o-mini',
   anthropicModel: 'claude-3-5-sonnet-20241022',
   googleModel: 'gemini-1.5-flash',
-  localType: 'cyrex',
-  localCyrexUrl: 'http://localhost:8000',
+  localType: 'ollama',
+  localCyrexUrl: '',
   localOllamaUrl: 'http://localhost:11434',
   localOllamaModel: 'llama3.2'
 };
