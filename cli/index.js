@@ -26,6 +26,7 @@ Usage: npm run cli   or   node cli/index.js [options] [--] [workspace-dir]
 Options:
   -h, --help     Show this help
   -v, --version  Show version
+  --teach        Enable teach mode: agent explains reasoning, concepts, and best practices
 
 Workspace:
   Pass a directory path (after -- or as first argument). Tools (read_file, search, run) run in that directory.
@@ -75,9 +76,11 @@ if (candidate) {
   }
 }
 
+const teachMode = argv.includes('--teach');
 const config = await loadConfig();
 if (workspaceDir) config.workspaceDir = workspaceDir;
+if (teachMode) config.teachMode = true;
 const eventBus = createEventBus();
 attachAgentRunner(eventBus, config);
 
-render(React.createElement(App, { eventBus, workspaceDir }));
+render(React.createElement(App, { eventBus, workspaceDir, teachMode: config.teachMode ?? false }));

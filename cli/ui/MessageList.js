@@ -1,5 +1,6 @@
 import React from 'react';
 import { Box, Text } from 'ink';
+import { MarkdownText } from './MarkdownText.js';
 
 export function MessageList({ messages, streamingMessage }) {
   return React.createElement(
@@ -10,7 +11,9 @@ export function MessageList({ messages, streamingMessage }) {
         Box,
         { key: i, flexDirection: 'column' },
         React.createElement(Text, { bold: true, color: m.role === 'user' ? 'green' : 'blue' }, m.role === 'user' ? 'You' : 'Assistant' + ':'),
-        React.createElement(Text, null, m.content)
+        m.role === 'assistant'
+          ? React.createElement(MarkdownText, { content: m.content })
+          : React.createElement(Text, null, m.content)
       )
     ),
     streamingMessage

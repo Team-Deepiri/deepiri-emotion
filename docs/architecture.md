@@ -22,7 +22,7 @@ High-level architecture of the desktop application and how it fits into the Deep
 - **Main entry:** `src/main.js` — thin entry; calls `createApp()` from `src/main/index.js` on `app.whenReady()`.
 - **Main orchestrator:** `src/main/index.js` — creates window, menu, and registers all IPC services. Bootstrap: `src/main/bootstrap-env.js` (paths, API URLs), `src/main/bootstrap-args.js` (isDev, getLaunchArgs for CLI folder/file).
 - **Services:** `src/main/services/*.js` — each service registers its IPC handlers with `ipcMain`: `workspaceService`, `fileService`, `terminalService`, `aiService`, `agentService`, `platformService`, `heloxService`, `shellService`, `extensionsService`, `integrationService`, `dbService`. Handlers use channel names from `src/shared/ipcChannels.js`. **Integrations:** `integrationService` stores credentials in userData; GitHub sync (issues) and Notion (list databases) are implemented; other syncs return a clear “not implemented for X” where applicable. **DB:** `dbService` uses sql.js to persist chat history in `userData/app.db`. `extensionsService` lists built-in extensions from `extensions/` and the platform catalog in `src/shared/integrationsCatalog.js`.
-- **Preload:** `src/preload.js` — exposes `window.electronAPI`; when `window.__TAURI__` is set, many methods call Tauri `invoke` for parity.
+- **Preload:** `src/preload.js` — exposes `window.electronAPI`; methods call Electron `ipcRenderer.invoke` handlers.
 
 ### Renderer (React)
 
@@ -75,19 +75,6 @@ High-level architecture of the desktop application and how it fits into the Deep
 - **Settings:** Account, Agents, Tabs, Networking, Indexing & Docs, Tools, Hooks; saved to storage; settings-saved event so tabs/theme apply without restart.
 - **Chat history:** Persisted in local SQLite (`dbService`); loaded and appended per session (project root or default); clear from AI Chat header.
 - **Cyrex & Helox:** Tabs and IPC to backend/pipelines; optional services.
-
----
-
-## Tauri backend (src-tauri)
-
-When the app is built with Tauri, the same renderer can run against a Rust backend. Backend logic lives in `src-tauri/src/`:
-
-- **Commands:** Tasks, gamification, LLM hints, session (start, record_keystroke, record_file_change, end_session), api_request.
-- **File system:** `file_system.rs` — open_file, save_file, list_directory, list_workspace_files (with exclude patterns), create_file, create_folder.
-- **Project & config:** get_project_root, set_project_root (AppState); get_ai_settings, set_ai_settings (JSON in app data dir).
-- **Session:** SessionRecorder records keystrokes and file changes; record_file_change is exposed as a command.
-
-The preload branches on `window.__TAURI__` and calls the corresponding Tauri invoke handlers for project, file, config, and session so the renderer API stays the same for both Electron and Tauri.
 
 ---
 

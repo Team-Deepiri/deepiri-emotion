@@ -9,16 +9,18 @@ const SIMULATED_TOKEN_DELAY_MS = 20;
 /**
  * Emit a full string as tokens (char-by-char) for TUI effect.
  */
-function emitReplyAsTokens(bus, text) {
+
+function emitReplyAsTokens(bus, text, onToken = null) {
   for (const char of (text || '')) {
     bus.emit(EVENTS.LLM_TOKEN, { token: char });
+    if (typeof onToken === 'function') onToken(char);
   }
 }
 
 /**
  * Stream OpenAI chat completions (SSE).
  */
-async function streamOpenAI(bus, messages, config) {
+async function streamOpenAI(bus, messages, config, opts = {}) {
   const url = 'https://api.openai.com/v1/chat/completions';
   const res = await fetch(url, {
     method: 'POST',
@@ -52,7 +54,16 @@ async function streamOpenAI(bus, messages, config) {
         try {
           const json = JSON.parse(data);
           const content = json?.choices?.[0]?.delta?.content;
-          if (content) bus.emit(EVENTS.LLM_TOKEN, { token: content });
+
+          if (content) {
+            if (!opts.silent) {
+              bus.emit(EVENTS.LLM_TOKEN, { token: content });
+            }
+
+            if (typeof opts.onToken === 'function') {
+              opts.onToken(content);
+            }
+          }
         } catch {
           // skip malformed chunk
         }
@@ -127,13 +138,13 @@ export async function streamLLM(bus, prompt, opts = {}) {
   const messages = [{ role: 'user', content: prompt }];
 
   if (config.provider === 'openai' && config.openaiApiKey) {
-    await streamOpenAI(bus, messages, config);
+    await streamOpenAI(bus, messages, config, opts);
     bus.emit(EVENTS.LLM_DONE, {});
     return;
   }
 
   if (config.provider === 'ollama') {
-    await streamOllama(bus, messages, config);
+    await streamOllama(bus, messages, config, opts);
     bus.emit(EVENTS.LLM_DONE, {});
     return;
   }

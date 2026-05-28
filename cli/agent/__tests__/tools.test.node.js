@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdir, writeFile, rm } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { parseToolIntent, readFileTool, searchTool, runCommandTool } from '../tools.js';
+import { parseToolIntent, readFileTool, searchTool, runCommandTool, explainTool } from '../tools.js';
 
 describe('parseToolIntent', () => {
   it('returns read_file for "read file path"', () => {
@@ -113,5 +113,41 @@ describe('runCommandTool', () => {
   it('captures stderr and non-zero exit', async () => {
     const result = await runCommandTool('exit 2', process.cwd());
     expect(result.exitCode).toBe(2);
+  });
+});
+
+describe('explainTool', () => {
+  it('returns structured explanation with all fields', () => {
+    const r = explainTool({
+      concept: 'Event Emitter Pattern',
+      explanation: 'Decouples producers from consumers via named events.',
+      example: "bus.on('USER_MESSAGE', handler)",
+      category: 'code_concept'
+    });
+    expect(r.concept).toBe('Event Emitter Pattern');
+    expect(r.explanation).toBe('Decouples producers from consumers via named events.');
+    expect(r.example).toBe("bus.on('USER_MESSAGE', handler)");
+    expect(r.category).toBe('code_concept');
+  });
+
+  it('defaults example to null when not provided', () => {
+    const r = explainTool({ concept: 'X', explanation: 'Y' });
+    expect(r.example).toBeNull();
+  });
+
+  it('defaults category to code_concept when not provided', () => {
+    const r = explainTool({ concept: 'X', explanation: 'Y' });
+    expect(r.category).toBe('code_concept');
+  });
+
+  it('parseToolIntent detects explain JSON from LLM output', () => {
+    const json = JSON.stringify({
+      tool: 'explain',
+      args: { concept: 'Singleton', explanation: 'One shared instance.', category: 'code_concept' }
+    });
+    const result = parseToolIntent(json);
+    expect(result).not.toBeNull();
+    expect(result.tool).toBe('explain');
+    expect(result.args.concept).toBe('Singleton');
   });
 });

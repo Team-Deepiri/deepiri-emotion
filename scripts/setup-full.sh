@@ -9,7 +9,8 @@
 #   --no-env          Do not create .env from .env.example.
 #   --skip-check      Do not run npm run check before build (faster, less safe).
 #
-set -e
+set -eo pipefail
+SETUP_LOG="${TMPDIR:-/tmp}/deepiri-setup-$$.log"
 
 # Colors (disable if NO_COLOR or not a TTY)
 if [ -n "$NO_COLOR" ] || [ ! -t 1 ]; then
@@ -18,6 +19,8 @@ else
   R="\033[31m"; G="\033[32m"; Y="\033[33m"; B="\033[34m"; M="\033[35m"
   CY="\033[36m"; W="\033[37m"; D="\033[2m"; BOLD="\033[1m"; RESET="\033[0m"
 fi
+
+trap 'ec=$?; echo -e "\n${R}${BOLD}  ✗ Setup failed${RESET} at line ${LINENO} (exit ${ec})." >&2; echo -e "  ${D}Failed command: ${BASH_COMMAND}${RESET}" >&2; echo -e "  ${D}Full output log: ${SETUP_LOG}${RESET}" >&2' ERR
 
 print_banner() {
   echo ""
@@ -107,8 +110,8 @@ if [ -f ".nvmrc" ] && command -v nvm >/dev/null 2>&1; then
 fi
 
 section "Dependencies"
-info "Running npm install..."
-npm install
+info "Running npm install... (log: ${SETUP_LOG})"
+npm install 2>&1 | tee -a "$SETUP_LOG"
 ok "Dependencies installed"
 
 if [ "$INSTALL_ONLY" = true ]; then
