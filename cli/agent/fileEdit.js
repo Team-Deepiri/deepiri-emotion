@@ -141,3 +141,66 @@ export async function editFileTool(filePath, oldString, newString, cwd = DEFAULT
     diff: generateDiffPreview(filePath, oldString, newString),
   };
 }
+
+const MAX_PREVIEW_LINES = 12;
+const MAX_PREVIEW_CHARS = 800;
+
+function previewContent(content) {
+  const text = String(content ?? '');
+  const clipped = text.split('\n').slice(0, MAX_PREVIEW_LINES).join('\n').slice(0, MAX_PREVIEW_CHARS);
+  return clipped.length < text.length ? `${clipped}\n… (truncated)` : clipped;
+}
+
+/**
+ * Compute what a mutating tool WOULD do, without writing to disk.
+ * Runs the same safety + validity checks as the real tools so a preview that
+ * succeeds guarantees the subsequent write succeeds.
+ * Returns { path, action, preview, overwrite?, error? }.
+ */
+export async function previewMutation(tool, args = {}, cwd = DEFAULT_CWD) {
+  const { filePath } = args;
+  if (!filePath) return { error: 'filePath is required' };
+
+  const safety = checkPathSafety(filePath, cwd);
+  if (safety.error) return { error: safety.error };
+  const { resolved } = safety;
+
+  if (tool === 'create_file') {
+    if (existsSync(resolved)) {
+      return { error: `File already exists: ${resolved}. Use write_file to overwrite an existing file.` };
+    }
+    return { path: resolved, action: 'create', preview: previewContent(args.content) };
+  }
+
+  if (tool === 'write_file') {
+    const existed = existsSync(resolved);
+    if (existed && args.allowOverwrite !== true) {
+      return { error: `File already exists: ${resolved}. Refusing to overwrite without explicit overwrite approval.` };
+    }
+    return {
+      path: resolved,
+      action: existed ? 'overwrite' : 'create',
+      overwrite: existed,
+      preview: previewContent(args.content),
+    };
+  }
+
+  if (tool === 'edit_file') {
+    const { oldString, newString } = args;
+    if (!oldString) return { error: 'oldString must not be empty' };
+    if (newString === undefined || newString === null) {
+      return { error: 'newString must be provided (use empty string to delete text)' };
+    }
+    if (!existsSync(resolved)) return { error: `File not found: ${resolved}` };
+
+    const content = await readFile(resolved, 'utf-8');
+    const occurrences = countOccurrences(content, oldString);
+    if (occurrences === 0) return { error: `oldString not found in ${filePath}. No changes made.` };
+    if (occurrences > 1) {
+      return { error: `oldString appears ${occurrences} times in ${filePath}. Provide more surrounding context to make it unique.` };
+    }
+    return { path: resolved, action: 'edit', preview: generateDiffPreview(filePath, oldString, newString) };
+  }
+
+  return { error: `Not a mutating tool: ${tool}` };
+}
