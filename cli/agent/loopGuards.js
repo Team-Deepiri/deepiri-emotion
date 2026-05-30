@@ -13,6 +13,8 @@ export const KNOWN_TOOLS = new Set([
   'create_file',
   'write_file',
   'edit_file',
+  'git_status',
+  'git_diff',
 ]);
 
 /** Required arg keys per tool (presence check only). */
@@ -25,6 +27,8 @@ const REQUIRED_ARGS = {
   create_file:  ['filePath', 'content'],
   write_file:   ['filePath', 'content'],
   edit_file:    ['filePath', 'oldString', 'newString'],
+  git_status:   [],
+  git_diff:     [],
 };
 
 /**
