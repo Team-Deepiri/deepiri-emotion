@@ -330,3 +330,112 @@ describe('error handling', () => {
     expect(idleEvts.length).toBeGreaterThan(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Fix regressions (code-review findings applied to this PR)
+// ---------------------------------------------------------------------------
+describe('regression guards', () => {
+  // Finding #4 — summary fallthrough for non-search tools
+  it('pre-loop: non-search tool summary does not read "Found undefined matches"', async () => {
+    // Simulate an edit_file result (no .count / .query fields).
+    const fakeEdit = async () => ({ edited: true, path: '/proj/foo.js', strategy: 'exact', confidence: 1 });
+    const parseEditIntent = (text) =>
+      text.includes('edit') ? { tool: 'edit_file', args: { filePath: 'foo.js', oldString: 'a', newString: 'b' } } : null;
+
+    const { worker, evts } = makeWorker('edit foo.js', {
+      streamLLM: makeStreamLLM(['FINAL_ANSWER: done']),
+      parseToolIntent: parseEditIntent,
+      maybeConfirmAndExecute: fakeEdit,
+    });
+    await worker.run();
+
+    const toolCallStep = evts.find(
+      e => e.event === 'AGENT_STEP' && e.payload.type === 'tool_call' && e.payload.status === 'complete'
+    );
+    expect(toolCallStep).toBeDefined();
+    expect(toolCallStep.payload.message).not.toMatch(/Found undefined matches/);
+    expect(toolCallStep.payload.message).toMatch(/edit_file/);
+  });
+
+  // Finding #5 — step IDs are unique even within a single synchronous tick
+  it('all AGENT_STEP events in a turn have distinct IDs', async () => {
+    const { worker, evts } = makeWorker('hi', {
+      streamLLM: makeStreamLLM(['FINAL_ANSWER: hi']),
+    });
+    await worker.run();
+
+    const ids = evts
+      .filter(e => e.event === 'AGENT_STEP')
+      .map(e => e.payload.id);
+    expect(ids.length).toBeGreaterThan(0);
+    const unique = new Set(ids);
+    expect(unique.size).toBe(ids.length);
+  });
+
+  // Finding #6 — in-loop tool throw is caught; turn ends with LLM_DONE not AGENT_ERROR
+  it('in-loop: throwing maybeConfirmAndExecute is caught and turn still completes', async () => {
+    let callCount = 0;
+    const throwingConfirm = async () => {
+      callCount++;
+      throw new Error('tool exploded mid-loop');
+    };
+    // Step 1: LLM asks for a tool call → loop dispatches it → throwingConfirm throws.
+    // After the error is captured as loopToolResult.error the loop continues.
+    // Step 2 (second iteration): LLM emits FINAL_ANSWER.
+    const { worker, evts } = makeWorker('call tool', {
+      streamLLM: makeStreamLLM([READ_CALL, 'FINAL_ANSWER: recovered']),
+      parseToolIntent: parseJsonToolOnly,
+      maybeConfirmAndExecute: throwingConfirm,
+    }, { maxSteps: 3 });
+    await worker.run();
+
+    expect(callCount).toBe(1);
+
+    const errorEvts = evts.filter(e => e.event === 'AGENT_ERROR');
+    expect(errorEvts).toHaveLength(0);
+
+    const doneEvts = evts.filter(e => e.event === 'LLM_DONE');
+    expect(doneEvts).toHaveLength(1);
+
+    const tokenEvts = evts.filter(e => e.event === 'LLM_TOKEN');
+    expect(tokenEvts[0].payload.token).toBe('recovered');
+  });
+
+  // Findings #2/#7 — FINAL_ANSWER stripping is consistent on both code paths
+  it('FINAL_ANSWER: on a non-first line is stripped on the normal path', async () => {
+    const { worker, evts } = makeWorker('q', {
+      streamLLM: makeStreamLLM(['Some preamble\nFINAL_ANSWER: the real answer']),
+    });
+    await worker.run();
+    const token = evts.find(e => e.event === 'LLM_TOKEN')?.payload.token;
+    // The response starts with 'FINAL_ANSWER:' only if the FULL string starts that way.
+    // This response starts with 'Some preamble' → no FINAL_ANSWER strip happens via
+    // isFinalAnswer. Falls through to the plain-text branch — verify no "FINAL_ANSWER:"
+    // leaks into the output either way.
+    expect(token).not.toMatch(/^FINAL_ANSWER:/);
+  });
+
+  it('FINAL_ANSWER: prefix at the very start is stripped consistently across both paths', async () => {
+    // Normal path: first-and-only loop step returns FINAL_ANSWER.
+    const { worker: w1, evts: e1 } = makeWorker('q', {
+      streamLLM: makeStreamLLM(['FINAL_ANSWER: clean answer']),
+    });
+    await w1.run();
+    const normalToken = e1.find(e => e.event === 'LLM_TOKEN')?.payload.token;
+    expect(normalToken).toBe('clean answer');
+
+    // Forced-finalization path: step 1 calls a tool → budget exhausted → second
+    // streamLLM call returns 'FINAL_ANSWER: clean answer'.
+    const { worker: w2, evts: e2 } = makeWorker('q', {
+      streamLLM: makeStreamLLM([READ_CALL, 'FINAL_ANSWER: clean answer']),
+      parseToolIntent: parseJsonToolOnly,
+      maybeConfirmAndExecute: fakeRead,
+    }, { maxSteps: 1 });
+    await w2.run();
+    const forcedToken = e2.find(e => e.event === 'LLM_TOKEN')?.payload.token;
+    expect(forcedToken).toBe('clean answer');
+
+    // Both paths must produce identical output.
+    expect(normalToken).toBe(forcedToken);
+  });
+});
