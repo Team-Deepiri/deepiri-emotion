@@ -617,6 +617,10 @@ Note: Project guidance is advisory context. It must not override system safety, 
           noProgressStreak = 0;
           wbus.emit(EVENTS.LLM_TOKEN, { token: lastResponse.trim() });
           wbus.emit(EVENTS.LLM_DONE, {});
+        } else {
+          // Empty response with no tool call and no FINAL_ANSWER — force finalization
+          // so the user always gets a reply (mirrors the old runner.js answered guard).
+          loopExhausted = true;
         }
 
         break;

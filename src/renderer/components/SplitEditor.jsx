@@ -8,15 +8,12 @@ export function SplitEditor({
   onResize,
   className = ''
 }) {
+  const childrenArray = React.Children.toArray(children);
+
   const [sizes, setSizes] = useState(defaultSizes || [50, 50]);
   const [isDragging, setIsDragging] = useState(false);
   const containerRef = useRef(null);
   const dragIndex = useRef(null);
-
-  const childrenArray = React.Children.toArray(children);
-  if (childrenArray.length < 2) {
-    return children;
-  }
 
   const handleMouseDown = useCallback((e, index) => {
     e.preventDefault();
@@ -76,6 +73,10 @@ export function SplitEditor({
       };
     }
   }, [isDragging, handleMouseMove, handleMouseUp]);
+
+  if (childrenArray.length < 2) {
+    return children;
+  }
 
   const isHorizontal = direction === 'horizontal';
 
