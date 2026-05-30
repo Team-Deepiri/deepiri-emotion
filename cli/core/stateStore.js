@@ -13,7 +13,10 @@ export const INITIAL_STATE = {
   error: null,
   teachMode: false,
   supportMode: false,
-  activeMode: null
+  activeMode: null,
+  autoMode: false,
+  acceptEdits: false,
+  pendingConfirmation: null
 };
 
 export const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
