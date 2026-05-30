@@ -80,6 +80,22 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
       setState((s) => ({ ...s, activeMode }));
     };
 
+    const onAutoModeChanged = ({ autoMode }) => {
+      setState((s) => ({ ...s, autoMode }));
+    };
+
+    const onAcceptEditsChanged = ({ acceptEdits }) => {
+      setState((s) => ({ ...s, acceptEdits }));
+    };
+
+    const onConfirmationRequest = (payload) => {
+      setState((s) => ({ ...s, pendingConfirmation: payload }));
+    };
+
+    const onConfirmationResponse = () => {
+      setState((s) => ({ ...s, pendingConfirmation: null }));
+    };
+
     eventBus.on(EVENTS.USER_MESSAGE, onUserMessage);
     eventBus.on(EVENTS.LLM_TOKEN, onLlmToken);
     eventBus.on(EVENTS.LLM_DONE, onLlmDone);
@@ -90,6 +106,10 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
     eventBus.on(EVENTS.TEACH_MODE_CHANGED, onTeachModeChanged);
     eventBus.on(EVENTS.SUPPORT_MODE_CHANGED, onSupportModeChanged);
     eventBus.on(EVENTS.MODE_CHANGED, onModeChanged);
+    eventBus.on(EVENTS.AUTO_MODE_CHANGED, onAutoModeChanged);
+    eventBus.on(EVENTS.ACCEPT_EDITS_CHANGED, onAcceptEditsChanged);
+    eventBus.on(EVENTS.CONFIRMATION_REQUEST, onConfirmationRequest);
+    eventBus.on(EVENTS.CONFIRMATION_RESPONSE, onConfirmationResponse);
 
     const spinnerTimer = setInterval(() => {
       eventBus.emit(EVENTS.SPINNER_TICK);
@@ -106,6 +126,10 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
       eventBus.off(EVENTS.TEACH_MODE_CHANGED, onTeachModeChanged);
       eventBus.off(EVENTS.SUPPORT_MODE_CHANGED, onSupportModeChanged);
       eventBus.off(EVENTS.MODE_CHANGED, onModeChanged);
+      eventBus.off(EVENTS.AUTO_MODE_CHANGED, onAutoModeChanged);
+      eventBus.off(EVENTS.ACCEPT_EDITS_CHANGED, onAcceptEditsChanged);
+      eventBus.off(EVENTS.CONFIRMATION_REQUEST, onConfirmationRequest);
+      eventBus.off(EVENTS.CONFIRMATION_RESPONSE, onConfirmationResponse);
       clearInterval(spinnerTimer);
     };
   }, [eventBus]);
@@ -124,6 +148,13 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
     setState({ ...INITIAL_STATE });
     setInputValue('');
   }, []);
+
+  const handleConfirm = useCallback(
+    (approved) => {
+      eventBus.emit(EVENTS.CONFIRMATION_RESPONSE, { approved });
+    },
+    [eventBus]
+  );
 
   return React.createElement(
     Box,
@@ -144,15 +175,37 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
       spinnerFrame: state.spinnerFrame,
       teachMode: state.teachMode,
       supportMode: state.supportMode,
-      activeMode: state.activeMode
+      activeMode: state.activeMode,
+      autoMode: state.autoMode,
+      acceptEdits: state.acceptEdits
     }),
+    ...(state.pendingConfirmation ? [
+      React.createElement(Box, {
+        key: 'confirm',
+        flexDirection: 'column',
+        marginTop: 1,
+        paddingX: 1,
+        borderStyle: 'round',
+        borderColor: 'yellow'
+      },
+        React.createElement(Text, { color: 'yellow', bold: true },
+          `Apply ${state.pendingConfirmation.action} to ${state.pendingConfirmation.path}?`
+        ),
+        ...(state.pendingConfirmation.preview
+          ? [React.createElement(Text, { key: 'preview', dimColor: true }, state.pendingConfirmation.preview)]
+          : []),
+        React.createElement(Text, { color: 'cyan' }, '(y) approve    (n) deny')
+      )
+    ] : []),
     React.createElement(Box, { marginTop: 1 },
       React.createElement(PromptInput, {
         value: inputValue,
         onChange: setInputValue,
         onSubmit: handleSubmit,
         onClear: handleClear,
-        placeholder: 'Type a message...'
+        placeholder: state.pendingConfirmation ? 'Awaiting confirmation — press y or n' : 'Type a message...',
+        pendingConfirmation: state.pendingConfirmation,
+        onConfirm: handleConfirm
       })
     )
   );
