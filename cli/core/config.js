@@ -10,13 +10,24 @@ import { existsSync } from 'fs';
 const DEFAULT_AI_SERVICE = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 const DEFAULT_OLLAMA = 'http://localhost:11434';
 
+export const DEFAULT_PROVIDER_CHAIN = ['ollama', 'claude-cli', 'cursor', 'openai', 'cyrex'];
+
 export const DEFAULT_CONFIG = {
-  provider: 'cyrex', // 'openai' | 'cyrex' | 'ollama'
+  // Legacy single-provider override. If set, translates to a one-entry chain.
+  provider: null,
+  // The router walks this chain in order; first one that's available + authed + works wins.
+  providerChain: DEFAULT_PROVIDER_CHAIN,
   openaiApiKey: process.env.OPENAI_API_KEY || '',
+  openaiBaseUrl: process.env.OPENAI_BASE_URL || '',
   openaiModel: process.env.OPENAI_MODEL || 'gpt-4o-mini',
   aiServiceUrl: DEFAULT_AI_SERVICE,
   ollamaUrl: process.env.OLLAMA_HOST || DEFAULT_OLLAMA,
-  ollamaModel: process.env.OLLAMA_MODEL || 'llama3.2'
+  ollamaModel: process.env.OLLAMA_MODEL || 'llama3.2',
+  claudeCliPath: process.env.CLAUDE_CLI_PATH || undefined,
+  claudeCliModel: process.env.CLAUDE_CLI_MODEL || undefined,
+  cursorPath: process.env.CURSOR_PATH || undefined,
+  cursorModel: process.env.CURSOR_MODEL || undefined,
+  cursorApiKey: process.env.CURSOR_API_KEY || process.env.CURSOR_AUTH_TOKEN || ''
 };
 
 /**
@@ -40,5 +51,10 @@ export async function loadConfig() {
       break;
     }
   }
-  return { ...DEFAULT_CONFIG, ...fileConfig };
+  const merged = { ...DEFAULT_CONFIG, ...fileConfig };
+  // Legacy: if user set `provider` but not `providerChain`, honor it as a single-entry chain.
+  if (merged.provider && !fileConfig.providerChain) {
+    merged.providerChain = [merged.provider];
+  }
+  return merged;
 }
