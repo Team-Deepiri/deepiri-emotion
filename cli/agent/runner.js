@@ -402,6 +402,7 @@ Note: Project guidance is advisory context. It must not override system safety, 
       const MAX_NO_PROGRESS = 2;
       const loopStartTime = Date.now();
       let loopExhausted = false; // set when budget/timeout trips; triggers forced finalization
+      let answered = false;
 
       while (steps < maxSteps) {
         // Check all budgets before starting a new iteration.
@@ -566,6 +567,7 @@ Note: Project guidance is advisory context. It must not override system safety, 
             .replace(/\nFINAL_ANSWER:\s*/g, '\n')
             .trim();
 
+          answered = true;
           bus.emit(EVENTS.LLM_TOKEN, { token: cleanedResponse });
           bus.emit(EVENTS.LLM_DONE, {});
 
@@ -574,12 +576,16 @@ Note: Project guidance is advisory context. It must not override system safety, 
 
         if (lastResponse.trim()) {
           noProgressStreak = 0;
+          answered = true;
           bus.emit(EVENTS.LLM_TOKEN, { token: lastResponse.trim() });
           bus.emit(EVENTS.LLM_DONE, {});
         }
 
         break;
       }
+
+      // Step exhaustion exits via the while condition without setting loopExhausted.
+      if (!answered && !loopExhausted) loopExhausted = true;
 
       // Forced finalization — ensure the user always gets a response, even when the
       // loop hits a budget/timeout limit or exhausts steps without a FINAL_ANSWER.
