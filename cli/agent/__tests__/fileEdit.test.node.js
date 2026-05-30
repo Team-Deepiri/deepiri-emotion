@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdir, writeFile, readFile, rm } from 'fs/promises';
+import { existsSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { createFileTool, writeFileTool, editFileTool } from '../fileEdit.js';
+import { createFileTool, writeFileTool, editFileTool, previewMutation } from '../fileEdit.js';
 
 let dir;
 
@@ -196,5 +197,83 @@ describe('editFileTool', () => {
   it('rejects path traversal', async () => {
     const result = await editFileTool('../sibling.js', 'old', 'new', dir);
     expect(result.error).toMatch(/outside workspace/i);
+  });
+});
+
+// ─── previewMutation ──────────────────────────────────────────────────────────
+
+describe('previewMutation', () => {
+  it('previews create without writing the file', async () => {
+    const result = await previewMutation('create_file', { filePath: 'new.js', content: 'const x = 1;' }, dir);
+    expect(result.error).toBeUndefined();
+    expect(result.action).toBe('create');
+    expect(result.preview).toContain('const x = 1;');
+    expect(existsSync(join(dir, 'new.js'))).toBe(false);
+  });
+
+  it('errors on create when the file already exists', async () => {
+    await writeFile(join(dir, 'exists.js'), 'old', 'utf-8');
+    const result = await previewMutation('create_file', { filePath: 'exists.js', content: 'new' }, dir);
+    expect(result.error).toMatch(/already exists/i);
+  });
+
+  it('previews write of a new file as a create', async () => {
+    const result = await previewMutation('write_file', { filePath: 'fresh.js', content: 'hi' }, dir);
+    expect(result.error).toBeUndefined();
+    expect(result.action).toBe('create');
+    expect(result.overwrite).toBe(false);
+    expect(existsSync(join(dir, 'fresh.js'))).toBe(false);
+  });
+
+  it('errors on overwrite without allowOverwrite', async () => {
+    await writeFile(join(dir, 'target.js'), 'old', 'utf-8');
+    const result = await previewMutation('write_file', { filePath: 'target.js', content: 'new' }, dir);
+    expect(result.error).toMatch(/overwrite/i);
+  });
+
+  it('previews overwrite with allowOverwrite, leaving content unchanged', async () => {
+    await writeFile(join(dir, 'target.js'), 'old', 'utf-8');
+    const result = await previewMutation('write_file', { filePath: 'target.js', content: 'new', allowOverwrite: true }, dir);
+    expect(result.error).toBeUndefined();
+    expect(result.action).toBe('overwrite');
+    expect(result.overwrite).toBe(true);
+    expect(await readFile(join(dir, 'target.js'), 'utf-8')).toBe('old');
+  });
+
+  it('previews edit as a diff without writing', async () => {
+    await writeFile(join(dir, 'code.js'), 'hello world', 'utf-8');
+    const result = await previewMutation('edit_file', { filePath: 'code.js', oldString: 'hello', newString: 'goodbye' }, dir);
+    expect(result.error).toBeUndefined();
+    expect(result.action).toBe('edit');
+    expect(result.preview).toContain('-hello');
+    expect(result.preview).toContain('+goodbye');
+    expect(await readFile(join(dir, 'code.js'), 'utf-8')).toBe('hello world');
+  });
+
+  it('errors when edit oldString is not found', async () => {
+    await writeFile(join(dir, 'code.js'), 'hello world', 'utf-8');
+    const result = await previewMutation('edit_file', { filePath: 'code.js', oldString: 'nope', newString: 'x' }, dir);
+    expect(result.error).toMatch(/not found/i);
+  });
+
+  it('errors when edit oldString is ambiguous', async () => {
+    await writeFile(join(dir, 'code.js'), 'dup\ndup\n', 'utf-8');
+    const result = await previewMutation('edit_file', { filePath: 'code.js', oldString: 'dup', newString: 'x' }, dir);
+    expect(result.error).toMatch(/2 times/i);
+  });
+
+  it('rejects a blocked path', async () => {
+    const result = await previewMutation('write_file', { filePath: '.env', content: 'SECRET=1' }, dir);
+    expect(result.error).toMatch(/blocked/i);
+  });
+
+  it('rejects path traversal', async () => {
+    const result = await previewMutation('edit_file', { filePath: '../escape.js', oldString: 'a', newString: 'b' }, dir);
+    expect(result.error).toMatch(/outside workspace/i);
+  });
+
+  it('rejects a non-mutating tool', async () => {
+    const result = await previewMutation('read_file', { filePath: 'x.js' }, dir);
+    expect(result.error).toMatch(/not a mutating tool/i);
   });
 });

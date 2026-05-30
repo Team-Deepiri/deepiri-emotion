@@ -47,6 +47,34 @@ describe('parseToolIntent', () => {
     expect(parseToolIntent('hello world')).toBeNull();
     expect(parseToolIntent('what is the weather')).toBeNull();
   });
+
+  it('parses a valid JSON read_file call', () => {
+    const json = JSON.stringify({ tool: 'read_file', args: { filePath: 'cli/index.js' } });
+    expect(parseToolIntent(json)).toEqual({ tool: 'read_file', args: { filePath: 'cli/index.js' } });
+  });
+
+  it('parses a valid JSON search call', () => {
+    const json = JSON.stringify({ tool: 'search', args: { query: 'event bus' } });
+    expect(parseToolIntent(json)).toEqual({ tool: 'search', args: { query: 'event bus' } });
+  });
+
+  it('rejects a JSON call with an unknown tool name (falls back to null)', () => {
+    // "delete_file" is not in KNOWN_TOOLS → validateToolCall returns null →
+    // regex fallback also returns null (no natural-language pattern matches JSON).
+    const json = JSON.stringify({ tool: 'delete_file', args: { filePath: 'x.js' } });
+    expect(parseToolIntent(json)).toBeNull();
+  });
+
+  it('rejects a JSON call missing required args (falls back to null)', () => {
+    // read_file requires filePath; passing a different key should reject.
+    const json = JSON.stringify({ tool: 'read_file', args: { path: 'x.js' } });
+    expect(parseToolIntent(json)).toBeNull();
+  });
+
+  it('rejects a JSON call whose args is null', () => {
+    const json = JSON.stringify({ tool: 'search', args: null });
+    expect(parseToolIntent(json)).toBeNull();
+  });
 });
 
 describe('readFileTool', () => {
