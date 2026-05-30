@@ -7,6 +7,7 @@ import { join } from 'path';
 import { existsSync } from 'fs';
 import { spawn } from 'child_process';
 import { createFileTool, writeFileTool, editFileTool } from './fileEdit.js';
+import { validateToolCall } from './loopGuards.js';
 
 const DEFAULT_CWD = process.cwd();
 const RUN_TIMEOUT_MS = 30_000;
@@ -141,18 +142,15 @@ export function runCommandTool(command, cwd = DEFAULT_CWD) {
 
 /**
  * Parse user message for simple tool intent. Returns { tool, args } or null.
+ * JSON path: validates tool name and required args via loopGuards.validateToolCall.
+ * Regex path: unchanged fallback for natural-language commands.
  */
 export function parseToolIntent(text) {
-  // Try parsing structured JSON tool call first
+  // Try parsing structured JSON tool call first; reject unknown/malformed calls.
   try {
     const parsed = JSON.parse(text.trim());
-
-    if (parsed.tool && parsed.args) {
-      return {
-        tool: parsed.tool,
-        args: parsed.args
-      };
-    }
+    const validated = validateToolCall(parsed);
+    if (validated) return validated;
   } catch {
     // Not JSON, continue to regex parsing
   }
@@ -199,7 +197,6 @@ export function explainTool({ concept, explanation, example = null, category = '
 
 /**
  * Execute a tool by name.
- * Used for future agent loop (not active yet).
  */
 export async function executeTool(tool, args = {}, cwd = DEFAULT_CWD) {
   if (tool === 'read_file') {

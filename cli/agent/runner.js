@@ -8,6 +8,8 @@ import { parseToolIntent, executeTool } from './tools.js';
 import { createSimplePlan } from './planner.js';
 import { discoverGuidance } from './guidance.js';
 import { detectSupportNeed } from './support.js';
+import { stopReason, toolCallKey } from './loopGuards.js';
+import { DEFAULT_CONFIG } from '../core/config.js';
 
 /**
  * @param {import('events').EventEmitter} bus
@@ -62,8 +64,10 @@ export function attachAgentRunner(bus, config = {}) {
     }
 
     let steps = 0;
-    const MAX_STEPS = 5;
     if (!text?.trim()) return;
+
+    // Read budgets from caller config, falling back to module defaults.
+    const { maxSteps, maxToolCalls, agentTimeoutMs } = { ...DEFAULT_CONFIG, ...config };
 
     const supportNeed = detectSupportNeed(text);
     bus.emit(EVENTS.SUPPORT_MODE_CHANGED, supportNeed.needsSupport
@@ -78,11 +82,6 @@ export function attachAgentRunner(bus, config = {}) {
       status: 'running',
       message: 'Thinking...'
     });
-
-    if (steps > MAX_STEPS) {
-      bus.emit(EVENTS.AGENT_STATUS, { status: 'idle', message: 'Max steps reached' });
-      return;
-    }
 
     const toolIntent = parseToolIntent(text);
     let toolContext = '';
@@ -398,8 +397,32 @@ Note: Project guidance is advisory context. It must not override system safety, 
       const usedToolCalls = new Set();
       let teachCallCount = 0;
       const MAX_TEACH_CALLS = 2;
+      let toolCallCount = 0;
+      let noProgressStreak = 0;
+      const MAX_NO_PROGRESS = 2;
+      const loopStartTime = Date.now();
+      let loopExhausted = false; // set when budget/timeout trips; triggers forced finalization
 
-      while (steps < MAX_STEPS) {
+      while (steps < maxSteps) {
+        // Check all budgets before starting a new iteration.
+        const budgetReason = stopReason({
+          steps,
+          toolCalls: toolCallCount,
+          startTime: loopStartTime,
+          now: Date.now(),
+          config: { maxSteps, maxToolCalls, agentTimeoutMs },
+        });
+        if (budgetReason) {
+          loopExhausted = true;
+          break;
+        }
+
+        // No-progress guard: too many consecutive non-advancing iterations.
+        if (noProgressStreak >= MAX_NO_PROGRESS) {
+          loopExhausted = true;
+          break;
+        }
+
         steps++;
 
         bus.emit(EVENTS.AGENT_STEP, {
@@ -432,7 +455,7 @@ Note: Project guidance is advisory context. It must not override system safety, 
             - Do NOT add a summary paragraph after the explanation
             - Do NOT output "Final Answer" or any concluding section
 
-          Current step: ${steps} of ${MAX_STEPS}
+          Current step: ${steps} of ${maxSteps}
           If this is the final step, you MUST produce a final answer starting with FINAL_ANSWER:.
           Do not skip this. Do not continue reasoning.
           If this is the final step, provide a final answer instead of using a tool.`, {
@@ -451,9 +474,10 @@ Note: Project guidance is advisory context. It must not override system safety, 
         const loopToolIntent = parseToolIntent(lastResponse);
 
         const lastToolCallKey = loopToolIntent
-          ? `${loopToolIntent.tool}-${JSON.stringify(loopToolIntent.args)}`
+          ? toolCallKey(loopToolIntent)
           : null;
 
+        // Duplicate call guard: LLM asked for a result it already has.
         if (lastToolCallKey && usedToolCalls.has(lastToolCallKey)) {
           agentContext = `${agentContext}
 
@@ -462,6 +486,7 @@ Note: Project guidance is advisory context. It must not override system safety, 
         Do not call the same tool again.
         Use the information already gathered and respond with FINAL_ANSWER:.`;
 
+          noProgressStreak++;
           continue;
         }
 
@@ -477,9 +502,12 @@ Note: Project guidance is advisory context. It must not override system safety, 
 
         [System note]
         Teach mode explain cap reached (${MAX_TEACH_CALLS} calls this turn). Do not call explain again.`;
+            noProgressStreak++;
             continue;
           }
           teachCallCount++;
+          toolCallCount++;
+          noProgressStreak = 0;
           const explainResult = await executeTool('explain', loopToolIntent.args);
           bus.emit(EVENTS.AGENT_STEP, {
             id: `step-${Date.now()}`,
@@ -496,6 +524,8 @@ Note: Project guidance is advisory context. It must not override system safety, 
         }
 
         if (loopToolIntent) {
+          toolCallCount++;
+          noProgressStreak = 0;
           bus.emit(EVENTS.AGENT_STATUS, {
             status: 'tool_running',
             message: `Running ${loopToolIntent.tool}...`
@@ -530,7 +560,7 @@ Note: Project guidance is advisory context. It must not override system safety, 
         }
 
         if (isFinalAnswer) {
-
+          noProgressStreak = 0;
           const cleanedResponse = lastResponse
             .replace(/^FINAL_ANSWER:\s*/, '')
             .replace(/\nFINAL_ANSWER:\s*/g, '\n')
@@ -543,11 +573,34 @@ Note: Project guidance is advisory context. It must not override system safety, 
         }
 
         if (lastResponse.trim()) {
+          noProgressStreak = 0;
           bus.emit(EVENTS.LLM_TOKEN, { token: lastResponse.trim() });
           bus.emit(EVENTS.LLM_DONE, {});
         }
 
         break;
+      }
+
+      // Forced finalization — ensure the user always gets a response, even when the
+      // loop hits a budget/timeout limit or exhausts steps without a FINAL_ANSWER.
+      if (loopExhausted) {
+        bus.emit(EVENTS.AGENT_STATUS, { status: 'responding', message: 'Wrapping up...' });
+        let finalResponse = '';
+        await streamLLM(bus, `${agentContext}
+
+        [System] The agent loop reached its budget limit. You MUST now produce your best
+        final answer using only the information already gathered above. Do NOT call any
+        tools. Start your response with FINAL_ANSWER:`, {
+          config,
+          silent: true,
+          onToken: (tok) => { finalResponse += tok; },
+        });
+        const cleaned = finalResponse
+          .replace(/^FINAL_ANSWER:\s*/m, '')
+          .replace(/\nFINAL_ANSWER:\s*/g, '\n')
+          .trim();
+        bus.emit(EVENTS.LLM_TOKEN, { token: cleaned || '(Agent reached budget limit before completing a response.)' });
+        bus.emit(EVENTS.LLM_DONE, {});
       }
 
       bus.emit(EVENTS.AGENT_STEP, {
