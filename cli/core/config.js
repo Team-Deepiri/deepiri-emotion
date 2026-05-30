@@ -23,6 +23,10 @@ export const DEFAULT_CONFIG = {
   aiServiceUrl: DEFAULT_AI_SERVICE,
   ollamaUrl: process.env.OLLAMA_HOST || DEFAULT_OLLAMA,
   ollamaModel: process.env.OLLAMA_MODEL || 'llama3.2',
+  // Agent loop budgets — override via env or .emotion-cli.json
+  maxSteps: Number(process.env.AGENT_MAX_STEPS) || 5,
+  maxToolCalls: Number(process.env.AGENT_MAX_TOOL_CALLS) || 8,
+  agentTimeoutMs: Number(process.env.AGENT_TIMEOUT_MS) || 60_000,
   claudeCliPath: process.env.CLAUDE_CLI_PATH || undefined,
   claudeCliModel: process.env.CLAUDE_CLI_MODEL || undefined,
   cursorPath: process.env.CURSOR_PATH || undefined,
