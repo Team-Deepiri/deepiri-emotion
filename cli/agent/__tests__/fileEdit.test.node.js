@@ -277,3 +277,52 @@ describe('previewMutation', () => {
     expect(result.error).toMatch(/not a mutating tool/i);
   });
 });
+
+// ─── hybrid matcher integration via editFileTool + previewMutation ──────────
+
+describe('editFileTool — hybrid matcher integration', () => {
+  it('reports exact strategy with confidence 1 for clean matches', async () => {
+    await writeFile(join(dir, 'code.js'), 'hello world', 'utf-8');
+    const result = await editFileTool('code.js', 'hello', 'goodbye', dir);
+    expect(result.error).toBeUndefined();
+    expect(result.strategy).toBe('exact');
+    expect(result.confidence).toBe(1);
+    expect(await readFile(join(dir, 'code.js'), 'utf-8')).toBe('goodbye world');
+  });
+
+  it('applies edit via whitespace_normalized when file uses different whitespace', async () => {
+    await writeFile(join(dir, 'code.js'), 'const   a   =   1;', 'utf-8');
+    const result = await editFileTool('code.js', 'const a = 1;', 'const a = 99;', dir);
+    expect(result.error).toBeUndefined();
+    expect(result.edited).toBe(true);
+    expect(result.strategy).toBe('whitespace_normalized');
+    expect(result.confidence).toBe(0.95);
+    expect(await readFile(join(dir, 'code.js'), 'utf-8')).toBe('const a = 99;');
+  });
+
+  it('applies edit when oldString uses LF but file uses CRLF', async () => {
+    await writeFile(join(dir, 'code.js'), 'line one\r\nline two', 'utf-8');
+    const result = await editFileTool('code.js', 'line one\nline two', 'changed', dir);
+    expect(result.error).toBeUndefined();
+    expect(result.strategy).toBe('whitespace_normalized');
+    expect(await readFile(join(dir, 'code.js'), 'utf-8')).toBe('changed');
+  });
+});
+
+describe('previewMutation — hybrid matcher integration', () => {
+  it('reports strategy and confidence on a preview-only edit and writes NOTHING', async () => {
+    const original = 'const   a   =   1;';
+    await writeFile(join(dir, 'code.js'), original, 'utf-8');
+    const result = await previewMutation(
+      'edit_file',
+      { filePath: 'code.js', oldString: 'const a = 1;', newString: 'const a = 99;' },
+      dir
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.action).toBe('edit');
+    expect(result.strategy).toBe('whitespace_normalized');
+    expect(result.confidence).toBe(0.95);
+    // Confirm preview did NOT touch disk.
+    expect(await readFile(join(dir, 'code.js'), 'utf-8')).toBe(original);
+  });
+});
