@@ -12,9 +12,6 @@ export const IPC = {
   END_SESSION: 'end-session',
   RECORD_KEYSTROKE: 'record-keystroke',
   RECORD_FILE_CHANGE: 'record-file-change',
-  AWARD_POINTS: 'award-points',
-  GET_GAMIFICATION_STATE: 'get-gamification-state',
-  GENERATE_CHALLENGE_LOCAL: 'generate-challenge-local',
   SYNC_GITHUB_ISSUES: 'sync-github-issues',
   GET_LLM_HINT: 'get-llm-hint',
   COMPLETE_CODE: 'complete-code',
@@ -28,7 +25,6 @@ export const IPC = {
   RESET_USAGE: 'reset-usage',
   CHAT_COMPLETION: 'chat-completion',
   CLASSIFY_TASK: 'classify-task',
-  GENERATE_CHALLENGE: 'generate-challenge',
   // App & shell
   GET_APP_VERSION: 'get-app-version',
   GET_CONFIG: 'get-config',

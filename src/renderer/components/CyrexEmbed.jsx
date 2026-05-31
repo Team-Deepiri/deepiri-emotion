@@ -1,48 +1,58 @@
 import React, { useState, useEffect } from 'react';
 
 /**
- * Embeds the Cyrex AI interface (Agent Playground, RAG, Workflows, etc.)
- * In dev loads http://localhost:5175; in prod uses config cyrexInterfaceUrl.
+ * Optional embed for an external AI UI (Cyrex or any URL).
+ * Only loads when configured via CYREX_INTERFACE_URL / getConfig — no hardcoded ports.
  */
 export default function CyrexEmbed() {
-  const [url, setUrl] = useState('about:blank');
-  const [error, setError] = useState(null);
+  const [url, setUrl] = useState(null);
+  const [hint, setHint] = useState(null);
 
   useEffect(() => {
     let mounted = true;
-    if (window.electronAPI?.getConfig) {
-      window.electronAPI.getConfig().then((config) => {
-        if (mounted && config?.cyrexInterfaceUrl) {
-          setUrl(config.cyrexInterfaceUrl);
+    const load = async () => {
+      try {
+        const config = window.electronAPI?.getConfig
+          ? await window.electronAPI.getConfig()
+          : null;
+        const embedUrl = config?.cyrexInterfaceUrl?.trim();
+        if (!mounted) return;
+        if (embedUrl) {
+          setUrl(embedUrl);
+          setHint(null);
         } else {
-          setUrl('http://localhost:5175');
+          setUrl(null);
+          setHint(
+            'No external AI UI URL configured. Set CYREX_INTERFACE_URL in the environment or add an integration URL in settings.'
+          );
         }
-      }).catch(() => {
-        if (mounted) setUrl('http://localhost:5175');
-      });
-    } else {
-      setUrl('http://localhost:5175');
-    }
+      } catch {
+        if (mounted) {
+          setUrl(null);
+          setHint('Could not read app configuration.');
+        }
+      }
+    };
+    load();
     return () => { mounted = false; };
   }, []);
 
-  if (error) {
+  if (hint) {
     return (
       <div className="cyrex-embed-fallback">
-        <p>Cyrex interface could not be loaded.</p>
-        <p>{error}</p>
-        <p>Run the Cyrex interface on port 5175 (e.g. in <code>diri-cyrex/cyrex-interface</code>: <code>npm run dev</code>).</p>
+        <p>{hint}</p>
+        <p className="settings-hint">The IDE runs standalone; this panel is only for an optional embedded web UI you host yourself.</p>
       </div>
     );
   }
 
+  if (!url) {
+    return <div className="cyrex-embed-fallback"><p>Loading…</p></div>;
+  }
+
   return (
     <div className="cyrex-embed">
-      <iframe
-        title="Cyrex AI Interface"
-        src={url}
-        onError={() => setError('Failed to load Cyrex')}
-      />
+      <iframe title="External AI interface" src={url} />
     </div>
   );
 }

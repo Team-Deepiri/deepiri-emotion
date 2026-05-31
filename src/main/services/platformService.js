@@ -1,5 +1,5 @@
 /**
- * Platform service: api-request, ai-request, tasks, session, gamification, integrations, get-llm-hint, complete-code.
+ * Platform service: api-request, ai-request, tasks, session, integrations, get-llm-hint, complete-code.
  */
 import axios from 'axios';
 import { API_BASE_URL, AI_SERVICE_URL, desktopHeaders } from '../bootstrap-env.js';
@@ -111,37 +111,6 @@ export function registerPlatformService(ipcMain, deps) {
         { headers: desktopHeaders }
       );
     } catch { /* no-op */ }
-  });
-
-  ipcMain.handle(IPC.AWARD_POINTS, async (_event, points) => {
-    try {
-      await axios.post(`${API_BASE_URL}/gamification/award`, { points }, { headers: desktopHeaders });
-      return { success: true };
-    } catch {
-      return { success: true };
-    }
-  });
-
-  ipcMain.handle(IPC.GET_GAMIFICATION_STATE, async () => {
-    try {
-      const response = await axios.get(`${API_BASE_URL}/gamification/state`, { headers: desktopHeaders });
-      return response.data || {};
-    } catch {
-      return { points: 0, level: 1, streak: 0, badges: [] };
-    }
-  });
-
-  ipcMain.handle(IPC.GENERATE_CHALLENGE_LOCAL, async (_event, taskId) => {
-    try {
-      const response = await axios.post(
-        `${AI_SERVICE_URL}/agent/challenge/generate`,
-        { task_id: taskId },
-        { headers: desktopHeaders }
-      );
-      return { success: true, data: response.data };
-    } catch (error) {
-      return { success: false, error: error.response?.data || error.message };
-    }
   });
 
   ipcMain.handle(IPC.SYNC_GITHUB_ISSUES, async (_event, { repo = '', token = null }) => {

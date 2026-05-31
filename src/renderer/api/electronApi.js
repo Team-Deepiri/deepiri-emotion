@@ -93,10 +93,6 @@ export const api = {
   getTasks: guard('getTasks', (a) => a.getTasks?.()),
   createTask: guard('createTask', (a, title, desc, type) => a.createTask?.(title, desc, type)),
   classifyTask: guard('classifyTask', (a, task, desc) => a.classifyTask?.(task, desc)),
-  generateChallenge: guard('generateChallenge', (a, data) => a.generateChallenge?.(data)),
-  generateChallengeLocal: guard('generateChallengeLocal', (a, taskId) => a.generateChallengeLocal?.(taskId)),
-  awardPoints: guard('awardPoints', (a, points) => a.awardPoints?.(points)),
-  getGamificationState: guard('getGamificationState', (a) => a.getGamificationState?.()),
   syncGithubIssues: guard('syncGithubIssues', (a, repo, token) => a.syncGithubIssues?.(repo, token)),
 
   // LLM helpers

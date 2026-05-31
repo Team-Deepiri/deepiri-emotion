@@ -2,6 +2,7 @@
  * Design tokens — Deepiri Emotion IDE
  * Theme: light blue (natural base) + light blue & orange (accents).
  * Refined contrast, surfaces, and motion.
+ * Modern IDE polish: glows, gradients, depth effects.
  */
 :root {
   /* Typography */
@@ -13,14 +14,17 @@
 
   /* Motion */
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --duration-fast: 0.15s;
   --duration-normal: 0.2s;
+  --duration-slow: 0.35s;
 
   /* Radius */
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 8px;
   --radius-xl: 10px;
+  --radius-pill: 9999px;
 
   /* Spacing scale */
   --space-1: 4px;
@@ -39,148 +43,212 @@
   --color-orange: #e67e22;
   --color-orange-bright: #f0a020;
   --color-orange-deep: #c96a1a;
+  
+  /* Modern accent gradients */
+  --gradient-primary: linear-gradient(135deg, #5ba3d0 0%, #3498db 50%, #2980b9 100%);
+  --gradient-accent: linear-gradient(135deg, #e67e22 0%, #d96f1a 50%, #c96a1a 100%);
+  --gradient-glow: radial-gradient(ellipse at center, rgba(91, 163, 208, 0.15) 0%, transparent 70%);
+  --gradient-card: linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 100%);
+  
+  /* File type colors */
+  --file-js: #f7df1e;
+  --file-ts: #3178c6;
+  --file-jsx: #61dafb;
+  --file-tsx: #3178c6;
+  --file-html: #e34c26;
+  --file-css: #264de4;
+  --file-json: #cbcb41;
+  --file-md: #083fa1;
+  --file-py: #3776ab;
+  --file-rs: #dea584;
+  --file-go: #00add8;
+  --file-default: #8fb4c9;
 
   /* Activity bar */
   --activityBar-width: 48px;
-  --activityBar-background: #162d3d;
+  --activityBar-background: #0d1926;
   --activityBar-foreground: #8fc4e0;
-  --activityBar-inactiveForeground: #5a8fa8;
+  --activityBar-inactiveForeground: #4a6d85;
   --activityBar-activeBorder: #e67e22;
-  --activityBar-activeBackground: #1e3a4d;
-  --activityBar-hoverBackground: #243b4a;
+  --activityBar-activeBackground: linear-gradient(90deg, rgba(230, 126, 34, 0.15) 0%, transparent 100%);
+  --activityBar-hoverBackground: rgba(91, 163, 208, 0.08);
+  --activityBar-glow: 0 0 20px rgba(230, 126, 34, 0.3);
 
   /* Sidebar */
-  --sidebar-background: #1e3a4d;
+  --sidebar-background: #131f2d;
   --sidebar-foreground: #c5dceb;
-  --sidebar-border: #2a4a5e;
-  --sidebarSectionHeader-background: #243b4a;
-  --sidebarSectionHeader-foreground: #b8d4e8;
+  --sidebar-border: rgba(91, 163, 208, 0.15);
+  --sidebarSectionHeader-background: rgba(91, 163, 208, 0.05);
+  --sidebarSectionHeader-foreground: #8fc4e0;
   --sidebarSectionHeader-border: transparent;
-  --list-hoverBackground: #2a4a5e;
-  --list-activeSelectionBackground: #0d5a8a;
-  --list-activeSelectionForeground: #ffffff;
+  --list-hoverBackground: rgba(91, 163, 208, 0.1);
+  --list-activeSelectionBackground: rgba(91, 163, 208, 0.2);
+  --list-activeSelectionForeground: #e8f4fc;
+  --sidebar-shadow: inset -1px 0 0 rgba(255,255,255,0.03), 4px 0 20px rgba(0,0,0,0.3);
 
   /* Editor & tabs */
-  --editor-background: #151f2b;
-  --editorGroupHeader-tabsBackground: #1e3a4d;
-  --tab-inactiveBackground: #243b4a;
-  --tab-inactiveForeground: #8fb4c9;
-  --tab-activeBackground: #151f2b;
+  --editor-background: #0a1118;
+  --editorGroupHeader-tabsBackground: #131f2d;
+  --tab-inactiveBackground: rgba(36, 59, 74, 0.5);
+  --tab-inactiveForeground: #6a8fa8;
+  --tab-activeBackground: #0a1118;
   --tab-activeForeground: #e8f4fc;
   --tab-activeBorder: #e67e22;
-  --tab-border: #2a4a5e;
-  --tab-hoverBackground: #2a4a5e;
+  --tab-border: rgba(91, 163, 208, 0.1);
+  --tab-hoverBackground: rgba(91, 163, 208, 0.08);
+  --tab-glow: 0 2px 8px rgba(230, 126, 34, 0.25);
+  --tab-active-glow: 0 0 12px rgba(230, 126, 34, 0.15);
 
   /* Panel */
-  --panel-background: #151f2b;
-  --panel-border: #2a4a5e;
-  --panelTab-inactiveForeground: #8fb4c9;
+  --panel-background: #0d1520;
+  --panel-border: rgba(91, 163, 208, 0.12);
+  --panelTab-inactiveForeground: #6a8fa8;
   --panelTab-activeForeground: #e8f4fc;
   --panelTab-activeBorder: #e67e22;
 
   /* Status bar — orange accent with depth */
-  --statusBar-background: linear-gradient(180deg, #e67e22 0%, #d96f1a 100%);
-  --statusBar-background-solid: #e67e22;
-  --statusBar-foreground: #ffffff;
-  --statusBar-height: 22px;
+  --statusBar-background: linear-gradient(180deg, #1a252f 0%, #131f2d 100%);
+  --statusBar-background-solid: #131f2d;
+  --statusBar-foreground: #8fc4e0;
+  --statusBar-height: 24px;
+  --statusBar-border: rgba(91, 163, 208, 0.2);
+  --statusBar-accent: #e67e22;
 
   /* Inputs & buttons */
-  --input-background: #243b4a;
+  --input-background: rgba(36, 59, 74, 0.5);
   --input-foreground: #c5dceb;
-  --input-border: #3d5a6e;
+  --input-border: rgba(91, 163, 208, 0.2);
   --focusBorder: #5ba3d0;
-  --focusRing: 0 0 0 2px rgba(91, 163, 208, 0.5);
-  --button-background: #3498db;
-  --button-hoverBackground: #e67e22;
+  --focusRing: 0 0 0 2px rgba(91, 163, 208, 0.3), 0 0 12px rgba(91, 163, 208, 0.15);
+  --button-background: linear-gradient(180deg, #3a8fc4 0%, #2d7aad 100%);
+  --button-hoverBackground: linear-gradient(180deg, #e67e22 0%, #d96f1a 100%);
   --button-foreground: #ffffff;
+  --button-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  --button-glow: 0 0 15px rgba(91, 163, 208, 0.3);
 
   /* Surfaces (elevated for modals/dropdowns) */
-  --surface-elevated: #243b4a;
-  --surface-overlay: rgba(21, 31, 43, 0.92);
+  --surface-elevated: #1a2835;
+  --surface-overlay: rgba(10, 17, 24, 0.85);
+  --surface-glass: rgba(26, 40, 53, 0.8);
 
   /* Scrollbar */
-  --scrollbar-width: 10px;
-  --scrollbar-track: #1a2835;
-  --scrollbar-slider-background: #3d5a6e99;
-  --scrollbar-slider-hoverBackground: #5ba3d0b3;
-  --scrollbar-slider-borderRadius: 10px;
+  --scrollbar-width: 8px;
+  --scrollbar-track: rgba(13, 25, 38, 0.5);
+  --scrollbar-slider-background: rgba(91, 163, 208, 0.3);
+  --scrollbar-slider-hoverBackground: rgba(91, 163, 208, 0.5);
+  --scrollbar-slider-borderRadius: 4px;
 
   /* Shadows — theme-tinted */
-  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.25);
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.35);
-  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.45);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.6);
   --shadow-big: var(--shadow-lg);
   --shadow-medium: var(--shadow-md);
-  --shadow-modal: 0 24px 48px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(230, 126, 34, 0.15);
+  --shadow-modal: 0 24px 64px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(91, 163, 208, 0.1);
+  --shadow-glow: 0 0 30px rgba(91, 163, 208, 0.2);
 
   /* Semantic */
   --error-foreground: #f48771;
-  --error-background: rgba(244, 135, 113, 0.18);
+  --error-background: rgba(244, 135, 113, 0.15);
+  --error-glow: rgba(244, 135, 113, 0.2);
   --warning-foreground: #e6c65c;
+  --warning-background: rgba(230, 198, 92, 0.15);
   --success-foreground: #4ec9b0;
-  --success-background: #2d7d5a;
+  --success-background: rgba(78, 201, 176, 0.15);
+  --success-glow: rgba(78, 201, 176, 0.2);
   --accent-foreground: #5ba3d0;
+  --accent-background: rgba(91, 163, 208, 0.15);
   --accent-border: #e67e22;
   --link-foreground: #5ba3d0;
 
   /* Canvas / visual editor grid */
-  --canvas-grid: rgba(91, 163, 208, 0.12);
+  --canvas-grid: rgba(91, 163, 208, 0.08);
 
   /* Full design — depth & chrome */
-  --chrome-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-  --chrome-border-subtle: rgba(255, 255, 255, 0.04);
-  --status-bar-border-top: rgba(0, 0, 0, 0.2);
-  --status-bar-highlight: rgba(255, 255, 255, 0.08);
+  --chrome-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --chrome-border-subtle: rgba(255, 255, 255, 0.03);
+  --chrome-inset: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  --status-bar-border-top: rgba(0, 0, 0, 0.3);
+  --status-bar-highlight: rgba(255, 255, 255, 0.05);
+  
+  /* Split editor */
+  --split-border: rgba(91, 163, 208, 0.15);
+  --split-handle: rgba(91, 163, 208, 0.3);
+  
+  /* Minimap */
+  --minimap-background: #0d1520;
+  --minimap-slider: rgba(91, 163, 208, 0.2);
+  
+  /* Breadcrumbs */
+  --breadcrumb-foreground: #5a8fa8;
+  --breadcrumb-separator: rgba(91, 163, 208, 0.3);
+  
+  /* AI bar */
+  --ai-bar-background: linear-gradient(180deg, rgba(91, 163, 208, 0.08) 0%, transparent 100%);
+  --ai-chip-background: rgba(91, 163, 208, 0.12);
+  --ai-chip-hover: rgba(230, 126, 34, 0.15);
+  --ai-chip-border: rgba(91, 163, 208, 0.2);
 }
 
 /* Light theme */
 [data-theme="light"] {
-  --activityBar-background: #b8d4e8;
-  --activityBar-foreground: #0d3d5c;
-  --activityBar-inactiveForeground: #4a8fb8;
+  --activityBar-background: #1a2835;
+  --activityBar-foreground: #8fc4e0;
+  --activityBar-inactiveForeground: #4a6d85;
   --activityBar-activeBorder: #e67e22;
-  --activityBar-activeBackground: #d4e9f7;
-  --activityBar-hoverBackground: #c5e1f0;
-  --sidebar-background: #e3f2fa;
-  --sidebar-foreground: #0d3d5c;
-  --sidebar-border: #b8d4e8;
-  --sidebarSectionHeader-background: #d4e9f7;
-  --sidebarSectionHeader-foreground: #0d3d5c;
-  --list-hoverBackground: #d4e9f7;
+  --activityBar-activeBackground: linear-gradient(90deg, rgba(230, 126, 34, 0.15) 0%, transparent 100%);
+  --activityBar-hoverBackground: rgba(91, 163, 208, 0.08);
+  --sidebar-background: #f8fafc;
+  --sidebar-foreground: #1a2835;
+  --sidebar-border: #d1dce5;
+  --sidebarSectionHeader-background: #f1f5f9;
+  --sidebarSectionHeader-foreground: #475569;
+  --list-hoverBackground: #e8eef4;
   --list-activeSelectionBackground: #3498db;
   --list-activeSelectionForeground: #ffffff;
-  --editor-background: #f5fafd;
-  --editorGroupHeader-tabsBackground: #e3f2fa;
-  --tab-inactiveBackground: #d4e9f7;
-  --tab-inactiveForeground: #4a6d85;
-  --tab-activeBackground: #f5fafd;
-  --tab-activeForeground: #0d3d5c;
+  --editor-background: #ffffff;
+  --editorGroupHeader-tabsBackground: #f1f5f9;
+  --tab-inactiveBackground: #e8eef4;
+  --tab-inactiveForeground: #64748b;
+  --tab-activeBackground: #ffffff;
+  --tab-activeForeground: #1a2835;
   --tab-activeBorder: #e67e22;
-  --tab-border: #b8d4e8;
-  --tab-hoverBackground: #d4e9f7;
-  --panel-background: #f5fafd;
-  --panel-border: #b8d4e8;
-  --panelTab-inactiveForeground: #4a6d85;
-  --panelTab-activeForeground: #0d3d5c;
+  --tab-border: #d1dce5;
+  --tab-hoverBackground: #f1f5f9;
+  --panel-background: #ffffff;
+  --panel-border: #d1dce5;
+  --panelTab-inactiveForeground: #64748b;
+  --panelTab-activeForeground: #1a2835;
   --panelTab-activeBorder: #e67e22;
-  --statusBar-background: linear-gradient(180deg, #e67e22 0%, #d96f1a 100%);
-  --statusBar-background-solid: #e67e22;
+  --statusBar-background: linear-gradient(180deg, #1a2835 0%, #131f2d 100%);
+  --statusBar-background-solid: #131f2d;
+  --statusBar-foreground: #8fc4e0;
   --input-background: #ffffff;
-  --input-foreground: #0d3d5c;
-  --input-border: #b8d4e8;
-  --button-background: #3498db;
-  --button-hoverBackground: #d96f1a;
+  --input-foreground: #1a2835;
+  --input-border: #d1dce5;
+  --button-background: linear-gradient(180deg, #3498db 0%, #2980b9 100%);
+  --button-hoverBackground: linear-gradient(180deg, #e67e22 0%, #d96f1a 100%);
   --surface-elevated: #ffffff;
-  --surface-overlay: rgba(0, 0, 0, 0.4);
-  --focusBorder: #2980b9;
-  --focusRing: 0 0 0 2px rgba(52, 152, 219, 0.4);
+  --surface-overlay: rgba(26, 40, 53, 0.6);
+  --surface-glass: rgba(255, 255, 255, 0.9);
+  --focusBorder: #3498db;
+  --focusRing: 0 0 0 2px rgba(52, 152, 219, 0.3), 0 0 12px rgba(52, 152, 219, 0.15);
   --accent-foreground: #2980b9;
+  --accent-background: rgba(52, 152, 219, 0.1);
   --accent-border: #e67e22;
-  --scrollbar-track: #e8f4fc;
-  --scrollbar-slider-background: #5ba3d066;
-  --scrollbar-slider-hoverBackground: #3498db99;
-  --shadow-modal: 0 24px 48px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(230, 126, 34, 0.2);
-  --canvas-grid: rgba(52, 152, 219, 0.15);
+  --scrollbar-track: #f1f5f9;
+  --scrollbar-slider-background: rgba(52, 152, 219, 0.25);
+  --scrollbar-slider-hoverBackground: rgba(52, 152, 219, 0.4);
+  --shadow-modal: 0 24px 48px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(91, 163, 208, 0.1);
+  --shadow-glow: 0 0 20px rgba(52, 152, 219, 0.15);
+  --canvas-grid: rgba(52, 152, 219, 0.1);
+  --chrome-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --chrome-inset: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  --ai-bar-background: linear-gradient(180deg, rgba(52, 152, 219, 0.05) 0%, transparent 100%);
+  --ai-chip-background: rgba(52, 152, 219, 0.08);
+  --ai-chip-hover: rgba(230, 126, 34, 0.1);
+  --ai-chip-border: rgba(52, 152, 219, 0.15);
 }
 
 /* High contrast */
@@ -194,4 +262,10 @@
   --scrollbar-slider-background: #5ba3d0;
   --scrollbar-slider-hoverBackground: #5ba3d0;
   --canvas-grid: rgba(91, 163, 208, 0.35);
+  --surface-overlay: rgba(0, 0, 0, 0.8);
+  --sidebar-background: #000000;
+  --editor-background: #000000;
+  --panel-background: #000000;
+  --sidebar-border: #ffffff;
+  --input-border: #ffffff;
 }

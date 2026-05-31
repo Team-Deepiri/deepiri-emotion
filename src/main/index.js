@@ -3,7 +3,7 @@
  */
 import { BrowserWindow, ipcMain } from 'electron';
 import { paths, desktopHeaders } from './bootstrap-env.js';
-import { isDev, getLaunchArgs } from './bootstrap-args.js';
+import { isDev, getLaunchArgs, getRendererDevPort } from './bootstrap-args.js';
 import { createMenu } from './menu.js';
 import { createAgentRuntime } from '../agentRuntime.js';
 import { createNeuralMemory } from '../neuralMemory.js';
@@ -45,8 +45,13 @@ export function createWindow() {
   });
 
   if (isDev) {
-    mainWindow.loadURL('http://localhost:5173');
-    mainWindow.webContents.openDevTools();
+    const rendererPort = getRendererDevPort();
+    mainWindow.loadURL(`http://localhost:${rendererPort}`);
+    mainWindow.webContents.once('did-finish-load', () => {
+      if (process.env.DEEPIRI_DEVTOOLS !== '0') {
+        mainWindow.webContents.openDevTools({ mode: 'detach' });
+      }
+    });
   } else {
     mainWindow.loadFile(paths.distRenderer);
   }

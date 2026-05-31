@@ -25,7 +25,8 @@ export const defaultHeloxPath = join(DEEPIRI_ROOT, 'deepiri-platform', 'diri-hel
 
 export const API_BASE_URL = process.env.API_URL || 'http://localhost:5000/api';
 export const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
-export const CYREX_INTERFACE_URL = process.env.CYREX_INTERFACE_URL || 'http://localhost:5175';
+/** Optional external AI UI embed URL; unset = Cyrex view shows setup instructions only. */
+export const CYREX_INTERFACE_URL = process.env.CYREX_INTERFACE_URL || '';
 
 export const desktopHeaders = {
   'Content-Type': 'application/json',

@@ -1,3 +1,4 @@
+import './monacoSetup.js';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
@@ -12,11 +13,11 @@ import './styles/ide-extended.css';
 import './styles/editor.css';
 import './styles/assistant.css';
 import './styles/features.css';
-import './styles/missions.css';
 import './styles/components.css';
 import './styles/ui.css';
 import './styles/layout.css';
 import './styles/design-polish.css';
+import './styles/modern-ide.css';
 
 ReactDOM.createRoot(document.getElementById('app')).render(
   <React.StrictMode>

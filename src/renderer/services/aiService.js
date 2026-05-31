@@ -14,6 +14,8 @@ function textToVector(text, dim = 32) {
   return out;
 }
 
+import { ENDPOINTS } from '../api/endpoints.js';
+
 /**
  * AI Service Integration
  * Connect desktop IDE to microservices AI backend.
@@ -21,8 +23,8 @@ function textToVector(text, dim = 32) {
  */
 class AIService {
   constructor() {
-    this.apiBase = process.env.API_URL || 'http://localhost:5000/api';
-    this.aiServiceBase = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+    this.apiBase = ENDPOINTS.DEFAULT_API_BASE;
+    this.aiServiceBase = ENDPOINTS.DEFAULT_AI_SERVICE;
     this.useLocalModel = false;
   }
 

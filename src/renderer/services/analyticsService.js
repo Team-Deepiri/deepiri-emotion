@@ -3,13 +3,13 @@
  */
 export const analyticsService = {
   track(eventName, properties = {}) {
-    if (process.env.NODE_ENV === 'development') {
+    if (import.meta.env.DEV) {
       console.debug('[analytics]', eventName, properties);
     }
   },
 
   identify(userId, traits = {}) {
-    if (process.env.NODE_ENV === 'development') {
+    if (import.meta.env.DEV) {
       console.debug('[analytics] identify', userId, traits);
     }
   }

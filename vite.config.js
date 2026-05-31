@@ -8,11 +8,15 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 export default defineConfig({
   root: __dirname + '/src/renderer',
   plugins: [react()],
+  optimizeDeps: {
+    include: ['monaco-editor'],
+  },
   build: {
     outDir: __dirname + '/dist-renderer',
     emptyOutDir: true,
   },
   server: {
-    port: 5173,
+    port: Number(process.env.RENDERER_DEV_PORT) || 5173,
+    strictPort: false,
   },
 });

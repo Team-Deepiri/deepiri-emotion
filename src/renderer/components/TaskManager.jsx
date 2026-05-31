@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-const TaskManager = ({ onTaskSelect, onCreateMission }) => {
+const TaskManager = ({ onTaskSelect }) => {
   const [tasks, setTasks] = useState([]);
   const [filter, setFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -31,14 +31,6 @@ const TaskManager = ({ onTaskSelect, onCreateMission }) => {
       }
     } catch (error) {
       console.error('Error creating task:', error);
-    }
-  };
-
-  const handleCreateMission = async (task) => {
-    if (onCreateMission) {
-      onCreateMission(task);
-    } else if (window.missionSystem) {
-      window.missionSystem.createMission(task, 'coding_sprint');
     }
   };
 
@@ -79,11 +71,6 @@ const TaskManager = ({ onTaskSelect, onCreateMission }) => {
                 <span className={`task-status ${task.status}`}>{task.status}</span>
                 <span className="task-type">{task.task_type}</span>
               </div>
-            </div>
-            <div className="task-actions">
-              <button onClick={() => handleCreateMission(task)} className="btn-mission">
-                Create Mission
-              </button>
             </div>
           </div>
         ))}
