@@ -241,6 +241,8 @@ export async function executeTool(tool, args = {}, cwd = DEFAULT_CWD) {
 
   if (tool === 'git_diff') {
     return gitDiff(cwd, { staged: args.staged === true, path: args.path ?? null });
+  }
+
   if (tool === 'thoughts') {
     return thoughtsTool(args);
   }
