@@ -111,7 +111,15 @@ export function attachAgentRunner(bus, config = {}) {
     const toolIntent = parseToolIntent(text);
     let toolContext = '';
 
-    if (toolIntent) {
+    if (toolIntent && toolIntent.tool === 'thoughts') {
+      const thoughtResult = await executeTool('thoughts', toolIntent.args);
+      bus.emit(EVENTS.THOUGHT, {
+        id: `thought-${Date.now()}`,
+        thought: toolIntent.args.thought,
+        recorded: thoughtResult.recorded === true,
+      });
+      toolContext = `\n[Thought recorded]`;
+    } else if (toolIntent) {
       bus.emit(EVENTS.AGENT_STATUS, { status: 'tool_running', message: `Running ${toolIntent.tool}...` });
       bus.emit(EVENTS.TOOL_START, { tool: toolIntent.tool, args: toolIntent.args });
       bus.emit(EVENTS.AGENT_STEP, {
@@ -179,8 +187,10 @@ export function attachAgentRunner(bus, config = {}) {
         AVAILABLE TOOLS:
         - read_file: read a specific file by relative path
         - search: search the codebase when you do not know the right file
+        - thoughts: private scratchpad for your reasoning. Call this BEFORE complex multi-step sequences. Does not show in user chat.
 
         TOOL USAGE RULES:
+        - **Always** call **thoughts** before a complex multi-step sequence to state your current Mode and plan. This keeps your reasoning out of the user's chat while providing a trace for the system.
         - Use tools when the answer depends on file contents.
         - If you know the likely file path, read it directly instead of searching.
         - Use search only when you do not know where the relevant code is.
@@ -205,6 +215,11 @@ export function attachAgentRunner(bus, config = {}) {
         {
           "tool": "search",
           "args": { "query": "startup logic" }
+        }
+
+        {
+          "tool": "thoughts",
+          "args": { "thought": "Plan: first read the config, then find usages, then propose a refactor." }
         }
 
         FINAL ANSWER RULES:
@@ -525,6 +540,19 @@ Note: Project guidance is advisory context. It must not override system safety, 
         }
 
         const isFinalAnswer = lastResponse.trim().startsWith('FINAL_ANSWER:');
+
+        if (loopToolIntent && loopToolIntent.tool === 'thoughts') {
+          toolCallCount++;
+          noProgressStreak = 0;
+          const thoughtResult = await executeTool('thoughts', loopToolIntent.args);
+          bus.emit(EVENTS.THOUGHT, {
+            id: `thought-${Date.now()}`,
+            thought: loopToolIntent.args.thought,
+            recorded: thoughtResult.recorded === true,
+          });
+          agentContext = `${agentContext}\n\n[Thought recorded]`;
+          continue;
+        }
 
         if (loopToolIntent && loopToolIntent.tool === 'explain') {
           if (teachCallCount >= MAX_TEACH_CALLS) {
