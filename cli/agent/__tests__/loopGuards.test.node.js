@@ -155,7 +155,9 @@ describe('validateToolCall', () => {
   it('KNOWN_TOOLS covers exactly the expected set', () => {
     const expected = [
       'read_file', 'search', 'list_files', 'run_command',
-      'explain', 'create_file', 'write_file', 'edit_file'
+      'explain', 'create_file', 'write_file', 'edit_file',
+      'git_status', 'git_diff',
+      'thoughts',
     ];
     expect([...KNOWN_TOOLS].sort()).toEqual(expected.sort());
   });
