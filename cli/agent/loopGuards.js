@@ -15,6 +15,7 @@ export const KNOWN_TOOLS = new Set([
   'edit_file',
   'git_status',
   'git_diff',
+  'thoughts',
 ]);
 
 /** Required arg keys per tool (presence check only). */
@@ -29,6 +30,7 @@ const REQUIRED_ARGS = {
   edit_file:    ['filePath', 'oldString', 'newString'],
   git_status:   [],
   git_diff:     [],
+  thoughts:     ['thought'],
 };
 
 /**

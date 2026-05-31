@@ -5,6 +5,7 @@
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { resolve, isAbsolute, relative, sep, dirname } from 'path';
+import { findMatch } from './fileEditMatch.js';
 
 const DEFAULT_CWD = process.cwd();
 
@@ -42,16 +43,6 @@ function checkPathSafety(filePath, cwd) {
   }
 
   return { resolved };
-}
-
-function countOccurrences(text, pattern) {
-  let count = 0;
-  let idx = 0;
-  while ((idx = text.indexOf(pattern, idx)) !== -1) {
-    count++;
-    idx += pattern.length;
-  }
-  return count;
 }
 
 function generateDiffPreview(filePath, oldString, newString) {
@@ -120,24 +111,19 @@ export async function editFileTool(filePath, oldString, newString, cwd = DEFAULT
   }
 
   const content = await readFile(resolved, 'utf-8');
-  const occurrences = countOccurrences(content, oldString);
-
-  if (occurrences === 0) {
-    return { error: `oldString not found in ${filePath}. No changes made.` };
-  }
-  if (occurrences > 1) {
-    return {
-      error: `oldString appears ${occurrences} times in ${filePath}. Provide more surrounding context to make it unique.`,
-    };
+  const match = findMatch(content, oldString);
+  if (match.error) {
+    return { error: `${match.error} (file: ${filePath})` };
   }
 
-  const idx = content.indexOf(oldString);
-  const newContent = content.slice(0, idx) + newString + content.slice(idx + oldString.length);
+  const newContent = content.slice(0, match.index) + newString + content.slice(match.index + match.length);
   await writeFile(resolved, newContent, 'utf-8');
 
   return {
     path: resolved,
     edited: true,
+    strategy: match.strategy,
+    confidence: match.confidence,
     diff: generateDiffPreview(filePath, oldString, newString),
   };
 }
@@ -194,12 +180,16 @@ export async function previewMutation(tool, args = {}, cwd = DEFAULT_CWD) {
     if (!existsSync(resolved)) return { error: `File not found: ${resolved}` };
 
     const content = await readFile(resolved, 'utf-8');
-    const occurrences = countOccurrences(content, oldString);
-    if (occurrences === 0) return { error: `oldString not found in ${filePath}. No changes made.` };
-    if (occurrences > 1) {
-      return { error: `oldString appears ${occurrences} times in ${filePath}. Provide more surrounding context to make it unique.` };
-    }
-    return { path: resolved, action: 'edit', preview: generateDiffPreview(filePath, oldString, newString) };
+    const match = findMatch(content, oldString);
+    if (match.error) return { error: `${match.error} (file: ${filePath})` };
+
+    return {
+      path: resolved,
+      action: 'edit',
+      preview: generateDiffPreview(filePath, oldString, newString),
+      strategy: match.strategy,
+      confidence: match.confidence,
+    };
   }
 
   return { error: `Not a mutating tool: ${tool}` };
