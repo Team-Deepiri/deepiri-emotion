@@ -110,20 +110,66 @@ Shows which guidance docs were discovered (DIRECTION.md, README.md, AGENTS.md, e
 
 ---
 
-## 9. Keybindings Reference
+## 9. Image / Screenshot Attachment
+
+**Press Ctrl+V** to grab whatever image is on your clipboard (macOS: uses `pngpaste` or `osascript` fallback).
+
+- `📎 1 image attached — will send with next message` appears above the prompt
+- Send any message → image included in the AI request as a vision content block
+- **Also works:** type or paste a file path ending in `.png/.jpg/.jpeg/.gif/.webp` — auto-detected, read, and attached
+- Requires a vision-capable model: **gpt-4o** (OpenAI), **llava** (Ollama), **claude-3-x** (claude-cli)
+
+**Demo:**
+1. Copy any screenshot to clipboard
+2. Press **Ctrl+V** — chip appears: `📎 1 image attached`
+3. **Type:** `What's in this image? Describe any code or UI you see.`
+4. Send — image travels as a vision content block to the provider
+
+**Provider behavior:**
+| Provider | How image is sent |
+|----------|------------------|
+| OpenAI / Cyrex | `content: [{type:'image_url', image_url:{url:'data:image/png;base64,...'}}]` |
+| Ollama | `images: ['<base64>']` on user message (llava-class models) |
+| claude-cli / cursor | `[Attached image: /tmp/deepiri-attach-<ts>.png]` appended to stdin prompt |
+
+---
+
+## 10. Voice-of-Reason Supervisor (`/guard`)
+
+Secondary LLM watches every tool call the agent is about to make, in real time.
+
+**Default: ON.** `[GUARD]` badge in StatusBar shows state. Toggle with `/guard`.
+
+When the supervisor flags an action:
+1. **Execution halts** — the tool does NOT run
+2. `🛑 Supervisor halted — <reason>` appears in StepTimeline (always visible, not gated behind debug mode)
+3. Main agent turns to you: summarizes what it was about to do, why it was flagged, and asks how to proceed
+
+**Supervisor is fail-open:** any parse or stream error defaults to `proceed` — never bricks the loop.
+
+**Demo sequence:**
+1. Ensure `/guard` is ON (default on launch)
+2. **Type:** `Delete all .log files in the workspace`
+3. Supervisor catches the destructive `run_command` before it fires
+4. Watch `🛑` step appear; agent asks how to proceed
+5. **Type:** `/guard` to toggle off → repeat → no halt, action executes
+
+---
+
+## 11. Keybindings Reference
 
 | Key | Action |
 |-----|--------|
 | **Enter** | Send message |
 | **Shift+Enter** | Insert newline |
-| **Ctrl+V** | Grab clipboard image and attach it *(new)* |
+| **Ctrl+V** | Grab clipboard image and attach it |
 | **Ctrl+L** | Clear conversation |
 | **Ctrl+C** | Exit |
 | **y / n** | Approve / deny a confirmation prompt |
 
 ---
 
-## 10. Available Slash Commands
+## 12. Available Slash Commands
 
 | Command | Effect |
 |---------|--------|
@@ -133,42 +179,4 @@ Shows which guidance docs were discovered (DIRECTION.md, README.md, AGENTS.md, e
 | `/auto` | Toggle Auto mode (no confirmation prompts) |
 | `/accept-edits` | Toggle Accept-edits (only file edits auto-approve) |
 | `/scan` | Scan workspace for guidance docs |
-| `/guard` | Toggle voice-of-reason supervisor *(new)* |
-
----
-
-## — COMING NEXT —
-
-### Feature 1: Image / Screenshot Attachment
-
-**Press Ctrl+V** — grabs whatever image is on your clipboard (macOS: pngpaste or osascript).
-
-- `📎 1 image attached — will send with next message` appears above the prompt
-- Send any message → image is included in the AI request as a vision content block
-- **Works for:** OpenAI (gpt-4o content blocks), Ollama (llava `images[]`), claude-cli (file path)
-- **Also works:** paste a file path like `/tmp/screenshot.png` in the prompt — auto-detected and attached
-- Requires a vision-capable model (gpt-4o, llava, claude-3-x)
-
-**Demo prompt to type after attaching a screenshot:**
-> `What's in this image? Describe any code or UI you see.`
-
----
-
-### Feature 2: Voice-of-Reason Supervisor (`/guard`)
-
-A **secondary LLM** watches every tool call the agent is about to make, in real time.
-
-When the supervisor is concerned:
-1. **Execution halts** — the tool does NOT run
-2. `🛑 Supervisor halted — <reason>` appears in StepTimeline
-3. The main agent turns to you and asks what to do next
-
-`[GUARD]` badge in StatusBar shows when active. Toggle with `/guard`.
-
-**Demo sequence:**
-1. Start with `/guard` ON (default)
-2. **Type:** `Delete all .log files in the workspace`
-3. Watch the supervisor catch the destructive `run_command` before it fires
-4. Agent explains what it was about to do and asks how to proceed
-
-The supervisor is fail-open: if the LLM reviewer errors, execution continues normally.
+| `/guard` | Toggle voice-of-reason supervisor (default ON) |
