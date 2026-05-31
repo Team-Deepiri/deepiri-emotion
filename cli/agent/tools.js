@@ -1,5 +1,6 @@
 /**
  * CLI tools: read_file, search, run_command, create_file, write_file, edit_file,
+ * git_status, git_diff.
  * thoughts.
  * Used by runner to emit TOOL_START/TOOL_END.
  */
@@ -8,6 +9,7 @@ import { join } from 'path';
 import { existsSync } from 'fs';
 import { spawn } from 'child_process';
 import { createFileTool, writeFileTool, editFileTool } from './fileEdit.js';
+import { gitStatus, gitDiff } from './gitTools.js';
 import { thoughtsTool } from './thoughtsTool.js';
 import { validateToolCall } from './loopGuards.js';
 
@@ -233,6 +235,12 @@ export async function executeTool(tool, args = {}, cwd = DEFAULT_CWD) {
     return editFileTool(args.filePath, args.oldString, args.newString, cwd);
   }
 
+  if (tool === 'git_status') {
+    return gitStatus(cwd);
+  }
+
+  if (tool === 'git_diff') {
+    return gitDiff(cwd, { staged: args.staged === true, path: args.path ?? null });
   if (tool === 'thoughts') {
     return thoughtsTool(args);
   }

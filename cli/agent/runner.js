@@ -187,6 +187,8 @@ export function attachAgentRunner(bus, config = {}) {
         AVAILABLE TOOLS:
         - read_file: read a specific file by relative path
         - search: search the codebase when you do not know the right file
+        - git_status: get the current git branch, ahead/behind, staged/unstaged/untracked files
+        - git_diff: get a unified diff (defaults to unstaged; pass {"staged": true} for the staged diff, or {"path": "some/file"} to filter)
         - thoughts: private scratchpad for your reasoning. Call this BEFORE complex multi-step sequences. Does not show in user chat.
 
         TOOL USAGE RULES:
@@ -218,6 +220,8 @@ export function attachAgentRunner(bus, config = {}) {
         }
 
         {
+          "tool": "git_status",
+          "args": {}
           "tool": "thoughts",
           "args": { "thought": "Plan: first read the config, then find usages, then propose a refactor." }
         }
@@ -242,6 +246,12 @@ export function attachAgentRunner(bus, config = {}) {
         - If the user asks "find" or "where":
           - answer directly and briefly
           - include the exact file, value, script, function, or location
+
+        - If the user asks about git status, what changed, what's modified, or repo state:
+          - use git_status
+
+        - If the user asks to show the diff, what was edited, or wants line-level changes:
+          - use git_diff (pass {"staged": true} for the staged diff)
 
        - If the user asks "explain", "how it works", "startup", or asks how a system/feature/file/command works:
           - you MUST inspect the relevant implementation files before answering
