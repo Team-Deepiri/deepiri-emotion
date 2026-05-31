@@ -12,12 +12,13 @@ import { AgentWorker } from './AgentWorker.js';
  * @param {Record<string,unknown>} [config] - CLI config (provider, keys, URLs)
  */
 export function attachAgentRunner(bus, config = {}) {
-  let teachMode   = config.teachMode   ?? false;
-  let activeMode  = null;
-  let autoMode    = config.autoMode    ?? false;
-  let acceptEdits = config.acceptEdits ?? false;
+  let teachMode        = config.teachMode        ?? false;
+  let activeMode       = null;
+  let autoMode         = config.autoMode         ?? false;
+  let acceptEdits      = config.acceptEdits      ?? false;
+  let guardMode        = config.supervisorEnabled ?? true;
 
-  bus.on(EVENTS.USER_MESSAGE, async ({ text }) => {
+  bus.on(EVENTS.USER_MESSAGE, async ({ text, attachments = [] }) => {
     if (text?.trim() === '/teach') {
       teachMode = !teachMode;
       bus.emit(EVENTS.TEACH_MODE_CHANGED, { teachMode });
@@ -83,6 +84,17 @@ export function attachAgentRunner(bus, config = {}) {
       return;
     }
 
+    if (text?.trim() === '/guard') {
+      guardMode = !guardMode;
+      bus.emit(EVENTS.GUARD_MODE_CHANGED, { guardMode });
+      const msg = guardMode
+        ? '🛡 Guard mode ON — supervisor will review agent actions in real time.'
+        : 'Guard mode OFF — supervisor disabled.';
+      bus.emit(EVENTS.LLM_TOKEN, { token: msg });
+      bus.emit(EVENTS.LLM_DONE, {});
+      return;
+    }
+
     if (!text?.trim()) return;
 
     const worker = new AgentWorker({
@@ -90,7 +102,8 @@ export function attachAgentRunner(bus, config = {}) {
       bus,
       config,
       task: text,
-      modes: { teachMode, activeMode, autoMode, acceptEdits },
+      attachments,
+      modes: { teachMode, activeMode, autoMode, acceptEdits, guardMode },
     });
     await worker.run();
 

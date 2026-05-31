@@ -38,12 +38,19 @@ export class OllamaProvider extends Provider {
   }
 
   async stream(bus, prompt, opts = {}) {
+    // Ollama vision: include base64 images in the `images` field of the user message.
+    // Requires a vision-capable model (e.g. llava, bakllava). llama3.2 default is text-only.
+    const attachments = Array.isArray(opts.attachments) ? opts.attachments : [];
+    const userMessage = attachments.length > 0
+      ? { role: 'user', content: prompt, images: attachments.map((a) => a.base64) }
+      : { role: 'user', content: prompt };
+
     const res = await fetch(`${this.baseUrl}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: this.model,
-        messages: [{ role: 'user', content: prompt }],
+        messages: [userMessage],
         stream: true,
       }),
     });

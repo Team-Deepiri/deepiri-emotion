@@ -16,7 +16,8 @@ export const INITIAL_STATE = {
   activeMode: null,
   autoMode: false,
   acceptEdits: false,
-  pendingConfirmation: null
+  pendingConfirmation: null,
+  guardMode: true,
 };
 
 export const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];

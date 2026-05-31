@@ -6,12 +6,14 @@ import { MessageList } from './MessageList.js';
 import { StatusBar } from './StatusBar.js';
 import { StepTimeline } from './StepTimeline.js';
 import { PromptInput } from './PromptInput.js';
+import { grabClipboardImage, resolveImagePath } from '../agent/attachments.js';
 
 const SPINNER_INTERVAL_MS = 80;
 
 export default function App({ eventBus, workspaceDir = null, teachMode: initialTeachMode = false }) {
   const [state, setState] = useState({ ...INITIAL_STATE, teachMode: initialTeachMode });
   const [inputValue, setInputValue] = useState('');
+  const [pendingAttachments, setPendingAttachments] = useState([]);
 
   useEffect(() => {
     const onUserMessage = ({ text }) => {
@@ -88,6 +90,10 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
       setState((s) => ({ ...s, acceptEdits }));
     };
 
+    const onGuardModeChanged = ({ guardMode }) => {
+      setState((s) => ({ ...s, guardMode }));
+    };
+
     const onConfirmationRequest = (payload) => {
       setState((s) => ({ ...s, pendingConfirmation: payload }));
     };
@@ -110,6 +116,7 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
     eventBus.on(EVENTS.ACCEPT_EDITS_CHANGED, onAcceptEditsChanged);
     eventBus.on(EVENTS.CONFIRMATION_REQUEST, onConfirmationRequest);
     eventBus.on(EVENTS.CONFIRMATION_RESPONSE, onConfirmationResponse);
+    eventBus.on(EVENTS.GUARD_MODE_CHANGED, onGuardModeChanged);
 
     const spinnerTimer = setInterval(() => {
       eventBus.emit(EVENTS.SPINNER_TICK);
@@ -130,18 +137,38 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
       eventBus.off(EVENTS.ACCEPT_EDITS_CHANGED, onAcceptEditsChanged);
       eventBus.off(EVENTS.CONFIRMATION_REQUEST, onConfirmationRequest);
       eventBus.off(EVENTS.CONFIRMATION_RESPONSE, onConfirmationResponse);
+      eventBus.off(EVENTS.GUARD_MODE_CHANGED, onGuardModeChanged);
       clearInterval(spinnerTimer);
     };
   }, [eventBus]);
+
+  const handlePaste = useCallback(() => {
+    grabClipboardImage()
+      .then((attachment) => {
+        if (attachment) {
+          setPendingAttachments((prev) => [...prev, attachment]);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const handleSubmit = useCallback(
     (text) => {
       const t = (text || inputValue || '').trim();
       if (!t) return;
       setInputValue('');
-      eventBus.emit(EVENTS.USER_MESSAGE, { text: t });
+      // Merge clipboard attachments with any image path detected in the text.
+      const allAttachments = [...pendingAttachments];
+      let finalText = t;
+      const pathResult = resolveImagePath(t);
+      if (pathResult) {
+        allAttachments.push(pathResult.attachment);
+        finalText = pathResult.text || t;
+      }
+      setPendingAttachments([]);
+      eventBus.emit(EVENTS.USER_MESSAGE, { text: finalText, attachments: allAttachments });
     },
-    [inputValue, eventBus]
+    [inputValue, pendingAttachments, eventBus]
   );
 
   const handleClear = useCallback(() => {
@@ -161,7 +188,7 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
     { flexDirection: 'column', padding: 1 },
     React.createElement(Text, { bold: true, color: 'cyan' }, 'Deepiri Emotion CLI'),
     React.createElement(Text, { dimColor: true },
-      workspaceDir ? `Workspace: ${workspaceDir}` : 'Shift+Enter newline, Enter send. Ctrl+C exit, Ctrl+L clear.'
+      workspaceDir ? `Workspace: ${workspaceDir}` : 'Shift+Enter newline, Enter send. Ctrl+V attach image, Ctrl+L clear, Ctrl+C exit.'
     ),
     ...(state.error ? [React.createElement(Text, { key: 'err', color: 'red' }, 'Error: ', state.error)] : []),
     React.createElement(MessageList, {
@@ -177,8 +204,16 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
       supportMode: state.supportMode,
       activeMode: state.activeMode,
       autoMode: state.autoMode,
-      acceptEdits: state.acceptEdits
+      acceptEdits: state.acceptEdits,
+      guardMode: state.guardMode,
     }),
+    ...(pendingAttachments.length > 0 ? [
+      React.createElement(Box, { key: 'attachments', marginTop: 0 },
+        React.createElement(Text, { color: 'magenta' },
+          `📎 ${pendingAttachments.length} image${pendingAttachments.length > 1 ? 's' : ''} attached — will send with next message`
+        )
+      )
+    ] : []),
     ...(state.pendingConfirmation ? [
       React.createElement(Box, {
         key: 'confirm',
@@ -203,6 +238,7 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
         onChange: setInputValue,
         onSubmit: handleSubmit,
         onClear: handleClear,
+        onPaste: handlePaste,
         placeholder: state.pendingConfirmation ? 'Awaiting confirmation — press y or n' : 'Type a message...',
         pendingConfirmation: state.pendingConfirmation,
         onConfirm: handleConfirm

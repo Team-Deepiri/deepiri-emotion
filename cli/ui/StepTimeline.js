@@ -7,7 +7,8 @@ const STEP_ICONS = {
   tool_call: '🔍',
   tool_result: '✓',
   response: '✍',
-  teach: '📖'
+  teach: '📖',
+  supervisor: '🛑',
 };
 
 const CATEGORY_LABELS = {
@@ -19,9 +20,10 @@ const CATEGORY_LABELS = {
 export function StepTimeline({ steps, activeMode }) {
   if (!steps.length) return null;
 
+  // supervisor steps always visible — they signal an important halt to the user
   const visibleSteps = activeMode === MODES.DEBUG
     ? steps
-    : steps.filter((s) => s.type !== 'thinking' && s.type !== 'tool_call' && s.type !== 'tool_result');
+    : steps.filter((s) => s.type !== 'thinking' && s.type !== 'tool_call' && s.type !== 'tool_result' || s.type === 'supervisor');
 
   if (!visibleSteps.length) return null;
 
@@ -30,6 +32,25 @@ export function StepTimeline({ steps, activeMode }) {
     { flexDirection: 'column', gap: 0, marginBottom: 1 },
     React.createElement(Text, { dimColor: true }, 'Steps:'),
     ...visibleSteps.slice(-5).map((s, i) => {
+      if (s.type === 'supervisor') {
+        return React.createElement(
+          Box,
+          { key: `${s.id || 'step'}-${i}`, flexDirection: 'column', marginLeft: 1 },
+          React.createElement(
+            Text,
+            { color: 'red', bold: true },
+            '  🛑 Supervisor halted — ',
+            s.reason || s.message || 'action flagged for review'
+          ),
+          s.suggestion && React.createElement(
+            Text,
+            { color: 'yellow', dimColor: true },
+            '     → ',
+            String(s.suggestion).slice(0, 140)
+          )
+        );
+      }
+
       if (s.type === 'teach') {
         const label = CATEGORY_LABELS[s.category] || s.category || '';
         const explanation = s.explanation || '';

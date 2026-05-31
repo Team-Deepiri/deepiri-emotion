@@ -22,12 +22,22 @@ export class CyrexProvider extends Provider {
   }
 
   async stream(bus, prompt, opts = {}) {
+    const attachments = Array.isArray(opts.attachments) ? opts.attachments : [];
+    // Pass attachments as base64 strings; backend may or may not support vision.
+    const attachmentPayload = attachments.map((a) => ({ mime: a.mime, base64: a.base64 }));
+
     let res;
     try {
       res = await fetch(`${this.baseUrl}/agent/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, context: '', file_content: '', selection: null }),
+        body: JSON.stringify({
+          prompt,
+          context: '',
+          file_content: '',
+          selection: null,
+          ...(attachmentPayload.length > 0 ? { attachments: attachmentPayload } : {}),
+        }),
       });
     } catch (err) {
       throw new ProviderUnavailableError(`Cyrex unreachable: ${err.message}`);

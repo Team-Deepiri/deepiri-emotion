@@ -2,7 +2,7 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import { useInput } from 'ink';
 
-export function PromptInput({ value, onChange, onSubmit, onClear, placeholder, pendingConfirmation, onConfirm }) {
+export function PromptInput({ value, onChange, onSubmit, onClear, onPaste, placeholder, pendingConfirmation, onConfirm }) {
   useInput((input, key) => {
     if (pendingConfirmation) {
       if (key.ctrl && input === 'c') {
@@ -31,6 +31,10 @@ export function PromptInput({ value, onChange, onSubmit, onClear, placeholder, p
     }
     if (key.ctrl && input === 'l') {
       if (typeof onClear === 'function') onClear();
+      return;
+    }
+    if (key.ctrl && input === 'v') {
+      if (typeof onPaste === 'function') onPaste();
       return;
     }
     if (key.backspace || key.delete) {

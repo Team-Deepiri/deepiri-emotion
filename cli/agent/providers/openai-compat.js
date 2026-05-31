@@ -37,6 +37,18 @@ export class OpenAICompatProvider extends Provider {
       throw new ProviderAuthError('No API key configured');
     }
 
+    // Build message content: plain text, or multimodal array when images are attached.
+    const attachments = Array.isArray(opts.attachments) ? opts.attachments : [];
+    const messageContent = attachments.length > 0
+      ? [
+          { type: 'text', text: prompt },
+          ...attachments.map((a) => ({
+            type: 'image_url',
+            image_url: { url: `data:${a.mime};base64,${a.base64}` },
+          })),
+        ]
+      : prompt;
+
     const res = await fetch(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -45,7 +57,7 @@ export class OpenAICompatProvider extends Provider {
       },
       body: JSON.stringify({
         model: this.model,
-        messages: [{ role: 'user', content: prompt }],
+        messages: [{ role: 'user', content: messageContent }],
         stream: true,
       }),
     });
