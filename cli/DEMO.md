@@ -12,7 +12,21 @@ npm run cli -- /path/to/project    # or point it at a specific workspace
 npm run cli -- --teach             # start with Teach mode pre-enabled
 ```
 
-Set `OPENAI_API_KEY` for OpenAI, or make sure `claude` (Claude Code) is logged in for the local-free path.
+**Provider prerequisites (pick one):**
+
+| Provider | What you need | Notes |
+|----------|--------------|-------|
+| **claude-cli** *(default, free)* | `claude` CLI logged in | Run `claude` once interactively to auth |
+| **OpenAI** | `export OPENAI_API_KEY=sk-...` | Default model: `gpt-4o-mini`; use `gpt-4o` for vision |
+| **Ollama** | `ollama serve` running + model pulled | `ollama pull llava` for vision; `ollama pull llama3.2` for text |
+
+**For the image/vision demo specifically:**
+- **claude-cli path:** image temp file is passed as a text note — Claude reads the local file. Works but not true multimodal content blocks.
+- **True vision blocks:** set `OPENAI_API_KEY` + `"openaiModel": "gpt-4o"` in `.emotion-cli.json`, OR run `ollama serve` and pull `llava`.
+
+```json
+{ "providerChain": ["openai"], "openaiModel": "gpt-4o" }
+```
 
 ---
 
@@ -117,7 +131,8 @@ Shows which guidance docs were discovered (DIRECTION.md, README.md, AGENTS.md, e
 - `📎 1 image attached — will send with next message` appears above the prompt
 - Send any message → image included in the AI request as a vision content block
 - **Also works:** type or paste a file path ending in `.png/.jpg/.jpeg/.gif/.webp` — auto-detected, read, and attached
-- Requires a vision-capable model: **gpt-4o** (OpenAI), **llava** (Ollama), **claude-3-x** (claude-cli)
+- Requires a vision-capable model for full vision: **gpt-4o** (OpenAI), **llava** (Ollama)
+- With **claude-cli** (default): image temp path is passed as `[Attached image: /path]` text note — Claude reads the file and can describe it, but it is not a multimodal content block
 
 **Demo:**
 1. Copy any screenshot to clipboard
@@ -149,10 +164,11 @@ When the supervisor flags an action:
 
 **Demo sequence:**
 1. Ensure `/guard` is ON (default on launch)
-2. **Type:** `Delete all .log files in the workspace`
+2. **Type:** `Run a shell command to delete all .log files in the workspace`
+   *(Use this exact phrasing — it forces the agent to emit a `run_command` tool call rather than just explaining the steps. Supervisor only intercepts live tool calls.)*
 3. Supervisor catches the destructive `run_command` before it fires
 4. Watch `🛑` step appear; agent asks how to proceed
-5. **Type:** `/guard` to toggle off → repeat → no halt, action executes
+5. **Type:** `/guard` to toggle off → repeat same prompt → no halt, command executes (pending confirmation gate)
 
 ---
 
