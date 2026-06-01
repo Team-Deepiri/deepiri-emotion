@@ -158,6 +158,7 @@ describe('validateToolCall', () => {
       'explain', 'create_file', 'write_file', 'edit_file',
       'git_status', 'git_diff',
       'thoughts',
+      'memory_set', 'memory_get', 'memory_list',
     ];
     expect([...KNOWN_TOOLS].sort()).toEqual(expected.sort());
   });

@@ -16,6 +16,9 @@ export const KNOWN_TOOLS = new Set([
   'git_status',
   'git_diff',
   'thoughts',
+  'memory_set',
+  'memory_get',
+  'memory_list',
 ]);
 
 /** Required arg keys per tool (presence check only). */
@@ -31,6 +34,9 @@ const REQUIRED_ARGS = {
   git_status:   [],
   git_diff:     [],
   thoughts:     ['thought'],
+  memory_set:   ['key', 'value'],
+  memory_get:   ['key'],
+  memory_list:  [],
 };
 
 /**
