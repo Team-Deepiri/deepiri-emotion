@@ -127,3 +127,10 @@ Thumbs.db
 *.swo
 *~
 
+# ========================================
+# EMOTION CLI — per-workspace state (never commit)
+# ========================================
+.emotion-cli.json
+.emotion-memory.json
+.emotion-sessions/
+

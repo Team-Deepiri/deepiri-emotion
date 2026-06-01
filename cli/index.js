@@ -16,6 +16,9 @@ import { existsSync, statSync } from 'fs';
 import { createEventBus } from './core/eventBus.js';
 import { loadConfig } from './core/config.js';
 import { attachAgentRunner } from './agent/runner.js';
+import { loadProjectMemory } from './agent/projectMemory.js';
+import { bootstrapProject, formatSnapshot } from './agent/bootstrap.js';
+import { attachSessionRecorder } from './agent/session.js';
 import App from './ui/App.js';
 
 const argv = process.argv.slice(2);
@@ -80,7 +83,16 @@ const teachMode = argv.includes('--teach');
 const config = await loadConfig();
 if (workspaceDir) config.workspaceDir = workspaceDir;
 if (teachMode) config.teachMode = true;
+
+// Load project memory (EMOTION.md) and auto-discovery snapshot once at startup;
+// both are injected into the agent's system prompt by AgentWorker per turn.
+const memoryCwd = config.workspaceDir || process.cwd();
+config.projectMemory = await loadProjectMemory(memoryCwd);
+const snapshotData = await bootstrapProject(memoryCwd);
+config.projectSnapshot = formatSnapshot(snapshotData);
+
 const eventBus = createEventBus();
 attachAgentRunner(eventBus, config);
+attachSessionRecorder(eventBus, memoryCwd);
 
 render(React.createElement(App, { eventBus, workspaceDir, teachMode: config.teachMode ?? false }));

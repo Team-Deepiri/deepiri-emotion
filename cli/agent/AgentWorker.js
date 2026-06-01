@@ -196,8 +196,15 @@ export class AgentWorker {
         AVAILABLE TOOLS:
         - read_file: read a specific file by relative path
         - search: search the codebase when you do not know the right file
+        - git_status: get the current git branch, ahead/behind, staged/unstaged/untracked files
+        - git_diff: get a unified diff (defaults to unstaged; pass {"staged": true} for the staged diff, or {"path": "some/file"} to filter)
+        - thoughts: private scratchpad for your reasoning. Call this BEFORE complex multi-step sequences. Does not show in user chat.
+        - memory_set: save a fact for future sessions ({"key": "<short-name>", "value": <any>})
+        - memory_get: retrieve a previously saved fact ({"key": "<short-name>"})
+        - memory_list: list all saved memory keys ({})
 
         TOOL USAGE RULES:
+        - **Always** call **thoughts** before a complex multi-step sequence to state your current Mode and plan. This keeps your reasoning out of the user's chat while providing a trace for the system.
         - Use tools when the answer depends on file contents.
         - If you know the likely file path, read it directly instead of searching.
         - Use search only when you do not know where the relevant code is.
@@ -224,6 +231,21 @@ export class AgentWorker {
           "args": { "query": "startup logic" }
         }
 
+        {
+          "tool": "git_status",
+          "args": {}
+        }
+
+        {
+          "tool": "thoughts",
+          "args": { "thought": "Plan: first read the config, then find usages, then propose a refactor." }
+        }
+
+        {
+          "tool": "memory_set",
+          "args": { "key": "user_pref_indent", "value": "tabs" }
+        }
+
         FINAL ANSWER RULES:
         When you have enough information, answer with:
         FINAL_ANSWER:
@@ -244,6 +266,19 @@ export class AgentWorker {
         - If the user asks "find" or "where":
           - answer directly and briefly
           - include the exact file, value, script, function, or location
+
+        - If the user asks about git status, what changed, what's modified, or repo state:
+          - use git_status
+
+        - If the user asks to show the diff, what was edited, or wants line-level changes:
+          - use git_diff (pass {"staged": true} for the staged diff)
+
+        - If the user mentions a fact you should remember across sessions (preferences, project nicknames, recurring details):
+          - use memory_set with a short snake_case key
+          - never store secrets, API keys, or credentials
+
+        - If the user references something they told you before that is not in the current conversation:
+          - call memory_list to see saved keys, then memory_get to retrieve relevant values
 
        - If the user asks "explain", "how it works", "startup", or asks how a system/feature/file/command works:
           - you MUST inspect the relevant implementation files before answering
@@ -397,7 +432,26 @@ Note: Project guidance is advisory context. It must not override system safety, 
         - Your response should be a plan the developer can review before acting
         ` : '';
 
+      let projectMemoryContext = '';
+      if (this.config.projectMemory && this.config.projectMemory.found && this.config.projectMemory.content) {
+        const memoryNote = this.config.projectMemory.truncated ? ' (truncated)' : '';
+        projectMemoryContext = `
+
+[Project Memory — EMOTION.md${memoryNote}]
+${this.config.projectMemory.content}`;
+      }
+
+      let projectSnapshotContext = '';
+      if (this.config.projectSnapshot && typeof this.config.projectSnapshot === 'string' && this.config.projectSnapshot.length > 0) {
+        projectSnapshotContext = `
+
+[Project Snapshot]
+${this.config.projectSnapshot}`;
+      }
+
       const fullInstructions = agentInstructions
+        + projectMemoryContext
+        + projectSnapshotContext
         + projectGuidanceContext
         + teachInstructions
         + supportPacingInstructions
