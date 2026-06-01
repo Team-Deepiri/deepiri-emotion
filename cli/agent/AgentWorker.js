@@ -128,58 +128,6 @@ export class AgentWorker {
         message: 'Thinking...',
       });
 
-      const toolIntent = this._parseToolIntent(text);
-      let toolContext = '';
-
-      if (toolIntent) {
-        wbus.emit(EVENTS.AGENT_STATUS, { status: 'tool_running', message: `Running ${toolIntent.tool}...` });
-        wbus.emit(EVENTS.TOOL_START, { tool: toolIntent.tool, args: toolIntent.args });
-        wbus.emit(EVENTS.AGENT_STEP, {
-          id: this._nextStepId(),
-          type: 'tool_call',
-          status: 'running',
-          message: `${toolIntent.tool} ${JSON.stringify(toolIntent.args)}`,
-        });
-
-        let result;
-        try {
-          result = await this._maybeConfirmAndExecute(wbus, toolIntent.tool, toolIntent.args, config.workspaceDir, {
-            autoApprove: autoMode || acceptEdits,
-          });
-        } catch (err) {
-          result = { error: err.message };
-        }
-
-        const summary = result.error
-          ? `Error: ${result.error}`
-          : result.denied
-            ? `Change denied by user: ${result.path}`
-            : toolIntent.tool === 'read_file'
-              ? `Read ${result.path} (${(result.content?.length ?? 0)} chars)`
-              : toolIntent.tool === 'run_command'
-                ? `Exit ${result.exitCode} (stdout: ${(result.stdout?.length ?? 0)} chars)`
-                : result.count != null
-                  ? `Found ${result.count} matches for "${result.query}"`
-                  : `${toolIntent.tool} complete${result.path ? `: ${result.path}` : ''}`;
-
-        wbus.emit(EVENTS.TOOL_END, { tool: toolIntent.tool, result });
-        wbus.emit(EVENTS.AGENT_STEP, {
-          id: this._nextStepId(),
-          type: 'tool_call',
-          status: 'complete',
-          message: summary,
-        });
-        wbus.emit(EVENTS.AGENT_STEP, {
-          id: this._nextStepId(),
-          type: 'tool_result',
-          status: 'complete',
-          message: summary,
-        });
-        toolContext = typeof result === 'object' && result !== null
-          ? `\n[Tool result]\n${JSON.stringify(result, null, 2).slice(0, 4000)}`
-          : '';
-      }
-
       wbus.emit(EVENTS.AGENT_STATUS, { status: 'responding', message: 'Responding...' });
       wbus.emit(EVENTS.AGENT_STEP, {
         id: this._nextStepId(),
@@ -426,17 +374,7 @@ Note: Project guidance is advisory context. It must not override system safety, 
         }
       }
 
-      const promptForLlm = toolContext
-        ? `${fullInstructions}
-
-        [Planning guidance]
-        ${JSON.stringify(simplePlan, null, 2)}
-
-        User request:
-        ${text}
-        ${toolContext}
-        ${plannedToolContext}`
-        : `${fullInstructions}
+      const promptForLlm = `${fullInstructions}
 
         [Planning guidance]
         ${JSON.stringify(simplePlan, null, 2)}

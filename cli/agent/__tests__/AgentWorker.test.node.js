@@ -335,26 +335,25 @@ describe('error handling', () => {
 // Fix regressions (code-review findings applied to this PR)
 // ---------------------------------------------------------------------------
 describe('regression guards', () => {
-  // Finding #4 — summary fallthrough for non-search tools
-  it('pre-loop: non-search tool summary does not read "Found undefined matches"', async () => {
-    // Simulate an edit_file result (no .count / .query fields).
+  // Finding #4 — in-loop non-search tool summary does not read "Found undefined matches"
+  it('in-loop: non-search tool summary does not read "Found undefined matches"', async () => {
+    // LLM first emits an edit_file tool call JSON, then a FINAL_ANSWER.
+    const EDIT_CALL = JSON.stringify({ tool: 'edit_file', args: { filePath: 'foo.js', oldString: 'a', newString: 'b' } });
     const fakeEdit = async () => ({ edited: true, path: '/proj/foo.js', strategy: 'exact', confidence: 1 });
-    const parseEditIntent = (text) =>
-      text.includes('edit') ? { tool: 'edit_file', args: { filePath: 'foo.js', oldString: 'a', newString: 'b' } } : null;
 
-    const { worker, evts } = makeWorker('edit foo.js', {
-      streamLLM: makeStreamLLM(['FINAL_ANSWER: done']),
-      parseToolIntent: parseEditIntent,
+    const { worker, evts } = makeWorker('please edit foo.js', {
+      streamLLM: makeStreamLLM([EDIT_CALL, 'FINAL_ANSWER: done']),
+      parseToolIntent: parseJsonToolOnly,
       maybeConfirmAndExecute: fakeEdit,
     });
     await worker.run();
 
-    const toolCallStep = evts.find(
-      e => e.event === 'AGENT_STEP' && e.payload.type === 'tool_call' && e.payload.status === 'complete'
+    const toolResultStep = evts.find(
+      e => e.event === 'AGENT_STEP' && e.payload.type === 'tool_result' && e.payload.status === 'complete'
     );
-    expect(toolCallStep).toBeDefined();
-    expect(toolCallStep.payload.message).not.toMatch(/Found undefined matches/);
-    expect(toolCallStep.payload.message).toMatch(/edit_file/);
+    expect(toolResultStep).toBeDefined();
+    expect(toolResultStep.payload.message).toBe('Tool result received');
+    expect(toolResultStep.payload.message).not.toMatch(/Found undefined matches/);
   });
 
   // Finding #5 — step IDs are unique even within a single synchronous tick

@@ -49,7 +49,10 @@ export async function searchTool(query, dir = DEFAULT_CWD, limit = 20) {
       return;
     }
     for (const e of entries) {
-      if (e.name.startsWith('.') && e.name !== '.env') continue;
+      // Skip all dotfiles (includes .env — never let secrets reach the LLM),
+      // and skip heavy directories that don't contain user source code.
+      if (e.name.startsWith('.')) continue;
+      if (e.name === 'node_modules' || e.name === '.git') continue;
       const full = join(d, e.name);
       if (e.isDirectory()) {
         await walk(full, depth + 1);
@@ -159,31 +162,27 @@ export function parseToolIntent(text) {
     // Not JSON, continue to regex parsing
   }
   const raw = (text || '').trim();
-  const t = raw.toLowerCase();
-  // const readMatch = t.match(/read\s+file\s+(.+)/) || t.match(/read\s+(.+\.\w+)/);
+  // Match against lowercased text for keyword detection, but extract capture
+  // groups from the original-case `raw` so file paths and commands are preserved.
   const readMatch =
-  t.match(/read\s+file\s+([^\s,]+)/) ||
-  t.match(/read\s+([^\s,]+\.\w+)/);
+    /read\s+file\s+([^\s,]+)/i.exec(raw) ||
+    /read\s+([^\s,]+\.\w+)/i.exec(raw);
   if (readMatch) {
     return { tool: 'read_file', args: { filePath: readMatch[1].trim() } };
   }
-  const searchMatch = t.match(/search\s+(?:for\s+)?["']?([^"']+)["']?/) || t.match(/search\s+(.+)/);
+  const searchMatch =
+    /search\s+(?:for\s+)?["']?([^"']+)["']?/i.exec(raw) ||
+    /search\s+(.+)/i.exec(raw);
   if (searchMatch) {
     return { tool: 'search', args: { query: searchMatch[1].trim() } };
   }
-
   const listFilesMatch =
-  t.match(/list\s+files\s+(.+)/) ||
-  t.match(/list\s+(.+)/);
-
+    /list\s+files\s+(.+)/i.exec(raw) ||
+    /list\s+(.+)/i.exec(raw);
   if (listFilesMatch) {
-    return {
-      tool: 'list_files',
-      args: { dirPath: listFilesMatch[1].trim() }
-    };
+    return { tool: 'list_files', args: { dirPath: listFilesMatch[1].trim() } };
   }
-
-  const runMatch = t.match(/^run\s+(.+)/);
+  const runMatch = /^run\s+(.+)/i.exec(raw);
   if (runMatch) {
     return { tool: 'run_command', args: { command: runMatch[1].trim() } };
   }
