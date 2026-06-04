@@ -49,7 +49,7 @@ export async function searchTool(query, dir = DEFAULT_CWD, limit = 20) {
       return;
     }
     for (const e of entries) {
-      if (e.name.startsWith('.') && e.name !== '.env') continue;
+      if (e.name.startsWith('.')) continue;
       const full = join(d, e.name);
       if (e.isDirectory()) {
         await walk(full, depth + 1);

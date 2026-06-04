@@ -129,6 +129,22 @@ describe('searchTool', () => {
     const result = await searchTool('', dir);
     expect(result.error).toBe('Empty query');
   });
+
+  it('does not return .env file contents even when content matches query', async () => {
+    await writeFile(join(dir, 'a.js'), 'const hello = 1;', 'utf-8');
+    await writeFile(join(dir, '.env'), 'API_KEY=sk-secret-hello', 'utf-8');
+    const result = await searchTool('hello', dir);
+    expect(result.error).toBeUndefined();
+    expect(result.results.some((r) => r.path.includes('.env'))).toBe(false);
+  });
+
+  it('does not return .env.local file contents even when content matches query', async () => {
+    await writeFile(join(dir, 'app.js'), 'const hello = 1;', 'utf-8');
+    await writeFile(join(dir, '.env.local'), 'API_KEY=sk-hello-secret', 'utf-8');
+    const result = await searchTool('hello', dir);
+    expect(result.error).toBeUndefined();
+    expect(result.results.some((r) => r.path.includes('.env'))).toBe(false);
+  });
 });
 
 describe('runCommandTool', () => {
