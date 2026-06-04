@@ -91,7 +91,13 @@ export function attachSessionRecorder(bus, cwd = process.cwd()) {
   });
 
   bus.on(EVENTS.LLM_TOKEN, ({ token }) => {
-    if (typeof token === 'string') pendingAssistantTokens += token;
+    if (typeof token !== 'string') return;
+    // Cap pending tokens to prevent unbounded growth if LLM_DONE never fires.
+    // The final persisted message is sliced to MAX_MESSAGE_BYTES anyway, so
+    // appending past that cap accumulates memory with no observable benefit.
+    if (pendingAssistantTokens.length < MAX_MESSAGE_BYTES) {
+      pendingAssistantTokens += token;
+    }
   });
 
   bus.on(EVENTS.LLM_DONE, async () => {
