@@ -12,6 +12,7 @@ const MEMORY_FILE = '.emotion-memory.json';
 const MAX_KEY_LENGTH = 200;
 const MAX_VALUE_BYTES = 4 * 1024;
 const MAX_FILE_BYTES = 1024 * 1024;
+const RESERVED_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
 function validateKey(key) {
   if (typeof key !== 'string' || key.length === 0) {
@@ -22,6 +23,9 @@ function validateKey(key) {
   }
   if (key.includes('/') || key.includes('\\') || key.includes('\x00')) {
     return 'key must not contain path separators or null bytes';
+  }
+  if (RESERVED_KEYS.has(key)) {
+    return 'key must not be a reserved JavaScript property name';
   }
   return null;
 }
@@ -85,7 +89,8 @@ export async function memoryGet({ key } = {}, cwd = process.cwd()) {
   const keyErr = validateKey(key);
   if (keyErr) return { error: keyErr };
   const store = await readStore(cwd);
-  if (!(key in store)) {
+  // hasOwnProperty avoids returning inherited prototype methods (toString, valueOf, etc.)
+  if (!Object.prototype.hasOwnProperty.call(store, key)) {
     return { found: false, key };
   }
   return { found: true, key, value: store[key] };

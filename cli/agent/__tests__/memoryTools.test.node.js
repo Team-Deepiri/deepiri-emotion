@@ -120,6 +120,54 @@ describe('validation', () => {
     const result = await memoryGet({ key: '' }, dir);
     expect(result.error).toMatch(/non-empty string/);
   });
+
+  it('rejects __proto__ as a key on set', async () => {
+    const result = await memorySet({ key: '__proto__', value: { polluted: true } }, dir);
+    expect(result.error).toMatch(/reserved/i);
+  });
+
+  it('rejects constructor as a key on set', async () => {
+    const result = await memorySet({ key: 'constructor', value: 'x' }, dir);
+    expect(result.error).toMatch(/reserved/i);
+  });
+
+  it('rejects prototype as a key on set', async () => {
+    const result = await memorySet({ key: 'prototype', value: 'x' }, dir);
+    expect(result.error).toMatch(/reserved/i);
+  });
+
+  it('rejects __proto__ as a key on get', async () => {
+    const result = await memoryGet({ key: '__proto__' }, dir);
+    expect(result.error).toMatch(/reserved/i);
+  });
+});
+
+describe('prototype-leak protection', () => {
+  it('does not return inherited toString as if it were a stored value', async () => {
+    const result = await memoryGet({ key: 'toString' }, dir);
+    expect(result.found).toBe(false);
+    expect(result.value).toBeUndefined();
+  });
+
+  it('does not return inherited hasOwnProperty as if it were a stored value', async () => {
+    const result = await memoryGet({ key: 'hasOwnProperty' }, dir);
+    expect(result.found).toBe(false);
+    expect(result.value).toBeUndefined();
+  });
+
+  it('does not return inherited valueOf as if it were a stored value', async () => {
+    const result = await memoryGet({ key: 'valueOf' }, dir);
+    expect(result.found).toBe(false);
+    expect(result.value).toBeUndefined();
+  });
+
+  it('still returns explicitly stored values with names matching prototype methods', async () => {
+    // If a user legitimately stores a key called "myToString", it should still work.
+    await memorySet({ key: 'myToString', value: 'real-value' }, dir);
+    const result = await memoryGet({ key: 'myToString' }, dir);
+    expect(result.found).toBe(true);
+    expect(result.value).toBe('real-value');
+  });
 });
 
 describe('resilience', () => {
