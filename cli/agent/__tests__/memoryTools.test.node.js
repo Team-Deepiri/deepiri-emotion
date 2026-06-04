@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from 'fs';
+import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync, symlinkSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { memorySet, memoryGet, memoryList } from '../memoryTools.js';
@@ -137,5 +137,46 @@ describe('resilience', () => {
     writeFileSync(join(dir, '.emotion-memory.json'), '[1, 2, 3]');
     const result = await memoryList({}, dir);
     expect(result.count).toBe(0);
+  });
+});
+
+describe('symlink protection', () => {
+  it('refuses to write when .emotion-memory.json is a symlink pointing outside workspace', async () => {
+    const outsideTarget = join(
+      tmpdir(),
+      `outside-memory-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.json`,
+    );
+    writeFileSync(outsideTarget, '{}');
+
+    const linkPath = join(dir, '.emotion-memory.json');
+    symlinkSync(outsideTarget, linkPath);
+
+    try {
+      const result = await memorySet({ key: 'should_not_write', value: 'leaked' }, dir);
+      expect(result.error).toMatch(/symlink/i);
+
+      // Confirm the outside target file was NOT overwritten by the agent.
+      expect(readFileSync(outsideTarget, 'utf-8')).toBe('{}');
+    } finally {
+      rmSync(outsideTarget, { force: true });
+    }
+  });
+
+  it('returns empty store when .emotion-memory.json is a symlink pointing outside workspace', async () => {
+    const outsideTarget = join(
+      tmpdir(),
+      `outside-memory-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.json`,
+    );
+    writeFileSync(outsideTarget, '{"sensitive_key":"sensitive_value"}');
+
+    const linkPath = join(dir, '.emotion-memory.json');
+    symlinkSync(outsideTarget, linkPath);
+
+    try {
+      const result = await memoryGet({ key: 'sensitive_key' }, dir);
+      expect(result.found).toBe(false);
+    } finally {
+      rmSync(outsideTarget, { force: true });
+    }
   });
 });

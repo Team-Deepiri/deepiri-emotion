@@ -2,10 +2,10 @@
  * CLI tools tests (Node env).
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdir, writeFile, rm } from 'fs/promises';
+import { mkdir, writeFile, rm, symlink } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { parseToolIntent, readFileTool, searchTool, runCommandTool, explainTool } from '../tools.js';
+import { parseToolIntent, readFileTool, searchTool, listFilesTool, runCommandTool, explainTool } from '../tools.js';
 
 describe('parseToolIntent', () => {
   it('returns read_file for "read file path"', () => {
@@ -101,6 +101,89 @@ describe('readFileTool', () => {
   it('returns error for missing file', async () => {
     const result = await readFileTool('missing.txt', dir);
     expect(result.error).toContain('not found');
+  });
+
+  it('refuses to read .env file (blocked pattern)', async () => {
+    await writeFile(join(dir, '.env'), 'API_KEY=secret', 'utf-8');
+    const result = await readFileTool('.env', dir);
+    expect(result.error).toMatch(/blocked/i);
+    expect(result.content).toBeUndefined();
+  });
+
+  it('refuses to read .env.local file', async () => {
+    await writeFile(join(dir, '.env.local'), 'API_KEY=secret', 'utf-8');
+    const result = await readFileTool('.env.local', dir);
+    expect(result.error).toMatch(/blocked/i);
+  });
+
+  it('refuses path traversal via ..', async () => {
+    const result = await readFileTool('../escape.txt', dir);
+    expect(result.error).toMatch(/outside workspace/i);
+  });
+
+  it('refuses to read symlink pointing outside workspace', async () => {
+    const outsideTarget = join(tmpdir(), `outside-read-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.txt`);
+    await writeFile(outsideTarget, 'sensitive', 'utf-8');
+    const linkPath = join(dir, 'innocent.txt');
+    await symlink(outsideTarget, linkPath);
+    try {
+      const result = await readFileTool('innocent.txt', dir);
+      expect(result.error).toMatch(/symlink/i);
+    } finally {
+      await rm(outsideTarget, { force: true }).catch(() => {});
+    }
+  });
+});
+
+describe('listFilesTool', () => {
+  let dir;
+
+  beforeEach(async () => {
+    dir = join(tmpdir(), `cli-list-test-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`);
+    await mkdir(dir, { recursive: true });
+  });
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
+  });
+
+  it('lists files and folders in workspace root', async () => {
+    await writeFile(join(dir, 'a.js'), 'x', 'utf-8');
+    await mkdir(join(dir, 'subdir'), { recursive: true });
+    const result = await listFilesTool('.', dir);
+    expect(result.error).toBeUndefined();
+    expect(result.count).toBe(2);
+    expect(result.items.map((i) => i.name).sort()).toEqual(['a.js', 'subdir']);
+  });
+
+  it('filters dotfiles out of the listing', async () => {
+    await writeFile(join(dir, 'visible.js'), 'x', 'utf-8');
+    await writeFile(join(dir, '.hidden'), 'x', 'utf-8');
+    const result = await listFilesTool('.', dir);
+    expect(result.items.map((i) => i.name)).toEqual(['visible.js']);
+  });
+
+  it('refuses to list .ssh directory', async () => {
+    await mkdir(join(dir, '.ssh'), { recursive: true });
+    const result = await listFilesTool('.ssh', dir);
+    expect(result.error).toMatch(/\.ssh/);
+  });
+
+  it('refuses to list .aws directory', async () => {
+    await mkdir(join(dir, '.aws'), { recursive: true });
+    const result = await listFilesTool('.aws', dir);
+    expect(result.error).toMatch(/\.aws/);
+  });
+
+  it('refuses to list node_modules directory', async () => {
+    await mkdir(join(dir, 'node_modules'), { recursive: true });
+    const result = await listFilesTool('node_modules', dir);
+    expect(result.error).toMatch(/node_modules/);
+  });
+
+  it('refuses path traversal via ..', async () => {
+    const result = await listFilesTool('..', dir);
+    expect(result.error).toMatch(/outside workspace/i);
   });
 });
 
