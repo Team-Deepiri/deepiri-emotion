@@ -132,33 +132,9 @@ const App = () => {
   }, []);
 
   useEffect(() => {
-    const unsubNewFile = api.onMenuNewFile(() => handleNewFile());
-    return () => unsubNewFile();
-  }, [handleNewFile]);
-
-  useEffect(() => {
-    const unsubOpenFolder = api.onMenuOpenFolder(() => handleOpenFolder());
-    return () => unsubOpenFolder();
-  }, [handleOpenFolder]);
-
-  useEffect(() => {
-    const unsubSave = api.onMenuSave(() => saveActiveTab());
-    return () => unsubSave();
-  }, [saveActiveTab]);
-
-  useEffect(() => {
     const unsubAbout = api.onMenuAbout(() => setShowAbout(true));
     return () => unsubAbout();
   }, []);
-
-  useEffect(() => {
-    const unsub = api.onOpenFileFromCli((filePath) => {
-      if (!filePath || !openFileInEditor) return;
-      const name = filePath.replace(/\\/g, '/').split('/').filter(Boolean).pop() || 'file';
-      openFileInEditor({ path: filePath, name });
-    });
-    return () => unsub();
-  }, [openFileInEditor]);
 
   useEffect(() => {
     const unsub = api.onProjectRootChanged((path) => {
@@ -423,6 +399,30 @@ const App = () => {
       else getElectronAPI()?.showError?.(e.message || 'Failed to create file');
     }
   }, [projectRoot, openFileInEditor, handleOpenFolder]);
+
+  useEffect(() => {
+    const unsubNewFile = api.onMenuNewFile(() => handleNewFile());
+    return () => unsubNewFile();
+  }, [handleNewFile]);
+
+  useEffect(() => {
+    const unsubOpenFolder = api.onMenuOpenFolder(() => handleOpenFolder());
+    return () => unsubOpenFolder();
+  }, [handleOpenFolder]);
+
+  useEffect(() => {
+    const unsubSave = api.onMenuSave(() => saveActiveTab());
+    return () => unsubSave();
+  }, [saveActiveTab]);
+
+  useEffect(() => {
+    const unsub = api.onOpenFileFromCli((filePath) => {
+      if (!filePath || !openFileInEditor) return;
+      const name = filePath.replace(/\\/g, '/').split('/').filter(Boolean).pop() || 'file';
+      openFileInEditor({ path: filePath, name });
+    });
+    return () => unsub();
+  }, [openFileInEditor]);
 
   const handleNewFolder = useCallback(async () => {
     if (!projectRoot) return;
