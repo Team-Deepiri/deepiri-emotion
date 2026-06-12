@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from 'fs';
+import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync, symlinkSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { memorySet, memoryGet, memoryList } from '../memoryTools.js';
@@ -120,6 +120,54 @@ describe('validation', () => {
     const result = await memoryGet({ key: '' }, dir);
     expect(result.error).toMatch(/non-empty string/);
   });
+
+  it('rejects __proto__ as a key on set', async () => {
+    const result = await memorySet({ key: '__proto__', value: { polluted: true } }, dir);
+    expect(result.error).toMatch(/reserved/i);
+  });
+
+  it('rejects constructor as a key on set', async () => {
+    const result = await memorySet({ key: 'constructor', value: 'x' }, dir);
+    expect(result.error).toMatch(/reserved/i);
+  });
+
+  it('rejects prototype as a key on set', async () => {
+    const result = await memorySet({ key: 'prototype', value: 'x' }, dir);
+    expect(result.error).toMatch(/reserved/i);
+  });
+
+  it('rejects __proto__ as a key on get', async () => {
+    const result = await memoryGet({ key: '__proto__' }, dir);
+    expect(result.error).toMatch(/reserved/i);
+  });
+});
+
+describe('prototype-leak protection', () => {
+  it('does not return inherited toString as if it were a stored value', async () => {
+    const result = await memoryGet({ key: 'toString' }, dir);
+    expect(result.found).toBe(false);
+    expect(result.value).toBeUndefined();
+  });
+
+  it('does not return inherited hasOwnProperty as if it were a stored value', async () => {
+    const result = await memoryGet({ key: 'hasOwnProperty' }, dir);
+    expect(result.found).toBe(false);
+    expect(result.value).toBeUndefined();
+  });
+
+  it('does not return inherited valueOf as if it were a stored value', async () => {
+    const result = await memoryGet({ key: 'valueOf' }, dir);
+    expect(result.found).toBe(false);
+    expect(result.value).toBeUndefined();
+  });
+
+  it('still returns explicitly stored values with names matching prototype methods', async () => {
+    // If a user legitimately stores a key called "myToString", it should still work.
+    await memorySet({ key: 'myToString', value: 'real-value' }, dir);
+    const result = await memoryGet({ key: 'myToString' }, dir);
+    expect(result.found).toBe(true);
+    expect(result.value).toBe('real-value');
+  });
 });
 
 describe('resilience', () => {
@@ -137,5 +185,46 @@ describe('resilience', () => {
     writeFileSync(join(dir, '.emotion-memory.json'), '[1, 2, 3]');
     const result = await memoryList({}, dir);
     expect(result.count).toBe(0);
+  });
+});
+
+describe('symlink protection', () => {
+  it('refuses to write when .emotion-memory.json is a symlink pointing outside workspace', async () => {
+    const outsideTarget = join(
+      tmpdir(),
+      `outside-memory-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.json`,
+    );
+    writeFileSync(outsideTarget, '{}');
+
+    const linkPath = join(dir, '.emotion-memory.json');
+    symlinkSync(outsideTarget, linkPath);
+
+    try {
+      const result = await memorySet({ key: 'should_not_write', value: 'leaked' }, dir);
+      expect(result.error).toMatch(/symlink/i);
+
+      // Confirm the outside target file was NOT overwritten by the agent.
+      expect(readFileSync(outsideTarget, 'utf-8')).toBe('{}');
+    } finally {
+      rmSync(outsideTarget, { force: true });
+    }
+  });
+
+  it('returns empty store when .emotion-memory.json is a symlink pointing outside workspace', async () => {
+    const outsideTarget = join(
+      tmpdir(),
+      `outside-memory-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.json`,
+    );
+    writeFileSync(outsideTarget, '{"sensitive_key":"sensitive_value"}');
+
+    const linkPath = join(dir, '.emotion-memory.json');
+    symlinkSync(outsideTarget, linkPath);
+
+    try {
+      const result = await memoryGet({ key: 'sensitive_key' }, dir);
+      expect(result.found).toBe(false);
+    } finally {
+      rmSync(outsideTarget, { force: true });
+    }
   });
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdir, writeFile, rm } from 'fs/promises';
+import { mkdir, writeFile, rm, symlink } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { discoverGuidance } from '../guidance.js';
@@ -109,5 +109,52 @@ describe('discoverGuidance', () => {
     await writeFile(join(dir, 'README.md'), 'world', 'utf-8');
     const result = await discoverGuidance(dir);
     expect(result.total_chars).toBe(10);
+  });
+
+  it('skips a candidate that is a symlink pointing outside the workspace', async () => {
+    const outsideTarget = join(
+      tmpdir(),
+      `outside-guidance-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.md`,
+    );
+    await writeFile(outsideTarget, 'SENSITIVE CONTENT — must not be exfiltrated', 'utf-8');
+
+    const linkPath = join(dir, 'README.md');
+    await symlink(outsideTarget, linkPath);
+
+    try {
+      const result = await discoverGuidance(dir);
+      // No file should be returned — the symlink-pointing-outside README is skipped.
+      expect(result.found).toBe(false);
+      expect(result.readme_present).toBe(false);
+    } finally {
+      await rm(outsideTarget, { force: true }).catch(() => {});
+    }
+  });
+
+  it('does not load contents from a symlinked README pointing outside even when valid contents exist', async () => {
+    const outsideTarget = join(
+      tmpdir(),
+      `outside-guidance-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.md`,
+    );
+    await writeFile(outsideTarget, 'leaked-via-symlink-marker', 'utf-8');
+
+    const linkPath = join(dir, 'AGENTS.md');
+    await symlink(outsideTarget, linkPath);
+    // Also add a real legitimate file so something COULD be discovered
+    await writeFile(join(dir, 'CONTRIBUTING.md'), 'legitimate guidance', 'utf-8');
+
+    try {
+      const result = await discoverGuidance(dir);
+      // The symlinked AGENTS.md is skipped; only the real CONTRIBUTING.md is returned
+      expect(result.found).toBe(true);
+      expect(result.files.length).toBe(1);
+      expect(result.files[0].path).toBe('CONTRIBUTING.md');
+      expect(result.files[0].content).toContain('legitimate');
+      // Confirm none of the returned content includes the leaked marker
+      const allContent = result.files.map((f) => f.content).join('\n');
+      expect(allContent).not.toContain('leaked-via-symlink-marker');
+    } finally {
+      await rm(outsideTarget, { force: true }).catch(() => {});
+    }
   });
 });
