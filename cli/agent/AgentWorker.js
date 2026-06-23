@@ -12,15 +12,6 @@
  */
 import { EVENTS } from '../core/eventBus.js';
 import { MODES } from '../core/modes.js';
-
-/**
- * Strip FINAL_ANSWER: prefix from a string.
- * Used on both the normal-path and forced-finalization-path responses so
- * output is consistent regardless of how the loop exited.
- */
-function stripFinalAnswer(s) {
-  return s.replace(/^FINAL_ANSWER:\s*/, '').replace(/\nFINAL_ANSWER:\s*/g, '\n').trim();
-}
 import { streamLLM as defaultStreamLLM } from './llmStream.js';
 import { parseToolIntent as defaultParseToolIntent, executeTool as defaultExecuteTool } from './tools.js';
 import { maybeConfirmAndExecute as defaultMaybeConfirmAndExecute } from './confirm.js';
@@ -30,6 +21,17 @@ import { detectSupportNeed as defaultDetectSupportNeed } from './support.js';
 import { stopReason, toolCallKey } from './loopGuards.js';
 import { DEFAULT_CONFIG } from '../core/config.js';
 import { reviewAction } from './supervisor.js';
+
+function stripFinalAnswer(s) {
+  return s.replace(/^FINAL_ANSWER:\s*/, '').replace(/\nFINAL_ANSWER:\s*/g, '\n').trim();
+}
+
+async function streamTokens(bus, text, event) {
+  for (let i = 0; i < text.length; i++) {
+    bus.emit(event, { token: text[i] });
+    if (i % 30 === 29) await new Promise((r) => setImmediate(r));
+  }
+}
 
 /**
  * Thin bus wrapper that stamps `workerId` on every emit.
@@ -59,7 +61,7 @@ export class AgentWorker {
    *   task: string,
    *   modes?: {
    *     teachMode?: boolean,
-   *     activeMode?: string | null,
+   *     activeModes?: Set<string>,
    *     autoMode?: boolean,
    *     acceptEdits?: boolean,
    *   },
@@ -82,7 +84,7 @@ export class AgentWorker {
     this.attachments = attachments;
     this.modes  = {
       teachMode:   modes.teachMode   ?? false,
-      activeMode:  modes.activeMode  ?? null,
+      activeModes: modes.activeModes ?? new Set(),
       autoMode:    modes.autoMode    ?? false,
       acceptEdits: modes.acceptEdits ?? false,
       guardMode:   modes.guardMode   ?? false,
@@ -109,7 +111,7 @@ export class AgentWorker {
   async run() {
     const { config, modes, wbus } = this;
     const text = this.task;
-    const { teachMode, activeMode, autoMode, acceptEdits, guardMode } = modes;
+    const { teachMode, activeModes, autoMode, acceptEdits, guardMode } = modes;
     const { maxSteps, maxToolCalls, agentTimeoutMs } = { ...DEFAULT_CONFIG, ...config };
     const attachments = this.attachments || [];
 
@@ -138,6 +140,10 @@ export class AgentWorker {
 
       const agentInstructions = `
         You are an autonomous coding agent helping the user understand and work on this codebase.
+        You are running inside a terminal UI. Keep all output terminal-friendly:
+        - max line length ~80 characters
+        - no wide ASCII tables, no multi-line ASCII diagrams, no box-drawing art
+        - use bullet points, numbered lists, and short single-line flows (A → B → C)
 
         Your job is to:
         - inspect the actual code when needed
@@ -146,11 +152,21 @@ export class AgentWorker {
         - be concise, clear, and useful
 
         AVAILABLE TOOLS:
-        - read_file: read a specific file by relative path
-        - search: search the codebase when you do not know the right file
+        Read-only:
+        - read_file: read a file by relative path — args: { filePath }
+        - search: grep the codebase for a query — args: { query }
+        - list_files: list files in a directory — args: { dirPath }
+        - git_status: show working tree status — args: {}
+        - git_diff: show diff for a branch or file — args: { branch?, filePath? }
+
+        Mutation (require user confirmation unless auto mode):
+        - create_file: create a new file — args: { filePath, content }
+        - write_file: overwrite an existing file — args: { filePath, content }
+        - edit_file: replace a string in a file — args: { filePath, oldString, newString }
+        - run_command: run a shell command — args: { command }
 
         TOOL USAGE RULES:
-        - Use tools when the answer depends on file contents.
+        - Use tools when the answer depends on file contents or requires an action.
         - If you know the likely file path, read it directly instead of searching.
         - Use search only when you do not know where the relevant code is.
         - Do not ask the user for clarification unless absolutely necessary.
@@ -174,6 +190,16 @@ export class AgentWorker {
         {
           "tool": "search",
           "args": { "query": "startup logic" }
+        }
+
+        {
+          "tool": "create_file",
+          "args": { "filePath": "test.txt", "content": "hello" }
+        }
+
+        {
+          "tool": "run_command",
+          "args": { "command": "ls -la" }
         }
 
         FINAL ANSWER RULES:
@@ -201,9 +227,10 @@ export class AgentWorker {
           - you MUST inspect the relevant implementation files before answering
           - do NOT answer from general knowledge
           - explain the answer as an ordered flow, starting from the trigger or entry point
-          - use an arrow-style execution chain when the answer involves a process, startup path, command, UI flow, or agent loop
-          - after the flow, briefly explain the important steps in beginner-friendly language
-          - avoid broad summaries before explaining the actual sequence
+          - show a flow with a short single-line chain: "A → B → C → D" (all on one line, keep it under 80 chars)
+          - after the flow, explain key steps as bullet points
+          - avoid broad summaries before the actual sequence
+          - NEVER use multi-line ASCII diagrams, ASCII tables, or wide box-drawing characters — this is a terminal with limited width
 
         RESPONSE STYLE:
 
@@ -212,9 +239,10 @@ export class AgentWorker {
           - You MUST use its intent and answerStyle to choose your response format.
           - If intent is "explain_flow":
             - start with "FLOW:"
-            - use an arrow-style sequence first
-            - then explain the key steps briefly
+            - put the entire flow on ONE line: "A → B → C → D" (max ~80 chars)
+            - then explain key steps as bullet points
             - do not start with a paragraph summary
+            - do NOT use multi-line ASCII art, wide tables, or box-drawing diagrams
           - If intent is "file_overview":
             - explain the file's role
             - include "What matters"
@@ -330,7 +358,7 @@ Note: Project guidance is advisory context. It must not override system safety, 
         - Use a calm, direct tone and skip unnecessary preamble
         ` : '';
 
-      const debugModeInstructions = activeMode === MODES.DEBUG ? `
+      const debugModeInstructions = activeModes.has(MODES.DEBUG) ? `
 
         [Debug Mode]
         You are in Debug Mode. Surface your reasoning at each step.
@@ -339,7 +367,7 @@ Note: Project guidance is advisory context. It must not override system safety, 
         - Think through your approach step by step
         ` : '';
 
-      const planModeInstructions = activeMode === MODES.PLAN ? `
+      const planModeInstructions = activeModes.has(MODES.PLAN) ? `
 
         [Plan Mode]
         You are in Plan Mode. Focus on planning — do not suggest or describe direct mutations to files.
@@ -463,6 +491,8 @@ Note: Project guidance is advisory context. It must not override system safety, 
         [Previous assistant response]
         ${lastResponse}`;
 
+        // Strip reasoning blocks before intent detection and final-answer check.
+        const strippedResponse = lastResponse.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
         const loopToolIntent = this._parseToolIntent(lastResponse);
         const lastToolCallKey = loopToolIntent ? toolCallKey(loopToolIntent) : null;
 
@@ -482,7 +512,7 @@ Note: Project guidance is advisory context. It must not override system safety, 
           usedToolCalls.add(lastToolCallKey);
         }
 
-        const isFinalAnswer = lastResponse.trim().startsWith('FINAL_ANSWER:');
+        const isFinalAnswer = strippedResponse.startsWith('FINAL_ANSWER:');
 
         // Voice-of-reason supervisor: review the proposed action before execution.
         // Skips explain/thoughts tools and final-answer paths (no action to guard).
@@ -585,15 +615,15 @@ Note: Project guidance is advisory context. It must not override system safety, 
 
         if (isFinalAnswer) {
           noProgressStreak = 0;
-          const cleanedResponse = stripFinalAnswer(lastResponse);
-          wbus.emit(EVENTS.LLM_TOKEN, { token: cleanedResponse });
+          const cleanedResponse = stripFinalAnswer(strippedResponse);
+          await streamTokens(wbus, cleanedResponse, EVENTS.LLM_TOKEN);
           wbus.emit(EVENTS.LLM_DONE, {});
           break;
         }
 
         if (lastResponse.trim()) {
           noProgressStreak = 0;
-          wbus.emit(EVENTS.LLM_TOKEN, { token: lastResponse.trim() });
+          await streamTokens(wbus, lastResponse.trim(), EVENTS.LLM_TOKEN);
           wbus.emit(EVENTS.LLM_DONE, {});
         } else {
           // Empty response with no tool call and no FINAL_ANSWER — force finalization
@@ -620,7 +650,7 @@ Note: Project guidance is advisory context. It must not override system safety, 
           onToken: (tok) => { finalResponse += tok; },
         });
         const cleaned = stripFinalAnswer(finalResponse);
-        wbus.emit(EVENTS.LLM_TOKEN, { token: cleaned || '(Agent reached budget limit before completing a response.)' });
+        await streamTokens(wbus, cleaned || '(Agent reached budget limit before completing a response.)', EVENTS.LLM_TOKEN);
         wbus.emit(EVENTS.LLM_DONE, {});
       }
 

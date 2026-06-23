@@ -17,13 +17,16 @@ const CATEGORY_LABELS = {
   best_practice: 'Best Practice'
 };
 
-export function StepTimeline({ steps, activeMode }) {
+export function StepTimeline({ steps, activeModes }) {
   if (!steps.length) return null;
 
-  // supervisor steps always visible — they signal an important halt to the user
-  const visibleSteps = activeMode === MODES.DEBUG
+  const modeSet = activeModes instanceof Set ? activeModes : new Set();
+  // Non-debug: only show meaningful tool use (tool_call/tool_result), teach, supervisor.
+  // Hide thinking (internal reasoning), response (done/status noise), provider steps.
+  // Debug: show everything including reasoning steps and provider selection.
+  const visibleSteps = modeSet.has(MODES.DEBUG)
     ? steps
-    : steps.filter((s) => s.type !== 'thinking' && s.type !== 'tool_call' && s.type !== 'tool_result' || s.type === 'supervisor');
+    : steps.filter((s) => s.type === 'tool_call' || s.type === 'tool_result' || s.type === 'teach' || s.type === 'supervisor');
 
   if (!visibleSteps.length) return null;
 
@@ -31,7 +34,7 @@ export function StepTimeline({ steps, activeMode }) {
     Box,
     { flexDirection: 'column', gap: 0, marginBottom: 1 },
     React.createElement(Text, { dimColor: true }, 'Steps:'),
-    ...visibleSteps.slice(-5).map((s, i) => {
+    ...visibleSteps.slice(-8).map((s, i) => {
       if (s.type === 'supervisor') {
         return React.createElement(
           Box,

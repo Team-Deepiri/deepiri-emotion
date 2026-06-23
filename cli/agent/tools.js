@@ -152,18 +152,38 @@ export function runCommandTool(command, cwd = DEFAULT_CWD) {
  * JSON path: validates tool name and required args via loopGuards.validateToolCall.
  * Regex path: unchanged fallback for natural-language commands.
  */
-export function parseToolIntent(text) {
-  // Try parsing structured JSON tool call first; reject unknown/malformed calls.
+function tryValidateJson(str) {
   try {
-    const parsed = JSON.parse(text.trim());
-    const validated = validateToolCall(parsed);
-    if (validated) return validated;
+    const parsed = JSON.parse(str.trim());
+    return validateToolCall(parsed) || null;
   } catch {
-    // Not JSON, continue to regex parsing
+    return null;
   }
-  const raw = (text || '').trim();
-  // Match against lowercased text for keyword detection, but extract capture
-  // groups from the original-case `raw` so file paths and commands are preserved.
+}
+
+export function parseToolIntent(text) {
+  // Strip thinking/reasoning blocks emitted by Qwen3, DeepSeek-R1, etc.
+  let raw = (text || '').trim().replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
+  // 1. Direct JSON parse (clean output)
+  const direct = tryValidateJson(raw);
+  if (direct) return direct;
+
+  // 2. JSON inside markdown code fences: ```json ... ``` or ``` ... ```
+  const fenceMatch = /```(?:json)?\s*([\s\S]*?)```/i.exec(raw);
+  if (fenceMatch) {
+    const fenced = tryValidateJson(fenceMatch[1]);
+    if (fenced) return fenced;
+  }
+
+  // 3. Bare JSON object containing a "tool" key embedded in prose
+  const jsonMatch = /(\{[^{}]*"tool"\s*:[\s\S]*?\})/m.exec(raw);
+  if (jsonMatch) {
+    const embedded = tryValidateJson(jsonMatch[1]);
+    if (embedded) return embedded;
+  }
+
+  // 4. Natural language fallback — preserves original-case for paths/commands.
   const readMatch =
     /read\s+file\s+([^\s,]+)/i.exec(raw) ||
     /read\s+([^\s,]+\.\w+)/i.exec(raw);

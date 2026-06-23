@@ -16,7 +16,7 @@ npm run cli -- --teach             # start with Teach mode pre-enabled
 
 | Provider | What you need | Notes |
 |----------|--------------|-------|
-| **claude-cli** *(default, free)* | `claude` CLI logged in | Run `claude` once interactively to auth |
+| **claude-cli** *(default)* | `claude` CLI logged in (Pro subscription required) | Run `claude` once interactively to auth |
 | **OpenAI** | `export OPENAI_API_KEY=sk-...` | Default model: `gpt-4o-mini`; use `gpt-4o` for vision |
 | **Ollama** | `ollama serve` running + model pulled | `ollama pull llava` for vision; `ollama pull llama3.2` for text |
 
@@ -35,9 +35,10 @@ npm run cli -- --teach             # start with Teach mode pre-enabled
 **Type:** `What does this project do?`
 
 **Show:**
-- The streaming `▌` cursor in the MessageList while the response arrives
-- The "Steps:" section (StepTimeline) briefly showing a thinking step
-- The provider being selected in debug mode (see step 3)
+- Response appears above the input bar. With the default `claude-cli` provider it arrives **all at once** after processing completes — progressive token streaming only happens with OpenAI or Ollama (non-silent path).
+- While the response is in flight, a `▌` streaming cursor appears in the message area above the input bar. It disappears when the response completes. The input bar has its own permanent `▌` cursor — these are two separate indicators; only the message-area one comes and goes.
+- The "Steps:" section does **not** appear here — Steps only renders when tool calls are made (see step 2). Thinking steps are hidden in non-debug mode.
+- The provider being selected is visible in debug mode (see step 3).
 
 ---
 
@@ -48,7 +49,7 @@ npm run cli -- --teach             # start with Teach mode pre-enabled
 **Show:**
 - `🔍 read_file` step appears in StepTimeline
 - `✓` tool result step when file is returned
-- `✍` response step when the final answer streams in
+- Final answer appears after the tool loop — no `✍` response step in non-debug mode (response steps are hidden unless `/debug` is active)
 - The full agentic reasoning loop: bounded to 5 steps / 8 tool calls / 60 seconds
 
 ---
@@ -59,7 +60,7 @@ npm run cli -- --teach             # start with Teach mode pre-enabled
 
 - `[DEBUG]` badge appears in StatusBar
 - **Type:** `How does the agent loop work?`
-- Now StepTimeline shows **all** steps including thinking + tool_call + tool_result
+- Now StepTimeline shows **all** steps including thinking + tool_call + tool_result + provider selection
 
 **Type:** `/debug` again to toggle off.
 
@@ -72,6 +73,8 @@ npm run cli -- --teach             # start with Teach mode pre-enabled
 - `[PLAN]` badge appears
 - Agent focuses on planning, avoids mutations, treats all tool calls as read-only
 - Good for "what would it take to add feature X?" conversations
+- Steps (tool_call/tool_result) still appear — agent reads files to build the plan
+- Modes are independent and stackable — `/debug` + `/plan` shows `[DEBUG] [PLAN]` simultaneously
 
 ---
 

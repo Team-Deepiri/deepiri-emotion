@@ -78,8 +78,8 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
       setState((s) => ({ ...s, supportMode: active }));
     };
 
-    const onModeChanged = ({ activeMode }) => {
-      setState((s) => ({ ...s, activeMode }));
+    const onModeChanged = ({ activeModes }) => {
+      setState((s) => ({ ...s, activeModes }));
     };
 
     const onAutoModeChanged = ({ autoMode }) => {
@@ -92,6 +92,10 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
 
     const onGuardModeChanged = ({ guardMode }) => {
       setState((s) => ({ ...s, guardMode }));
+    };
+
+    const onProviderSelected = ({ provider }) => {
+      setState((s) => ({ ...s, activeProvider: provider }));
     };
 
     const onConfirmationRequest = (payload) => {
@@ -117,6 +121,7 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
     eventBus.on(EVENTS.CONFIRMATION_REQUEST, onConfirmationRequest);
     eventBus.on(EVENTS.CONFIRMATION_RESPONSE, onConfirmationResponse);
     eventBus.on(EVENTS.GUARD_MODE_CHANGED, onGuardModeChanged);
+    eventBus.on(EVENTS.PROVIDER_SELECTED, onProviderSelected);
 
     const spinnerTimer = setInterval(() => {
       eventBus.emit(EVENTS.SPINNER_TICK);
@@ -138,6 +143,7 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
       eventBus.off(EVENTS.CONFIRMATION_REQUEST, onConfirmationRequest);
       eventBus.off(EVENTS.CONFIRMATION_RESPONSE, onConfirmationResponse);
       eventBus.off(EVENTS.GUARD_MODE_CHANGED, onGuardModeChanged);
+      eventBus.off(EVENTS.PROVIDER_SELECTED, onProviderSelected);
       clearInterval(spinnerTimer);
     };
   }, [eventBus]);
@@ -195,17 +201,18 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
       messages: state.messages,
       streamingMessage: state.streamingMessage
     }),
-    React.createElement(StepTimeline, { steps: state.steps, activeMode: state.activeMode }),
+    React.createElement(StepTimeline, { steps: state.steps, activeModes: state.activeModes }),
     React.createElement(StatusBar, {
       agentStatus: state.agentStatus,
       statusMessage: state.statusMessage,
       spinnerFrame: state.spinnerFrame,
       teachMode: state.teachMode,
       supportMode: state.supportMode,
-      activeMode: state.activeMode,
+      activeModes: state.activeModes,
       autoMode: state.autoMode,
       acceptEdits: state.acceptEdits,
       guardMode: state.guardMode,
+      activeProvider: state.activeProvider,
     }),
     ...(pendingAttachments.length > 0 ? [
       React.createElement(Box, { key: 'attachments', marginTop: 0 },

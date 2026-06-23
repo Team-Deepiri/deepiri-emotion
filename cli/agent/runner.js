@@ -13,7 +13,7 @@ import { AgentWorker } from './AgentWorker.js';
  */
 export function attachAgentRunner(bus, config = {}) {
   let teachMode        = config.teachMode        ?? false;
-  let activeMode       = null;
+  let activeModes      = new Set();
   let autoMode         = config.autoMode         ?? false;
   let acceptEdits      = config.acceptEdits      ?? false;
   let guardMode        = config.supervisorEnabled ?? true;
@@ -31,9 +31,10 @@ export function attachAgentRunner(bus, config = {}) {
     }
 
     if (text?.trim() === '/debug') {
-      activeMode = activeMode === MODES.DEBUG ? null : MODES.DEBUG;
-      bus.emit(EVENTS.MODE_CHANGED, { activeMode });
-      const msg = activeMode === MODES.DEBUG
+      if (activeModes.has(MODES.DEBUG)) activeModes.delete(MODES.DEBUG);
+      else activeModes.add(MODES.DEBUG);
+      bus.emit(EVENTS.MODE_CHANGED, { activeModes: new Set(activeModes) });
+      const msg = activeModes.has(MODES.DEBUG)
         ? '🔍 Debug mode ON — full step visibility enabled.'
         : 'Debug mode OFF.';
       bus.emit(EVENTS.LLM_TOKEN, { token: msg });
@@ -42,9 +43,10 @@ export function attachAgentRunner(bus, config = {}) {
     }
 
     if (text?.trim() === '/plan') {
-      activeMode = activeMode === MODES.PLAN ? null : MODES.PLAN;
-      bus.emit(EVENTS.MODE_CHANGED, { activeMode });
-      const msg = activeMode === MODES.PLAN
+      if (activeModes.has(MODES.PLAN)) activeModes.delete(MODES.PLAN);
+      else activeModes.add(MODES.PLAN);
+      bus.emit(EVENTS.MODE_CHANGED, { activeModes: new Set(activeModes) });
+      const msg = activeModes.has(MODES.PLAN)
         ? '📋 Plan mode ON — responses will focus on planning and avoid mutations.'
         : 'Plan mode OFF.';
       bus.emit(EVENTS.LLM_TOKEN, { token: msg });
@@ -103,7 +105,7 @@ export function attachAgentRunner(bus, config = {}) {
       config,
       task: text,
       attachments,
-      modes: { teachMode, activeMode, autoMode, acceptEdits, guardMode },
+      modes: { teachMode, activeModes: new Set(activeModes), autoMode, acceptEdits, guardMode },
     });
     await worker.run();
   });
