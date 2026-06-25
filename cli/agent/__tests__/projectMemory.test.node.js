@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { mkdtempSync, rmSync, writeFileSync, symlinkSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { loadProjectMemory } from '../projectMemory.js';
@@ -61,5 +61,24 @@ describe('loadProjectMemory', () => {
   it('defaults cwd to process.cwd() when not provided', async () => {
     const result = await loadProjectMemory();
     expect(typeof result.found).toBe('boolean');
+  });
+
+  it('returns found:false when EMOTION.md is a symlink pointing outside workspace', async () => {
+    const outsideTarget = join(
+      tmpdir(),
+      `outside-emotion-target-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.md`,
+    );
+    writeFileSync(outsideTarget, 'sensitive content that should NOT be exposed');
+
+    const linkPath = join(dir, 'EMOTION.md');
+    symlinkSync(outsideTarget, linkPath);
+
+    try {
+      const result = await loadProjectMemory(dir);
+      expect(result.found).toBe(false);
+      expect(result.content).toBe('');
+    } finally {
+      rmSync(outsideTarget, { force: true });
+    }
   });
 });

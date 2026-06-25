@@ -4,9 +4,10 @@
  * snapshot suitable for injection into the agent's system context.
  * Pure-ish — only reads, no writes. Silent on missing files.
  */
-import { readFile, readdir } from 'fs/promises';
+import { open, readdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
+import { safeWorkspacePath } from './pathSafety.js';
 
 const SKIP_DIRS = new Set([
   'node_modules', '.git', 'dist', 'build', '.next', '.nuxt', 'coverage',
@@ -15,13 +16,31 @@ const SKIP_DIRS = new Set([
 
 const MAX_SNAPSHOT_BYTES = 2 * 1024;
 const MAX_TOP_DIRS = 20;
+const MAX_PACKAGE_JSON_BYTES = 256 * 1024;
 
-async function readJsonSafe(path) {
+/**
+ * Path-safe + bounded read of a JSON file inside the workspace. Returns parsed
+ * JSON or null. Streams up to MAX_PACKAGE_JSON_BYTES so a symlink-to-1GB-file
+ * cannot OOM the process. Symlink escape and blocked patterns are also rejected.
+ */
+async function readJsonSafe(filename, cwd) {
+  const safety = await safeWorkspacePath(filename, cwd);
+  if (safety.error) return null;
+  const path = safety.resolved;
+  if (!existsSync(path)) return null;
+
+  let handle;
   try {
-    const raw = await readFile(path, 'utf-8');
+    handle = await open(path, 'r');
+    const buffer = Buffer.alloc(MAX_PACKAGE_JSON_BYTES + 1);
+    const { bytesRead } = await handle.read(buffer, 0, MAX_PACKAGE_JSON_BYTES + 1, 0);
+    if (bytesRead > MAX_PACKAGE_JSON_BYTES) return null; // unrealistically large; reject
+    const raw = buffer.slice(0, bytesRead).toString('utf-8');
     return JSON.parse(raw);
   } catch {
     return null;
+  } finally {
+    if (handle) await handle.close().catch(() => {});
   }
 }
 
@@ -61,7 +80,7 @@ export async function bootstrapProject(cwd = process.cwd()) {
     topDirs: [],
   };
 
-  const pkg = await readJsonSafe(join(cwd, 'package.json'));
+  const pkg = await readJsonSafe('package.json', cwd);
   if (pkg) {
     if (typeof pkg.name === 'string') snapshot.name = pkg.name;
     if (typeof pkg.main === 'string') snapshot.entrypoint = pkg.main;

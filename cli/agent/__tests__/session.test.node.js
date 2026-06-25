@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readdirSync, existsSync } from 'fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readdirSync, existsSync, symlinkSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { EventEmitter } from 'events';
@@ -174,5 +174,53 @@ describe('auto-prune', () => {
 
     const remaining = readdirSync(sessionsDir).filter(n => n.endsWith('.json'));
     expect(remaining.length).toBe(30);
+  });
+});
+
+describe('symlink protection', () => {
+  it('does not write session content when .emotion-sessions is a symlink to outside workspace', async () => {
+    const outsideDir = join(
+      tmpdir(),
+      `outside-sessions-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    );
+    mkdirSync(outsideDir, { recursive: true });
+
+    const linkPath = join(dir, '.emotion-sessions');
+    symlinkSync(outsideDir, linkPath);
+
+    try {
+      attachSessionRecorder(bus, dir);
+      bus.emit(EVENTS.USER_MESSAGE, { text: 'this should NOT be persisted to outside' });
+      await tick();
+
+      // Verify no session file was created in the outside target.
+      const outsideFiles = readdirSync(outsideDir);
+      expect(outsideFiles.length).toBe(0);
+    } finally {
+      rmSync(outsideDir, { recursive: true, force: true });
+    }
+  });
+
+  it('returns empty list when .emotion-sessions is a symlink to outside workspace', async () => {
+    const outsideDir = join(
+      tmpdir(),
+      `outside-sessions-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    );
+    mkdirSync(outsideDir, { recursive: true });
+    // Plant a fake session file in the outside dir
+    writeFileSync(
+      join(outsideDir, '1234567890.json'),
+      JSON.stringify({ id: '1234567890', startedAt: '2026', messages: [{ role: 'user', content: 'leaked', ts: '2026' }] }),
+    );
+
+    const linkPath = join(dir, '.emotion-sessions');
+    symlinkSync(outsideDir, linkPath);
+
+    try {
+      const sessions = await listSessions(dir);
+      expect(sessions).toEqual([]);
+    } finally {
+      rmSync(outsideDir, { recursive: true, force: true });
+    }
   });
 });
