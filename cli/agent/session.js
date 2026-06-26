@@ -8,30 +8,43 @@ import { readFile, writeFile, mkdir, readdir, unlink, rename } from 'fs/promises
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { EVENTS } from '../core/eventBus.js';
+import { safeWorkspacePath } from './pathSafety.js';
 
 const SESSIONS_DIR = '.emotion-sessions';
 const MAX_SESSIONS = 30;
 const MAX_MESSAGE_BYTES = 64 * 1024;
 const MAX_MESSAGES_PER_SESSION = 500;
 
-function sessionsPath(cwd) { return join(cwd, SESSIONS_DIR); }
-function sessionFile(cwd, id) { return join(sessionsPath(cwd), `${id}.json`); }
+/**
+ * Returns the canonical sessions directory if safe, or null if the path is
+ * unsafe (symlink-escape, blocked pattern, etc.). All session operations go
+ * through this gate so disk activity stays inside the workspace.
+ */
+async function safeSessionsDir(cwd) {
+  const safety = await safeWorkspacePath(SESSIONS_DIR, cwd);
+  if (safety.error) return null;
+  return safety.resolved;
+}
 
 async function ensureDir(cwd) {
-  const dir = sessionsPath(cwd);
+  const dir = await safeSessionsDir(cwd);
+  if (!dir) return null;
   if (!existsSync(dir)) await mkdir(dir, { recursive: true });
+  return dir;
 }
 
 async function writeSessionAtomic(cwd, session) {
-  await ensureDir(cwd);
-  const path = sessionFile(cwd, session.id);
+  const dir = await ensureDir(cwd);
+  if (!dir) return; // silent: sessions path unsafe
+  const path = join(dir, `${session.id}.json`);
   const tmp = `${path}.tmp`;
   await writeFile(tmp, JSON.stringify(session, null, 2), 'utf-8');
   await rename(tmp, path);
 }
 
 async function pruneOldSessions(cwd) {
-  const dir = sessionsPath(cwd);
+  const dir = await safeSessionsDir(cwd);
+  if (!dir) return;
   if (!existsSync(dir)) return;
   const entries = await readdir(dir);
   const ids = entries
@@ -41,7 +54,7 @@ async function pruneOldSessions(cwd) {
     .reverse();
   if (ids.length <= MAX_SESSIONS) return;
   const toDelete = ids.slice(MAX_SESSIONS);
-  await Promise.all(toDelete.map(id => unlink(sessionFile(cwd, id)).catch(() => {})));
+  await Promise.all(toDelete.map(id => unlink(join(dir, `${id}.json`)).catch(() => {})));
 }
 
 export function attachSessionRecorder(bus, cwd = process.cwd()) {
@@ -78,7 +91,13 @@ export function attachSessionRecorder(bus, cwd = process.cwd()) {
   });
 
   bus.on(EVENTS.LLM_TOKEN, ({ token }) => {
-    if (typeof token === 'string') pendingAssistantTokens += token;
+    if (typeof token !== 'string') return;
+    // Cap pending tokens to prevent unbounded growth if LLM_DONE never fires.
+    // The final persisted message is sliced to MAX_MESSAGE_BYTES anyway, so
+    // appending past that cap accumulates memory with no observable benefit.
+    if (pendingAssistantTokens.length < MAX_MESSAGE_BYTES) {
+      pendingAssistantTokens += token;
+    }
   });
 
   bus.on(EVENTS.LLM_DONE, async () => {
@@ -99,7 +118,8 @@ export function attachSessionRecorder(bus, cwd = process.cwd()) {
 }
 
 export async function listSessions(cwd = process.cwd(), limit = 5) {
-  const dir = sessionsPath(cwd);
+  const dir = await safeSessionsDir(cwd);
+  if (!dir) return [];
   if (!existsSync(dir)) return [];
   let entries;
   try { entries = await readdir(dir); } catch { return []; }
@@ -112,7 +132,7 @@ export async function listSessions(cwd = process.cwd(), limit = 5) {
   const sessions = await Promise.all(
     ids.map(async id => {
       try {
-        const raw = await readFile(sessionFile(cwd, id), 'utf-8');
+        const raw = await readFile(join(dir, `${id}.json`), 'utf-8');
         const session = JSON.parse(raw);
         const firstUserMsg = session.messages?.find(m => m.role === 'user');
         return {
@@ -130,7 +150,9 @@ export async function listSessions(cwd = process.cwd(), limit = 5) {
 export async function loadSession(cwd, id) {
   if (typeof id !== 'string' || id.length === 0) return { error: 'session id required' };
   if (!/^\d+$/.test(id)) return { error: 'invalid session id format' };
-  const path = sessionFile(cwd, id);
+  const dir = await safeSessionsDir(cwd);
+  if (!dir) return { error: `session not found: ${id}` };
+  const path = join(dir, `${id}.json`);
   if (!existsSync(path)) return { error: `session not found: ${id}` };
   try {
     const raw = await readFile(path, 'utf-8');

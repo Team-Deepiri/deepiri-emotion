@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, symlinkSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { bootstrapProject, formatSnapshot } from '../bootstrap.js';
@@ -179,5 +179,27 @@ describe('formatSnapshot', () => {
     };
     const text = formatSnapshot(snapshot);
     expect(text.length).toBeLessThanOrEqual(2 * 1024);
+  });
+});
+
+describe('bootstrapProject — symlink protection', () => {
+  it('skips reading a symlinked package.json pointing outside workspace', async () => {
+    const outsideTarget = join(
+      tmpdir(),
+      `outside-pkg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.json`,
+    );
+    writeFileSync(outsideTarget, JSON.stringify({ name: 'leaked-name', main: 'leaked-entry.js' }));
+
+    const linkPath = join(dir, 'package.json');
+    symlinkSync(outsideTarget, linkPath);
+
+    try {
+      const result = await bootstrapProject(dir);
+      // The symlinked package.json is rejected, so name/entrypoint stay null.
+      expect(result.name).toBeNull();
+      expect(result.entrypoint).toBeNull();
+    } finally {
+      rmSync(outsideTarget, { force: true });
+    }
   });
 });
