@@ -9,11 +9,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/deepiri/deepiri-ide-desktop.git"
+    "url": "https://github.com/Team-Deepiri/deepiri-emotion.git"
   },
-  "homepage": "https://github.com/deepiri/deepiri-ide-desktop#readme",
+  "homepage": "https://github.com/Team-Deepiri/deepiri-emotion#readme",
   "bugs": {
-    "url": "https://github.com/deepiri/deepiri-ide-desktop/issues"
+    "url": "https://github.com/Team-Deepiri/deepiri-emotion/issues"
   },
   "scripts": {
     "cli": "node cli/index.js",
@@ -131,14 +131,6 @@
         {
           "target": "dmg",
           "arch": [
-            "x64",
-            "arm64"
-          ]
-        },
-        {
-          "target": "pkg",
-          "arch": [
-            "x64",
             "arm64"
           ]
         }
@@ -148,12 +140,6 @@
     },
     "linux": {
       "target": [
-        {
-          "target": "deb",
-          "arch": [
-            "x64"
-          ]
-        },
         {
           "target": "AppImage",
           "arch": [
