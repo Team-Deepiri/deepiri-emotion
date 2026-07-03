@@ -1,0 +1,159 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  CSC_IDENTITY_AUTO_DISCOVERY: false
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build macOS arm64 DMG
+        run: |
+          npm run build:icons
+          npm run build:renderer
+          npx electron-builder --mac dmg --arm64
+
+      - name: Rename release asset
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          dmgs=(dist/*.dmg)
+          if [ ${#dmgs[@]} -eq 1 ]; then
+            mv "${dmgs[0]}" dist/Deepiri-Emotion-latest-arm64.dmg
+          else
+            arm64_dmgs=(dist/*arm64*.dmg)
+            if [ ${#arm64_dmgs[@]} -ne 1 ]; then
+              echo "Expected 1 DMG in dist/ (or 1 arm64 DMG if multiple), found: ${dmgs[*]:-none}"
+              ls -la dist/
+              exit 1
+            fi
+            mv "${arm64_dmgs[0]}" dist/Deepiri-Emotion-latest-arm64.dmg
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/Deepiri-Emotion-latest-arm64.dmg
+          if-no-files-found: error
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Linux AppImage
+        run: |
+          npm run build:icons
+          npm run build:renderer
+          npx electron-builder --linux AppImage
+
+      - name: Rename release asset
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          images=(dist/*.AppImage)
+          if [ ${#images[@]} -ne 1 ]; then
+            echo "Expected 1 AppImage in dist/, found: ${images[*]:-none}"
+            ls -la dist/
+            exit 1
+          fi
+          mv "${images[0]}" dist/Deepiri-Emotion-latest.AppImage
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/Deepiri-Emotion-latest.AppImage
+          if-no-files-found: error
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Windows NSIS installer
+        run: |
+          npm run build:icons
+          npm run build:renderer
+          npx electron-builder --win nsis --x64
+
+      - name: Rename release asset
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          installers=(dist/*Setup*.exe)
+          if [ ${#installers[@]} -ne 1 ]; then
+            echo "Expected 1 NSIS installer in dist/, found: ${installers[*]:-none}"
+            ls -la dist/
+            exit 1
+          fi
+          mv "${installers[0]}" dist/Deepiri-Emotion-latest-setup.exe
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/Deepiri-Emotion-latest-setup.exe
+          if-no-files-found: error
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build-macos, build-linux, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            artifacts/macos/Deepiri-Emotion-latest-arm64.dmg
+            artifacts/linux/Deepiri-Emotion-latest.AppImage
+            artifacts/windows/Deepiri-Emotion-latest-setup.exe
