@@ -17,6 +17,11 @@ export function attachAgentRunner(bus, config = {}) {
   let activeMode  = null;
   let autoMode    = config.autoMode    ?? false;
   let acceptEdits = config.acceptEdits ?? false;
+  let currentWorker = null;
+
+  bus.on(EVENTS.CANCEL_REQUESTED, () => {
+    currentWorker?.cancel();
+  });
 
   bus.on(EVENTS.USER_MESSAGE, async ({ text }) => {
     if (text?.trim() === '/teach') {
@@ -138,6 +143,11 @@ export function attachAgentRunner(bus, config = {}) {
       task: text,
       modes: { teachMode, activeMode, autoMode, acceptEdits },
     });
-    await worker.run();
+    currentWorker = worker;
+    try {
+      await worker.run();
+    } finally {
+      if (currentWorker === worker) currentWorker = null;
+    }
   });
 }

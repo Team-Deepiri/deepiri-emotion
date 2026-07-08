@@ -68,6 +68,19 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
       setState((s) => ({ ...s, error: message || 'Something went wrong' }));
     };
 
+    const onAgentCancelled = () => {
+      setState((s) => ({
+        ...s,
+        messages: [...s.messages, { role: 'system', content: 'Cancelled.' }],
+        streamingMessage: '',
+        agentStatus: 'idle',
+        statusMessage: '',
+        steps: s.steps.map((step) =>
+          step.status === 'running' ? { ...step, status: 'cancelled' } : step
+        ),
+      }));
+    };
+
     const onTeachModeChanged = ({ teachMode }) => {
       setState((s) => ({ ...s, teachMode }));
     };
@@ -102,6 +115,7 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
     eventBus.on(EVENTS.AGENT_STATUS, onAgentStatus);
     eventBus.on(EVENTS.AGENT_STEP, onAgentStep);
     eventBus.on(EVENTS.AGENT_ERROR, onAgentError);
+    eventBus.on(EVENTS.AGENT_CANCELLED, onAgentCancelled);
     eventBus.on(EVENTS.SPINNER_TICK, onSpinnerTick);
     eventBus.on(EVENTS.TEACH_MODE_CHANGED, onTeachModeChanged);
     eventBus.on(EVENTS.SUPPORT_MODE_CHANGED, onSupportModeChanged);
@@ -122,6 +136,7 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
       eventBus.off(EVENTS.AGENT_STATUS, onAgentStatus);
       eventBus.off(EVENTS.AGENT_STEP, onAgentStep);
       eventBus.off(EVENTS.AGENT_ERROR, onAgentError);
+      eventBus.off(EVENTS.AGENT_CANCELLED, onAgentCancelled);
       eventBus.off(EVENTS.SPINNER_TICK, onSpinnerTick);
       eventBus.off(EVENTS.TEACH_MODE_CHANGED, onTeachModeChanged);
       eventBus.off(EVENTS.SUPPORT_MODE_CHANGED, onSupportModeChanged);
@@ -156,12 +171,16 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
     [eventBus]
   );
 
+  const handleCancel = useCallback(() => {
+    eventBus.emit(EVENTS.CANCEL_REQUESTED);
+  }, [eventBus]);
+
   return React.createElement(
     Box,
     { flexDirection: 'column', padding: 1 },
     React.createElement(Text, { bold: true, color: 'cyan' }, 'Deepiri Emotion CLI'),
     React.createElement(Text, { dimColor: true },
-      workspaceDir ? `Workspace: ${workspaceDir}` : 'Shift+Enter newline, Enter send. Ctrl+C exit, Ctrl+L clear.'
+      workspaceDir ? `Workspace: ${workspaceDir}` : 'Shift+Enter newline, Enter send. Ctrl+C exit, Ctrl+L clear, Esc cancel.'
     ),
     ...(state.error ? [React.createElement(Text, { key: 'err', color: 'red' }, 'Error: ', state.error)] : []),
     React.createElement(MessageList, {
@@ -205,7 +224,9 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
         onClear: handleClear,
         placeholder: state.pendingConfirmation ? 'Awaiting confirmation — press y or n' : 'Type a message...',
         pendingConfirmation: state.pendingConfirmation,
-        onConfirm: handleConfirm
+        onConfirm: handleConfirm,
+        agentStatus: state.agentStatus,
+        onCancel: handleCancel
       })
     )
   );

@@ -2,7 +2,7 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import { useInput } from 'ink';
 
-export function PromptInput({ value, onChange, onSubmit, onClear, placeholder, pendingConfirmation, onConfirm }) {
+export function PromptInput({ value, onChange, onSubmit, onClear, placeholder, pendingConfirmation, onConfirm, agentStatus, onCancel }) {
   useInput((input, key) => {
     if (pendingConfirmation) {
       if (key.ctrl && input === 'c') {
@@ -15,6 +15,12 @@ export function PromptInput({ value, onChange, onSubmit, onClear, placeholder, p
       if (input === 'n' || input === 'N' || key.escape) {
         if (typeof onConfirm === 'function') onConfirm(false);
         return;
+      }
+      return;
+    }
+    if (key.escape) {
+      if (agentStatus && agentStatus !== 'idle' && typeof onCancel === 'function') {
+        onCancel();
       }
       return;
     }
