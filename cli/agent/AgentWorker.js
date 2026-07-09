@@ -21,6 +21,34 @@ import { MODES } from '../core/modes.js';
 function stripFinalAnswer(s) {
   return s.replace(/^FINAL_ANSWER:\s*/, '').replace(/\nFINAL_ANSWER:\s*/g, '\n').trim();
 }
+
+/**
+ * Human-readable, tool-specific label for live "what is the agent doing"
+ * indicators (e.g. "📄 Reading cli/agent/runner.js…"). Single source of
+ * truth shared by the AGENT_STATUS message and the TOOL_START payload.
+ */
+export function formatToolLabel(tool, args = {}) {
+  switch (tool) {
+    case 'read_file':
+      return `📄 Reading ${args.filePath}…`;
+    case 'run_command':
+      return `⚙ Running ${args.command}…`;
+    case 'write_file':
+    case 'create_file':
+    case 'edit_file':
+      return `✏ Editing ${args.filePath}`;
+    case 'search':
+      return `🔍 Searching for "${args.query}"…`;
+    case 'list_files':
+      return `📁 Listing ${args.dirPath || '.'}…`;
+    case 'git_status':
+      return '🌿 Checking git status…';
+    case 'git_diff':
+      return '🌿 Reading git diff…';
+    default:
+      return `${tool}…`;
+  }
+}
 import { streamLLM as defaultStreamLLM } from './llmStream.js';
 import { parseToolIntent as defaultParseToolIntent, executeTool as defaultExecuteTool } from './tools.js';
 import { maybeConfirmAndExecute as defaultMaybeConfirmAndExecute } from './confirm.js';
@@ -128,8 +156,9 @@ export class AgentWorker {
       let toolContext = '';
 
       if (toolIntent) {
-        wbus.emit(EVENTS.AGENT_STATUS, { status: 'tool_running', message: `Running ${toolIntent.tool}...` });
-        wbus.emit(EVENTS.TOOL_START, { tool: toolIntent.tool, args: toolIntent.args });
+        const initialToolLabel = formatToolLabel(toolIntent.tool, toolIntent.args);
+        wbus.emit(EVENTS.AGENT_STATUS, { status: 'tool_running', message: '' });
+        wbus.emit(EVENTS.TOOL_START, { tool: toolIntent.tool, args: toolIntent.args, label: initialToolLabel });
         wbus.emit(EVENTS.AGENT_STEP, {
           id: this._nextStepId(),
           type: 'tool_call',
@@ -620,10 +649,12 @@ ${this.config.projectSnapshot}`;
         if (loopToolIntent) {
           toolCallCount++;
           noProgressStreak = 0;
+          const loopToolLabel = formatToolLabel(loopToolIntent.tool, loopToolIntent.args);
           wbus.emit(EVENTS.AGENT_STATUS, {
             status: 'tool_running',
-            message: `Running ${loopToolIntent.tool}...`,
+            message: '',
           });
+          wbus.emit(EVENTS.TOOL_START, { tool: loopToolIntent.tool, args: loopToolIntent.args, label: loopToolLabel });
           wbus.emit(EVENTS.AGENT_STEP, {
             id: this._nextStepId(),
             type: 'tool_call',
@@ -641,6 +672,7 @@ ${this.config.projectSnapshot}`;
             loopToolResult = { error: err.message };
           }
 
+          wbus.emit(EVENTS.TOOL_END, { tool: loopToolIntent.tool, result: loopToolResult });
           wbus.emit(EVENTS.AGENT_STEP, {
             id: this._nextStepId(),
             type: 'tool_result',
