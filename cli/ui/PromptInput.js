@@ -37,6 +37,9 @@ export function PromptInput({ value, onChange, onSubmit, onClear, placeholder, p
     if (key.escape) {
       if (agentStatus && agentStatus !== 'idle' && typeof onCancel === 'function') {
         onCancel();
+      } else if (value) {
+        onChange('');
+        setCursor(0);
       }
       return;
     }

@@ -788,6 +788,12 @@ ${this.config.projectSnapshot}`;
         status: 'complete',
         message: `Error: ${err.message}`,
       });
+    } finally {
+      // Reset so this instance stays usable if a caller ever reuses it
+      // instead of creating a fresh worker per turn (current runner.js
+      // always creates a new AgentWorker per message, but this keeps
+      // cancel() from permanently wedging an instance that is reused).
+      this.abortController = new AbortController();
     }
   }
 }
