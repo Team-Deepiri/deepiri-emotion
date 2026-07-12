@@ -2,7 +2,7 @@
  * CLI tools tests (Node env).
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdir, writeFile, rm, symlink } from 'fs/promises';
+import { mkdir, writeFile, rm, symlink, realpath } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { parseToolIntent, readFileTool, searchTool, listFilesTool, runCommandTool, explainTool } from '../tools.js';
@@ -83,6 +83,9 @@ describe('readFileTool', () => {
   beforeEach(async () => {
     dir = join(tmpdir(), `cli-tools-test-${Date.now()}`);
     await mkdir(dir, { recursive: true });
+    // macOS routes tmpdir() through a /var -> /private/var symlink; resolve it
+    // so `dir` matches the canonicalized path readFileTool/pathSafety returns.
+    dir = await realpath(dir);
   });
 
   afterEach(async () => {
