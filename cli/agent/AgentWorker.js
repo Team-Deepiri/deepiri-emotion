@@ -231,6 +231,10 @@ export class AgentWorker {
         - memory_set: save a fact for future sessions ({"key": "<short-name>", "value": <any>})
         - memory_get: retrieve a previously saved fact ({"key": "<short-name>"})
         - memory_list: list all saved memory keys ({})
+        - create_file: create a brand-new file ({"filePath": "...", "content": "..."}). Fails if the file already exists.
+        - write_file: create a file, or overwrite an existing one ({"filePath": "...", "content": "...", "allowOverwrite": true} — allowOverwrite is required to replace an existing file).
+        - edit_file: replace an exact piece of text within an existing file ({"filePath": "...", "oldString": "<exact text to find>", "newString": "<replacement text>"}).
+        - run_command: run a shell command in the workspace ({"command": "..."}).
 
         TOOL USAGE RULES:
         - **Always** call **thoughts** before a complex multi-step sequence to state your current Mode and plan. This keeps your reasoning out of the user's chat while providing a trace for the system.
@@ -240,6 +244,8 @@ export class AgentWorker {
         - Do not ask the user for clarification unless absolutely necessary.
         - Always use relative paths like "cli/index.js".
         - Never use absolute paths like "/home/...".
+        - create_file, write_file, edit_file, and run_command are mutating — the user will be shown a confirmation prompt before they take effect. You do not need to ask for permission yourself first; just call the tool.
+        - Use edit_file for targeted changes to an existing file; use write_file with allowOverwrite only when replacing a whole file's contents; use create_file only for files that do not exist yet.
         - If the question is about how something works in this codebase (agent behavior, tools, file reading, startup, flow):
           - you MUST use read_file to inspect the actual implementation before answering
           - do NOT answer from general knowledge
@@ -275,6 +281,21 @@ export class AgentWorker {
           "args": { "key": "user_pref_indent", "value": "tabs" }
         }
 
+        {
+          "tool": "create_file",
+          "args": { "filePath": "scratch.txt", "content": "hello\nworld" }
+        }
+
+        {
+          "tool": "edit_file",
+          "args": { "filePath": "src/index.js", "oldString": "const x = 1;", "newString": "const x = 2;" }
+        }
+
+        {
+          "tool": "run_command",
+          "args": { "command": "npm test" }
+        }
+
         FINAL ANSWER RULES:
         When you have enough information, answer with:
         FINAL_ANSWER:
@@ -308,6 +329,14 @@ export class AgentWorker {
 
         - If the user references something they told you before that is not in the current conversation:
           - call memory_list to see saved keys, then memory_get to retrieve relevant values
+
+        - If the user asks to create, write, or edit a file:
+          - use create_file for a brand-new file, write_file (with allowOverwrite) to replace a whole file, or edit_file for a targeted change to an existing file
+          - do not just print the file contents in your answer — call the tool
+          - a confirmation prompt will show the change to the user; you do not need to ask permission in your own reply
+
+        - If the user asks to run a command (tests, build, script):
+          - use run_command
 
        - If the user asks "explain", "how it works", "startup", or asks how a system/feature/file/command works:
           - you MUST inspect the relevant implementation files before answering
