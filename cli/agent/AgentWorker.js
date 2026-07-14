@@ -57,6 +57,7 @@ import { discoverGuidance as defaultDiscoverGuidance } from './guidance.js';
 import { detectSupportNeed as defaultDetectSupportNeed } from './support.js';
 import { stopReason, toolCallKey } from './loopGuards.js';
 import { DEFAULT_CONFIG } from '../core/config.js';
+import { getErrorHint } from '../core/errorHints.js';
 
 /**
  * Thin bus wrapper that stamps `workerId` on every emit.
@@ -741,7 +742,7 @@ ${this.config.projectSnapshot}`;
 
     } catch (err) {
       wbus.emit(EVENTS.AGENT_STATUS, { status: 'idle', message: '' });
-      wbus.emit(EVENTS.AGENT_ERROR, { message: err.message });
+      wbus.emit(EVENTS.AGENT_ERROR, { message: err.message, hint: getErrorHint(err.message) });
       wbus.emit(EVENTS.AGENT_STEP, {
         id: this._nextStepId(),
         type: 'response',

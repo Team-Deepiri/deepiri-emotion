@@ -62,6 +62,9 @@ export async function streamWithFallback(bus, prompt, opts = {}, config = {}) {
     }
 
     emitProviderStep(bus, 'using', name);
+    if (bus && typeof bus.emit === 'function') {
+      bus.emit(EVENTS.PROVIDER_RESOLVED, { provider: name, model: options.model || null });
+    }
     try {
       const provider = new ProviderClass(options);
       await provider.stream(bus, prompt, opts);

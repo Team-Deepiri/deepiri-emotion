@@ -21,6 +21,7 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
         streamingMessage: '',
         steps: [],
         error: null,
+        errorHint: null,
         activeTool: null
       }));
     };
@@ -65,8 +66,12 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
       }));
     };
 
-    const onAgentError = ({ message }) => {
-      setState((s) => ({ ...s, error: message || 'Something went wrong' }));
+    const onAgentError = ({ message, hint }) => {
+      setState((s) => ({ ...s, error: message || 'Something went wrong', errorHint: hint || null }));
+    };
+
+    const onProviderResolved = ({ provider, model }) => {
+      setState((s) => ({ ...s, activeProvider: provider, activeModel: model }));
     };
 
     const onToolStart = ({ tool, args, label }) => {
@@ -111,6 +116,7 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
     eventBus.on(EVENTS.AGENT_STATUS, onAgentStatus);
     eventBus.on(EVENTS.AGENT_STEP, onAgentStep);
     eventBus.on(EVENTS.AGENT_ERROR, onAgentError);
+    eventBus.on(EVENTS.PROVIDER_RESOLVED, onProviderResolved);
     eventBus.on(EVENTS.TOOL_START, onToolStart);
     eventBus.on(EVENTS.TOOL_END, onToolEnd);
     eventBus.on(EVENTS.SPINNER_TICK, onSpinnerTick);
@@ -133,6 +139,7 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
       eventBus.off(EVENTS.AGENT_STATUS, onAgentStatus);
       eventBus.off(EVENTS.AGENT_STEP, onAgentStep);
       eventBus.off(EVENTS.AGENT_ERROR, onAgentError);
+      eventBus.off(EVENTS.PROVIDER_RESOLVED, onProviderResolved);
       eventBus.off(EVENTS.TOOL_START, onToolStart);
       eventBus.off(EVENTS.TOOL_END, onToolEnd);
       eventBus.off(EVENTS.SPINNER_TICK, onSpinnerTick);
@@ -172,11 +179,30 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
   return React.createElement(
     Box,
     { flexDirection: 'column', padding: 1 },
-    React.createElement(Text, { bold: true, color: 'cyan' }, 'Deepiri Emotion CLI'),
+    React.createElement(
+      Text,
+      { bold: true, color: 'cyan' },
+      'Deepiri Emotion CLI',
+      state.activeProvider ? `  |  ${state.activeProvider}${state.activeModel ? ` / ${state.activeModel}` : ''}` : ''
+    ),
     React.createElement(Text, { dimColor: true },
       workspaceDir ? `Workspace: ${workspaceDir}` : 'Shift+Enter newline, Enter send. Ctrl+C exit, Ctrl+L clear.'
     ),
-    ...(state.error ? [React.createElement(Text, { key: 'err', color: 'red' }, 'Error: ', state.error)] : []),
+    ...(state.error ? [
+      React.createElement(Box, {
+        key: 'err',
+        flexDirection: 'column',
+        marginY: 1,
+        paddingX: 1,
+        borderStyle: 'round',
+        borderColor: 'red'
+      },
+        React.createElement(Text, { color: 'red', bold: true }, 'Error: ', state.error),
+        ...(state.errorHint
+          ? [React.createElement(Text, { key: 'hint', color: 'yellow' }, '→ ', state.errorHint)]
+          : [])
+      )
+    ] : []),
     React.createElement(MessageList, {
       messages: state.messages,
       streamingMessage: state.streamingMessage
