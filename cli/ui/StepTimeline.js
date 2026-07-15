@@ -29,7 +29,7 @@ export function StepTimeline({ steps, activeMode }) {
     Box,
     { flexDirection: 'column', gap: 0, marginBottom: 1 },
     React.createElement(Text, { dimColor: true }, 'Steps:'),
-    ...visibleSteps.slice(-5).map((s, i) => {
+    ...visibleSteps.map((s, i) => {
       if (s.type === 'teach') {
         const label = CATEGORY_LABELS[s.category] || s.category || '';
         const explanation = s.explanation || '';

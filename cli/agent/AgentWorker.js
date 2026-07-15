@@ -132,6 +132,19 @@ export class AgentWorker {
     return `step-${Date.now()}-${++this._stepSeq}`;
   }
 
+  /**
+   * Emits the turn's closing "Done" step. Must fire before the LLM_DONE that
+   * finalizes the message, since the UI snapshots the step trace at that point.
+   */
+  _emitDoneStep(wbus) {
+    wbus.emit(EVENTS.AGENT_STEP, {
+      id: this._nextStepId(),
+      type: 'response',
+      status: 'complete',
+      message: 'Done',
+    });
+  }
+
   async run() {
     const { config, modes, wbus } = this;
     const text = this.task;
@@ -696,6 +709,7 @@ ${this.config.projectSnapshot}`;
           noProgressStreak = 0;
           const cleanedResponse = stripFinalAnswer(lastResponse);
           wbus.emit(EVENTS.LLM_TOKEN, { token: cleanedResponse });
+          this._emitDoneStep(wbus);
           wbus.emit(EVENTS.LLM_DONE, {});
           break;
         }
@@ -703,6 +717,7 @@ ${this.config.projectSnapshot}`;
         if (lastResponse.trim()) {
           noProgressStreak = 0;
           wbus.emit(EVENTS.LLM_TOKEN, { token: lastResponse.trim() });
+          this._emitDoneStep(wbus);
           wbus.emit(EVENTS.LLM_DONE, {});
         } else {
           // Empty response with no tool call and no FINAL_ANSWER — force finalization
@@ -729,15 +744,10 @@ ${this.config.projectSnapshot}`;
         });
         const cleaned = stripFinalAnswer(finalResponse);
         wbus.emit(EVENTS.LLM_TOKEN, { token: cleaned || '(Agent reached budget limit before completing a response.)' });
+        this._emitDoneStep(wbus);
         wbus.emit(EVENTS.LLM_DONE, {});
       }
 
-      wbus.emit(EVENTS.AGENT_STEP, {
-        id: this._nextStepId(),
-        type: 'response',
-        status: 'complete',
-        message: 'Done',
-      });
       wbus.emit(EVENTS.AGENT_STATUS, { status: 'idle', message: '' });
 
     } catch (err) {

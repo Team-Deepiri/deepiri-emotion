@@ -4,7 +4,6 @@ import { EVENTS } from '../core/eventBus.js';
 import { INITIAL_STATE, NUM_SPINNER_FRAMES } from '../core/stateStore.js';
 import { MessageList } from './MessageList.js';
 import { StatusBar } from './StatusBar.js';
-import { StepTimeline } from './StepTimeline.js';
 import { PromptInput } from './PromptInput.js';
 
 const SPINNER_INTERVAL_MS = 80;
@@ -33,15 +32,20 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
       }));
     };
 
-    const onLlmDone = () => {
+    const onLlmDone = ({ silent } = {}) => {
+      // AgentWorker's internal reasoning loop makes silent, intermediate
+      // streamLLM calls that also emit LLM_DONE — those aren't the real end
+      // of the turn, so skip finalizing the message/step trace for them.
+      if (silent) return;
       setState((s) => {
         const full = s.streamingMessage;
         return {
           ...s,
           messages: full
-            ? [...s.messages, { role: 'assistant', content: full }]
+            ? [...s.messages, { role: 'assistant', content: full, steps: s.steps }]
             : s.messages,
           streamingMessage: '',
+          steps: [],
           agentStatus: 'idle',
           statusMessage: ''
         };
@@ -205,9 +209,10 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
     ] : []),
     React.createElement(MessageList, {
       messages: state.messages,
-      streamingMessage: state.streamingMessage
+      streamingMessage: state.streamingMessage,
+      liveSteps: state.steps,
+      activeMode: state.activeMode
     }),
-    React.createElement(StepTimeline, { steps: state.steps, activeMode: state.activeMode }),
     ...(state.activeTool
       ? [React.createElement(Text, { key: 'activeTool', dimColor: true }, state.activeTool.label)]
       : []),

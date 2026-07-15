@@ -1,8 +1,9 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { MarkdownText } from './MarkdownText.js';
+import { StepTimeline } from './StepTimeline.js';
 
-export function MessageList({ messages, streamingMessage }) {
+export function MessageList({ messages, streamingMessage, liveSteps, activeMode }) {
   return React.createElement(
     Box,
     { flexDirection: 'column', gap: 0, paddingY: 1 },
@@ -13,7 +14,10 @@ export function MessageList({ messages, streamingMessage }) {
         React.createElement(Text, { bold: true, color: m.role === 'user' ? 'green' : 'blue' }, m.role === 'user' ? 'You' : 'Assistant' + ':'),
         m.role === 'assistant'
           ? React.createElement(MarkdownText, { content: m.content })
-          : React.createElement(Text, null, m.content)
+          : React.createElement(Text, null, m.content),
+        m.role === 'assistant' && m.steps?.length
+          ? React.createElement(StepTimeline, { steps: m.steps, activeMode })
+          : null
       )
     ),
     streamingMessage
@@ -24,6 +28,9 @@ export function MessageList({ messages, streamingMessage }) {
           React.createElement(Text, { color: 'gray' }, streamingMessage),
           React.createElement(Text, { color: 'cyan' }, '▌')
         )
+      : null,
+    liveSteps?.length
+      ? React.createElement(StepTimeline, { steps: liveSteps, activeMode })
       : null
   );
 }
