@@ -207,7 +207,19 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
         React.createElement(Text, { color: 'yellow', bold: true },
           `Apply ${state.pendingConfirmation.action} to ${state.pendingConfirmation.path}?`
         ),
-        ...(state.pendingConfirmation.preview
+        ...(state.pendingConfirmation.diffLines?.length
+          ? state.pendingConfirmation.diffLines.map((line, i) =>
+              React.createElement(
+                Text,
+                {
+                  key: `diff-${i}`,
+                  color: line.type === 'remove' ? 'red' : line.type === 'add' ? 'green' : undefined,
+                  dimColor: line.type === 'meta',
+                },
+                line.type === 'remove' ? `-${line.text}` : line.type === 'add' ? `+${line.text}` : line.text
+              )
+            )
+          : state.pendingConfirmation.preview
           ? [React.createElement(Text, { key: 'preview', dimColor: true }, state.pendingConfirmation.preview)]
           : []),
         React.createElement(Text, { color: 'cyan' }, '(y) approve    (n) deny')

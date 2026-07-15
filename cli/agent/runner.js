@@ -74,6 +74,23 @@ export function attachAgentRunner(bus, config = {}) {
       return;
     }
 
+    if (text?.trim() === '/help') {
+      const msg = [
+        'Available commands:',
+        '/teach         explain reasoning as it works',
+        '/debug         full step visibility',
+        '/plan          planning only, no mutations',
+        '/auto          apply edits without confirmation',
+        '/accept-edits  auto-approve file edits only',
+        '/scan          scan workspace for guidance docs',
+        '/resume        resume a previous session',
+        '/help          show this list',
+      ].join('\n');
+      bus.emit(EVENTS.LLM_TOKEN, { token: msg });
+      bus.emit(EVENTS.LLM_DONE, {});
+      return;
+    }
+
     if (text?.trim() === '/scan') {
       const scanResult = await discoverGuidance(config.workspaceDir || process.cwd());
       const msg = scanResult.found

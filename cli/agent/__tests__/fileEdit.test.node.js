@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdir, writeFile, readFile, rm } from 'fs/promises';
+import { mkdir, writeFile, readFile, rm, realpath } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
@@ -10,6 +10,9 @@ let dir;
 beforeEach(async () => {
   dir = join(tmpdir(), `file-edit-test-${Date.now()}`);
   await mkdir(dir, { recursive: true });
+  // macOS routes tmpdir() through a /var -> /private/var symlink; resolve it
+  // so `dir` matches the canonicalized path pathSafety.js returns.
+  dir = await realpath(dir);
 });
 
 afterEach(async () => {

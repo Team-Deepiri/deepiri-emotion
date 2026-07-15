@@ -24,6 +24,23 @@ function generateDiffPreview(filePath, oldString, newString) {
   ].join('\n');
 }
 
+const MAX_DIFF_LINES = 15;
+
+/**
+ * Structured diff lines for the confirmation prompt, capped at MAX_DIFF_LINES
+ * with a trailing "… N more lines" marker if truncated. `type` is
+ * 'remove' | 'add' so the UI can color them red/green like a git diff.
+ */
+function buildDiffLines(oldString, newString) {
+  const removed = oldString != null ? String(oldString).split('\n').map((text) => ({ type: 'remove', text })) : [];
+  const added = String(newString ?? '').split('\n').map((text) => ({ type: 'add', text }));
+  const all = [...removed, ...added];
+  if (all.length <= MAX_DIFF_LINES) return all;
+  const shown = all.slice(0, MAX_DIFF_LINES);
+  shown.push({ type: 'meta', text: `… ${all.length - MAX_DIFF_LINES} more lines` });
+  return shown;
+}
+
 export async function createFileTool(filePath, content, cwd = DEFAULT_CWD) {
   const safety = await safeWorkspacePath(filePath, cwd);
   if (safety.error) return { error: safety.error };
@@ -121,7 +138,12 @@ export async function previewMutation(tool, args = {}, cwd = DEFAULT_CWD) {
     if (existsSync(resolved)) {
       return { error: `File already exists: ${resolved}. Use write_file to overwrite an existing file.` };
     }
-    return { path: resolved, action: 'create', preview: previewContent(args.content) };
+    return {
+      path: resolved,
+      action: 'create',
+      preview: previewContent(args.content),
+      diffLines: buildDiffLines(null, args.content),
+    };
   }
 
   if (tool === 'write_file') {
@@ -134,6 +156,7 @@ export async function previewMutation(tool, args = {}, cwd = DEFAULT_CWD) {
       action: existed ? 'overwrite' : 'create',
       overwrite: existed,
       preview: previewContent(args.content),
+      diffLines: buildDiffLines(null, args.content),
     };
   }
 
@@ -153,6 +176,7 @@ export async function previewMutation(tool, args = {}, cwd = DEFAULT_CWD) {
       path: resolved,
       action: 'edit',
       preview: generateDiffPreview(filePath, oldString, newString),
+      diffLines: buildDiffLines(oldString, newString),
       strategy: match.strategy,
       confidence: match.confidence,
     };
