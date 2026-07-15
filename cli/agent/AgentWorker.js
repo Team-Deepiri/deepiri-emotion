@@ -116,6 +116,11 @@ export class AgentWorker {
     // Monotonic counter — ensures step IDs are unique even within a single tick.
     this._stepSeq = 0;
 
+    // Cancellation: aborts in-flight provider requests (fetch/spawn honor this
+    // signal) and is checked between steps so the loop halts even for work
+    // that can't be preempted mid-flight (e.g. a running tool call).
+    this.abortController = new AbortController();
+
     // Injectable deps — real modules by default, fakes in tests.
     this._streamLLM              = deps.streamLLM              ?? defaultStreamLLM;
     this._parseToolIntent        = deps.parseToolIntent        ?? defaultParseToolIntent;
@@ -129,6 +134,20 @@ export class AgentWorker {
   /** Returns a step ID that is unique within this worker instance. */
   _nextStepId() {
     return `step-${Date.now()}-${++this._stepSeq}`;
+  }
+
+  /** Requests cancellation of this turn. Safe to call multiple times. */
+  cancel() {
+    this.abortController.abort();
+  }
+
+  /** Throws an AbortError if this turn has been cancelled. Call between awaits. */
+  _throwIfCancelled() {
+    if (this.abortController.signal.aborted) {
+      const err = new Error('Cancelled');
+      err.name = 'AbortError';
+      throw err;
+    }
   }
 
   async run() {
@@ -204,6 +223,8 @@ export class AgentWorker {
           ? `\n[Tool result]\n${JSON.stringify(result, null, 2).slice(0, 4000)}`
           : '';
       }
+
+      this._throwIfCancelled();
 
       wbus.emit(EVENTS.AGENT_STATUS, { status: 'responding', message: 'Responding...' });
       wbus.emit(EVENTS.AGENT_STEP, {
@@ -619,8 +640,11 @@ ${this.config.projectSnapshot}`;
           If this is the final step, provide a final answer instead of using a tool.`, {
           config,
           silent: true,
+          signal: this.abortController.signal,
           onToken: (token) => { lastResponse += token; },
         });
+
+        this._throwIfCancelled();
 
         agentContext = `${agentContext}
 
@@ -702,6 +726,9 @@ ${this.config.projectSnapshot}`;
           }
 
           wbus.emit(EVENTS.TOOL_END, { tool: loopToolIntent.tool, result: loopToolResult });
+
+          this._throwIfCancelled();
+
           wbus.emit(EVENTS.AGENT_STEP, {
             id: this._nextStepId(),
             type: 'tool_result',
@@ -753,6 +780,7 @@ ${this.config.projectSnapshot}`;
         tools. Start your response with FINAL_ANSWER:`, {
           config,
           silent: true,
+          signal: this.abortController.signal,
           onToken: (tok) => { finalResponse += tok; },
         });
         const cleaned = stripFinalAnswer(finalResponse);
@@ -769,6 +797,18 @@ ${this.config.projectSnapshot}`;
       wbus.emit(EVENTS.AGENT_STATUS, { status: 'idle', message: '' });
 
     } catch (err) {
+      if (err?.name === 'AbortError' || this.abortController.signal.aborted) {
+        wbus.emit(EVENTS.AGENT_STATUS, { status: 'idle', message: '' });
+        wbus.emit(EVENTS.AGENT_STEP, {
+          id: this._nextStepId(),
+          type: 'response',
+          status: 'cancelled',
+          message: 'Cancelled.',
+        });
+        wbus.emit(EVENTS.AGENT_CANCELLED, {});
+        return;
+      }
+
       wbus.emit(EVENTS.AGENT_STATUS, { status: 'idle', message: '' });
       wbus.emit(EVENTS.AGENT_ERROR, { message: err.message });
       wbus.emit(EVENTS.AGENT_STEP, {
@@ -777,6 +817,12 @@ ${this.config.projectSnapshot}`;
         status: 'complete',
         message: `Error: ${err.message}`,
       });
+    } finally {
+      // Reset so this instance stays usable if a caller ever reuses it
+      // instead of creating a fresh worker per turn (current runner.js
+      // always creates a new AgentWorker per message, but this keeps
+      // cancel() from permanently wedging an instance that is reused).
+      this.abortController = new AbortController();
     }
   }
 }

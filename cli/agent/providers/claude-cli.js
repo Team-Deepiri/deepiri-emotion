@@ -137,6 +137,7 @@ export class ClaudeCliProvider extends Provider {
       cwd: process.cwd(),
       stdio: ['pipe', 'pipe', 'pipe'],
       env: cleanClaudeEnv(),
+      signal: opts.signal,
     });
 
     child.stdin.end(prompt);
@@ -168,6 +169,10 @@ export class ClaudeCliProvider extends Provider {
         clearTimeout(timer);
         if (settled) return;
         settled = true;
+        if (err.name === 'AbortError') {
+          reject(err);
+          return;
+        }
         reject(new ProviderUnavailableError(`Claude CLI spawn failed: ${err.message}`));
       });
 
