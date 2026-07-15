@@ -17,6 +17,11 @@ export function attachAgentRunner(bus, config = {}) {
   let activeMode  = null;
   let autoMode    = config.autoMode    ?? false;
   let acceptEdits = config.acceptEdits ?? false;
+  let currentWorker = null;
+
+  bus.on(EVENTS.CANCEL_REQUESTED, () => {
+    currentWorker?.cancel();
+  });
 
   bus.on(EVENTS.USER_MESSAGE, async ({ text }) => {
     if (text?.trim() === '/teach') {
@@ -69,6 +74,23 @@ export function attachAgentRunner(bus, config = {}) {
       const msg = acceptEdits
         ? '✎ Accept-edits ON — file edits auto-approve; other actions are unaffected.'
         : 'Accept-edits OFF.';
+      bus.emit(EVENTS.LLM_TOKEN, { token: msg });
+      bus.emit(EVENTS.LLM_DONE, {});
+      return;
+    }
+
+    if (text?.trim() === '/help') {
+      const msg = [
+        'Available commands:',
+        '/teach         explain reasoning as it works',
+        '/debug         full step visibility',
+        '/plan          planning only, no mutations',
+        '/auto          apply edits without confirmation',
+        '/accept-edits  auto-approve file edits only',
+        '/scan          scan workspace for guidance docs',
+        '/resume        resume a previous session',
+        '/help          show this list',
+      ].join('\n');
       bus.emit(EVENTS.LLM_TOKEN, { token: msg });
       bus.emit(EVENTS.LLM_DONE, {});
       return;
@@ -138,6 +160,11 @@ export function attachAgentRunner(bus, config = {}) {
       task: text,
       modes: { teachMode, activeMode, autoMode, acceptEdits },
     });
-    await worker.run();
+    currentWorker = worker;
+    try {
+      await worker.run();
+    } finally {
+      if (currentWorker === worker) currentWorker = null;
+    }
   });
 }
