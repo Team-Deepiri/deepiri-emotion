@@ -14,6 +14,7 @@ export async function streamLLM(bus, prompt, opts = {}) {
   try {
     await streamWithFallback(bus, prompt, opts, opts.config || {});
   } catch (err) {
+    if (err?.name === 'AbortError') throw err;
     bus.emit(EVENTS.AGENT_ERROR, { message: err.message, hint: getErrorHint(err.message) });
   }
   bus.emit(EVENTS.LLM_DONE, { silent: !!opts.silent });

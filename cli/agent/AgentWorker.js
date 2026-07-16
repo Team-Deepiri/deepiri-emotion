@@ -117,6 +117,11 @@ export class AgentWorker {
     // Monotonic counter — ensures step IDs are unique even within a single tick.
     this._stepSeq = 0;
 
+    // Cancellation: aborts in-flight provider requests (fetch/spawn honor this
+    // signal) and is checked between steps so the loop halts even for work
+    // that can't be preempted mid-flight (e.g. a running tool call).
+    this.abortController = new AbortController();
+
     // Injectable deps — real modules by default, fakes in tests.
     this._streamLLM              = deps.streamLLM              ?? defaultStreamLLM;
     this._parseToolIntent        = deps.parseToolIntent        ?? defaultParseToolIntent;
@@ -143,6 +148,20 @@ export class AgentWorker {
       status: 'complete',
       message: 'Done',
     });
+  }
+
+  /** Requests cancellation of this turn. Safe to call multiple times. */
+  cancel() {
+    this.abortController.abort();
+  }
+
+  /** Throws an AbortError if this turn has been cancelled. Call between awaits. */
+  _throwIfCancelled() {
+    if (this.abortController.signal.aborted) {
+      const err = new Error('Cancelled');
+      err.name = 'AbortError';
+      throw err;
+    }
   }
 
   async run() {
@@ -219,6 +238,8 @@ export class AgentWorker {
           : '';
       }
 
+      this._throwIfCancelled();
+
       wbus.emit(EVENTS.AGENT_STATUS, { status: 'responding', message: 'Responding...' });
       wbus.emit(EVENTS.AGENT_STEP, {
         id: this._nextStepId(),
@@ -245,6 +266,10 @@ export class AgentWorker {
         - memory_set: save a fact for future sessions ({"key": "<short-name>", "value": <any>})
         - memory_get: retrieve a previously saved fact ({"key": "<short-name>"})
         - memory_list: list all saved memory keys ({})
+        - create_file: create a brand-new file ({"filePath": "...", "content": "..."}). Fails if the file already exists.
+        - write_file: create a file, or overwrite an existing one ({"filePath": "...", "content": "...", "allowOverwrite": true} — allowOverwrite is required to replace an existing file).
+        - edit_file: replace an exact piece of text within an existing file ({"filePath": "...", "oldString": "<exact text to find>", "newString": "<replacement text>"}).
+        - run_command: run a shell command in the workspace ({"command": "..."}).
 
         TOOL USAGE RULES:
         - **Always** call **thoughts** before a complex multi-step sequence to state your current Mode and plan. This keeps your reasoning out of the user's chat while providing a trace for the system.
@@ -254,6 +279,8 @@ export class AgentWorker {
         - Do not ask the user for clarification unless absolutely necessary.
         - Always use relative paths like "cli/index.js".
         - Never use absolute paths like "/home/...".
+        - create_file, write_file, edit_file, and run_command are mutating — the user will be shown a confirmation prompt before they take effect. You do not need to ask for permission yourself first; just call the tool.
+        - Use edit_file for targeted changes to an existing file; use write_file with allowOverwrite only when replacing a whole file's contents; use create_file only for files that do not exist yet.
         - If the question is about how something works in this codebase (agent behavior, tools, file reading, startup, flow):
           - you MUST use read_file to inspect the actual implementation before answering
           - do NOT answer from general knowledge
@@ -289,6 +316,21 @@ export class AgentWorker {
           "args": { "key": "user_pref_indent", "value": "tabs" }
         }
 
+        {
+          "tool": "create_file",
+          "args": { "filePath": "scratch.txt", "content": "hello\nworld" }
+        }
+
+        {
+          "tool": "edit_file",
+          "args": { "filePath": "src/index.js", "oldString": "const x = 1;", "newString": "const x = 2;" }
+        }
+
+        {
+          "tool": "run_command",
+          "args": { "command": "npm test" }
+        }
+
         FINAL ANSWER RULES:
         When you have enough information, answer with:
         FINAL_ANSWER:
@@ -322,6 +364,14 @@ export class AgentWorker {
 
         - If the user references something they told you before that is not in the current conversation:
           - call memory_list to see saved keys, then memory_get to retrieve relevant values
+
+        - If the user asks to create, write, or edit a file:
+          - use create_file for a brand-new file, write_file (with allowOverwrite) to replace a whole file, or edit_file for a targeted change to an existing file
+          - do not just print the file contents in your answer — call the tool
+          - a confirmation prompt will show the change to the user; you do not need to ask permission in your own reply
+
+        - If the user asks to run a command (tests, build, script):
+          - use run_command
 
        - If the user asks "explain", "how it works", "startup", or asks how a system/feature/file/command works:
           - you MUST inspect the relevant implementation files before answering
@@ -604,8 +654,11 @@ ${this.config.projectSnapshot}`;
           If this is the final step, provide a final answer instead of using a tool.`, {
           config,
           silent: true,
+          signal: this.abortController.signal,
           onToken: (token) => { lastResponse += token; },
         });
+
+        this._throwIfCancelled();
 
         agentContext = `${agentContext}
 
@@ -687,6 +740,9 @@ ${this.config.projectSnapshot}`;
           }
 
           wbus.emit(EVENTS.TOOL_END, { tool: loopToolIntent.tool, result: loopToolResult });
+
+          this._throwIfCancelled();
+
           wbus.emit(EVENTS.AGENT_STEP, {
             id: this._nextStepId(),
             type: 'tool_result',
@@ -740,6 +796,7 @@ ${this.config.projectSnapshot}`;
         tools. Start your response with FINAL_ANSWER:`, {
           config,
           silent: true,
+          signal: this.abortController.signal,
           onToken: (tok) => { finalResponse += tok; },
         });
         const cleaned = stripFinalAnswer(finalResponse);
@@ -751,6 +808,18 @@ ${this.config.projectSnapshot}`;
       wbus.emit(EVENTS.AGENT_STATUS, { status: 'idle', message: '' });
 
     } catch (err) {
+      if (err?.name === 'AbortError' || this.abortController.signal.aborted) {
+        wbus.emit(EVENTS.AGENT_STATUS, { status: 'idle', message: '' });
+        wbus.emit(EVENTS.AGENT_STEP, {
+          id: this._nextStepId(),
+          type: 'response',
+          status: 'cancelled',
+          message: 'Cancelled.',
+        });
+        wbus.emit(EVENTS.AGENT_CANCELLED, {});
+        return;
+      }
+
       wbus.emit(EVENTS.AGENT_STATUS, { status: 'idle', message: '' });
       wbus.emit(EVENTS.AGENT_ERROR, { message: err.message, hint: getErrorHint(err.message) });
       wbus.emit(EVENTS.AGENT_STEP, {
@@ -759,6 +828,12 @@ ${this.config.projectSnapshot}`;
         status: 'complete',
         message: `Error: ${err.message}`,
       });
+    } finally {
+      // Reset so this instance stays usable if a caller ever reuses it
+      // instead of creating a fresh worker per turn (current runner.js
+      // always creates a new AgentWorker per message, but this keeps
+      // cancel() from permanently wedging an instance that is reused).
+      this.abortController = new AbortController();
     }
   }
 }

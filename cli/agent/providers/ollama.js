@@ -46,6 +46,7 @@ export class OllamaProvider extends Provider {
         messages: [{ role: 'user', content: prompt }],
         stream: true,
       }),
+      signal: opts.signal,
     });
 
     if (!res.ok) {

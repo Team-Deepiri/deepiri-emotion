@@ -8,17 +8,23 @@ export function MessageList({ messages, streamingMessage, liveSteps, activeMode 
     Box,
     { flexDirection: 'column', gap: 0, paddingY: 1 },
     messages.map((m, i) =>
-      React.createElement(
-        Box,
-        { key: i, flexDirection: 'column' },
-        React.createElement(Text, { bold: true, color: m.role === 'user' ? 'green' : 'blue' }, m.role === 'user' ? 'You' : 'Assistant' + ':'),
-        m.role === 'assistant'
-          ? React.createElement(MarkdownText, { content: m.content })
-          : React.createElement(Text, null, m.content),
-        m.role === 'assistant' && m.steps?.length
-          ? React.createElement(StepTimeline, { steps: m.steps, activeMode })
-          : null
-      )
+      m.role === 'system'
+        ? React.createElement(
+            Box,
+            { key: i, flexDirection: 'column' },
+            React.createElement(Text, { dimColor: true }, m.content)
+          )
+        : React.createElement(
+            Box,
+            { key: i, flexDirection: 'column' },
+            React.createElement(Text, { bold: true, color: m.role === 'user' ? 'green' : 'blue' }, m.role === 'user' ? 'You' : 'Assistant' + ':'),
+            m.role === 'assistant'
+              ? React.createElement(MarkdownText, { content: m.content })
+              : React.createElement(Text, null, m.content),
+            m.role === 'assistant' && m.steps?.length
+              ? React.createElement(StepTimeline, { steps: m.steps, activeMode })
+              : null
+          )
     ),
     streamingMessage
       ? React.createElement(

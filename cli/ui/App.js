@@ -78,6 +78,20 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
       setState((s) => ({ ...s, activeProvider: provider, activeModel: model }));
     };
 
+    const onAgentCancelled = () => {
+      setState((s) => ({
+        ...s,
+        messages: [...s.messages, { role: 'system', content: 'Cancelled.' }],
+        streamingMessage: '',
+        agentStatus: 'idle',
+        statusMessage: '',
+        activeTool: null,
+        steps: s.steps.map((step) =>
+          step.status === 'running' ? { ...step, status: 'cancelled' } : step
+        ),
+      }));
+    };
+
     const onToolStart = ({ tool, args, label }) => {
       setState((s) => ({ ...s, activeTool: { tool, args, label: label || `${tool}...` } }));
     };
@@ -121,6 +135,7 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
     eventBus.on(EVENTS.AGENT_STEP, onAgentStep);
     eventBus.on(EVENTS.AGENT_ERROR, onAgentError);
     eventBus.on(EVENTS.PROVIDER_RESOLVED, onProviderResolved);
+    eventBus.on(EVENTS.AGENT_CANCELLED, onAgentCancelled);
     eventBus.on(EVENTS.TOOL_START, onToolStart);
     eventBus.on(EVENTS.TOOL_END, onToolEnd);
     eventBus.on(EVENTS.SPINNER_TICK, onSpinnerTick);
@@ -144,6 +159,7 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
       eventBus.off(EVENTS.AGENT_STEP, onAgentStep);
       eventBus.off(EVENTS.AGENT_ERROR, onAgentError);
       eventBus.off(EVENTS.PROVIDER_RESOLVED, onProviderResolved);
+      eventBus.off(EVENTS.AGENT_CANCELLED, onAgentCancelled);
       eventBus.off(EVENTS.TOOL_START, onToolStart);
       eventBus.off(EVENTS.TOOL_END, onToolEnd);
       eventBus.off(EVENTS.SPINNER_TICK, onSpinnerTick);
@@ -180,6 +196,10 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
     [eventBus]
   );
 
+  const handleCancel = useCallback(() => {
+    eventBus.emit(EVENTS.CANCEL_REQUESTED);
+  }, [eventBus]);
+
   return React.createElement(
     Box,
     { flexDirection: 'column', padding: 1 },
@@ -190,7 +210,7 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
       state.activeProvider ? `  |  ${state.activeProvider}${state.activeModel ? ` / ${state.activeModel}` : ''}` : ''
     ),
     React.createElement(Text, { dimColor: true },
-      workspaceDir ? `Workspace: ${workspaceDir}` : 'Shift+Enter newline, Enter send. Ctrl+C exit, Ctrl+L clear.'
+      workspaceDir ? `Workspace: ${workspaceDir}` : 'Shift+Enter newline, Enter send. Ctrl+C exit, Ctrl+L clear, Esc cancel.'
     ),
     ...(state.error ? [
       React.createElement(Box, {
@@ -238,7 +258,19 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
         React.createElement(Text, { color: 'yellow', bold: true },
           `Apply ${state.pendingConfirmation.action} to ${state.pendingConfirmation.path}?`
         ),
-        ...(state.pendingConfirmation.preview
+        ...(state.pendingConfirmation.diffLines?.length
+          ? state.pendingConfirmation.diffLines.map((line, i) =>
+              React.createElement(
+                Text,
+                {
+                  key: `diff-${i}`,
+                  color: line.type === 'remove' ? 'red' : line.type === 'add' ? 'green' : undefined,
+                  dimColor: line.type === 'meta',
+                },
+                line.type === 'remove' ? `-${line.text}` : line.type === 'add' ? `+${line.text}` : line.text
+              )
+            )
+          : state.pendingConfirmation.preview
           ? [React.createElement(Text, { key: 'preview', dimColor: true }, state.pendingConfirmation.preview)]
           : []),
         React.createElement(Text, { color: 'cyan' }, '(y) approve    (n) deny')
@@ -252,7 +284,9 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
         onClear: handleClear,
         placeholder: state.pendingConfirmation ? 'Awaiting confirmation — press y or n' : 'Type a message...',
         pendingConfirmation: state.pendingConfirmation,
-        onConfirm: handleConfirm
+        onConfirm: handleConfirm,
+        agentStatus: state.agentStatus,
+        onCancel: handleCancel
       })
     )
   );

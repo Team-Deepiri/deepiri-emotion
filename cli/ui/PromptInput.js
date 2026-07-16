@@ -10,7 +10,7 @@ export function wordDeleteStart(str, pos) {
   return i;
 }
 
-export function PromptInput({ value, onChange, onSubmit, onClear, placeholder, pendingConfirmation, onConfirm }) {
+export function PromptInput({ value, onChange, onSubmit, onClear, placeholder, pendingConfirmation, onConfirm, agentStatus, onCancel }) {
   const [cursor, setCursor] = useState(value.length);
 
   // value is controlled by the parent (submit/clear reset it externally) —
@@ -31,6 +31,15 @@ export function PromptInput({ value, onChange, onSubmit, onClear, placeholder, p
       if (input === 'n' || input === 'N' || key.escape) {
         if (typeof onConfirm === 'function') onConfirm(false);
         return;
+      }
+      return;
+    }
+    if (key.escape) {
+      if (agentStatus && agentStatus !== 'idle' && typeof onCancel === 'function') {
+        onCancel();
+      } else if (value) {
+        onChange('');
+        setCursor(0);
       }
       return;
     }
