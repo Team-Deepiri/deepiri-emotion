@@ -31,6 +31,7 @@ export default function App({
         messages: [...s.messages, { role: 'user', content: text }],
         streamingMessage: '',
         steps: [],
+        plan: [],
         error: null,
         errorHint: null,
         activeTool: null
@@ -54,10 +55,11 @@ export default function App({
         return {
           ...s,
           messages: full
-            ? [...s.messages, { role: 'assistant', content: full, steps: s.steps }]
+            ? [...s.messages, { role: 'assistant', content: full, steps: s.steps, plan: s.plan }]
             : s.messages,
           streamingMessage: '',
           steps: [],
+          plan: [],
           agentStatus: 'idle',
           statusMessage: ''
         };
@@ -88,6 +90,10 @@ export default function App({
 
     const onProviderResolved = ({ provider, model }) => {
       setState((s) => ({ ...s, activeProvider: provider, activeModel: model }));
+    };
+
+    const onPlanUpdate = ({ items }) => {
+      setState((s) => ({ ...s, plan: items || [] }));
     };
 
     const onAgentCancelled = () => {
@@ -147,6 +153,7 @@ export default function App({
     eventBus.on(EVENTS.AGENT_STEP, onAgentStep);
     eventBus.on(EVENTS.AGENT_ERROR, onAgentError);
     eventBus.on(EVENTS.PROVIDER_RESOLVED, onProviderResolved);
+    eventBus.on(EVENTS.PLAN_UPDATE, onPlanUpdate);
     eventBus.on(EVENTS.AGENT_CANCELLED, onAgentCancelled);
     eventBus.on(EVENTS.TOOL_START, onToolStart);
     eventBus.on(EVENTS.TOOL_END, onToolEnd);
@@ -171,6 +178,7 @@ export default function App({
       eventBus.off(EVENTS.AGENT_STEP, onAgentStep);
       eventBus.off(EVENTS.AGENT_ERROR, onAgentError);
       eventBus.off(EVENTS.PROVIDER_RESOLVED, onProviderResolved);
+      eventBus.off(EVENTS.PLAN_UPDATE, onPlanUpdate);
       eventBus.off(EVENTS.AGENT_CANCELLED, onAgentCancelled);
       eventBus.off(EVENTS.TOOL_START, onToolStart);
       eventBus.off(EVENTS.TOOL_END, onToolEnd);
@@ -255,6 +263,7 @@ export default function App({
       messages: state.messages,
       streamingMessage: state.streamingMessage,
       liveSteps: state.steps,
+      livePlan: state.plan,
       activeMode: state.activeMode
     }),
     ...(state.activeTool
@@ -310,7 +319,8 @@ export default function App({
         pendingConfirmation: state.pendingConfirmation,
         onConfirm: handleConfirm,
         agentStatus: state.agentStatus,
-        onCancel: handleCancel
+        onCancel: handleCancel,
+        workspaceDir
       })
     )
   );

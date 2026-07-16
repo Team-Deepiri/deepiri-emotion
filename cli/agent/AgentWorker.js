@@ -562,14 +562,45 @@ ${this.config.projectSnapshot}`;
 
       const simplePlan = this._createSimplePlan(text);
 
+      // Only surface a checklist for genuinely multi-step turns (>1 planned file
+      // read); single-file or tool-free turns stay noise-free.
+      const planItems = simplePlan.needsTools && simplePlan.requiredFiles.length > 1
+        ? [
+            ...simplePlan.requiredFiles.map((f) => ({ text: `Read ${f}`, status: 'pending' })),
+            { text: 'Answer', status: 'pending' },
+          ]
+        : [];
+      const emitPlanUpdate = () => {
+        if (planItems.length) {
+          wbus.emit(EVENTS.PLAN_UPDATE, { items: planItems.map((i) => ({ ...i })) });
+        }
+      };
+      if (planItems.length) {
+        planItems[0].status = 'in_progress';
+        emitPlanUpdate();
+      }
+      const finalizePlanItems = () => {
+        if (planItems.length) {
+          planItems[planItems.length - 1].status = 'done';
+          emitPlanUpdate();
+        }
+      };
+
       let plannedToolContext = '';
       if (simplePlan.needsTools && simplePlan.requiredFiles.length > 0) {
-        for (const filePath of simplePlan.requiredFiles) {
+        for (let i = 0; i < simplePlan.requiredFiles.length; i++) {
+          const filePath = simplePlan.requiredFiles[i];
           const result = await this._executeTool('read_file', { filePath });
           plannedToolContext += `
 
         [Planned file read: ${filePath}]
         ${JSON.stringify(result, null, 2).slice(0, 4000)}`;
+
+          if (planItems.length) {
+            planItems[i].status = 'done';
+            if (planItems[i + 1]) planItems[i + 1].status = 'in_progress';
+            emitPlanUpdate();
+          }
         }
       }
 
@@ -775,6 +806,7 @@ ${this.config.projectSnapshot}`;
           const cleanedResponse = stripFinalAnswer(lastResponse);
           wbus.emit(EVENTS.LLM_TOKEN, { token: cleanedResponse });
           this._emitDoneStep(wbus);
+          finalizePlanItems();
           wbus.emit(EVENTS.LLM_DONE, {});
           break;
         }
@@ -783,6 +815,7 @@ ${this.config.projectSnapshot}`;
           noProgressStreak = 0;
           wbus.emit(EVENTS.LLM_TOKEN, { token: lastResponse.trim() });
           this._emitDoneStep(wbus);
+          finalizePlanItems();
           wbus.emit(EVENTS.LLM_DONE, {});
         } else {
           // Empty response with no tool call and no FINAL_ANSWER — force finalization
@@ -811,6 +844,7 @@ ${this.config.projectSnapshot}`;
         const cleaned = stripFinalAnswer(finalResponse);
         wbus.emit(EVENTS.LLM_TOKEN, { token: cleaned || '(Agent reached budget limit before completing a response.)' });
         this._emitDoneStep(wbus);
+        finalizePlanItems();
         wbus.emit(EVENTS.LLM_DONE, {});
       }
 
