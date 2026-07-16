@@ -5,11 +5,23 @@ import { INITIAL_STATE, NUM_SPINNER_FRAMES } from '../core/stateStore.js';
 import { MessageList } from './MessageList.js';
 import { StatusBar } from './StatusBar.js';
 import { PromptInput } from './PromptInput.js';
+import { Welcome } from './Welcome.js';
 
 const SPINNER_INTERVAL_MS = 80;
 
-export default function App({ eventBus, workspaceDir = null, teachMode: initialTeachMode = false }) {
-  const [state, setState] = useState({ ...INITIAL_STATE, teachMode: initialTeachMode });
+export default function App({
+  eventBus,
+  workspaceDir = null,
+  teachMode: initialTeachMode = false,
+  initialProvider = null,
+  initialModel = null
+}) {
+  const [state, setState] = useState({
+    ...INITIAL_STATE,
+    teachMode: initialTeachMode,
+    activeProvider: initialProvider,
+    activeModel: initialModel
+  });
   const [inputValue, setInputValue] = useState('');
 
   useEffect(() => {
@@ -200,18 +212,30 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
     eventBus.emit(EVENTS.CANCEL_REQUESTED);
   }, [eventBus]);
 
+  const isEmptyConversation = state.messages.length === 0 && !state.streamingMessage;
+
   return React.createElement(
     Box,
     { flexDirection: 'column', padding: 1 },
-    React.createElement(
-      Text,
-      { bold: true, color: 'cyan' },
-      'Deepiri Emotion CLI',
-      state.activeProvider ? `  |  ${state.activeProvider}${state.activeModel ? ` / ${state.activeModel}` : ''}` : ''
-    ),
-    React.createElement(Text, { dimColor: true },
-      workspaceDir ? `Workspace: ${workspaceDir}` : 'Shift+Enter newline, Enter send. Ctrl+C exit, Ctrl+L clear, Esc cancel.'
-    ),
+    isEmptyConversation
+      ? React.createElement(Welcome, {
+          workspaceDir,
+          activeProvider: state.activeProvider,
+          activeModel: state.activeModel
+        })
+      : React.createElement(
+          Box,
+          { flexDirection: 'column' },
+          React.createElement(
+            Text,
+            { bold: true, color: 'cyan' },
+            'Deepiri Emotion CLI',
+            state.activeProvider ? `  |  ${state.activeProvider}${state.activeModel ? ` / ${state.activeModel}` : ''}` : ''
+          ),
+          React.createElement(Text, { dimColor: true },
+            workspaceDir ? `Workspace: ${workspaceDir}` : 'Shift+Enter newline, Enter send. Ctrl+C exit, Ctrl+L clear, Esc cancel.'
+          )
+        ),
     ...(state.error ? [
       React.createElement(Box, {
         key: 'err',

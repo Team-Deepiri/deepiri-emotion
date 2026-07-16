@@ -15,6 +15,7 @@ import { resolve } from 'path';
 import { existsSync, statSync } from 'fs';
 import { createEventBus } from './core/eventBus.js';
 import { loadConfig } from './core/config.js';
+import { resolveActiveProvider } from './agent/providers/router.js';
 import { attachAgentRunner } from './agent/runner.js';
 import { loadProjectMemory } from './agent/projectMemory.js';
 import { bootstrapProject, formatSnapshot } from './agent/bootstrap.js';
@@ -95,4 +96,15 @@ const eventBus = createEventBus();
 attachAgentRunner(eventBus, config);
 attachSessionRecorder(eventBus, memoryCwd);
 
-render(React.createElement(App, { eventBus, workspaceDir, teachMode: config.teachMode ?? false }));
+// Resolve the active provider/model before the first render so the welcome
+// screen and header have something real to show at launch, not just after
+// the first turn resolves one.
+const resolvedProvider = await resolveActiveProvider(config).catch(() => null);
+
+render(React.createElement(App, {
+  eventBus,
+  workspaceDir,
+  teachMode: config.teachMode ?? false,
+  initialProvider: resolvedProvider?.provider ?? null,
+  initialModel: resolvedProvider?.model ?? null
+}));
