@@ -117,6 +117,10 @@ export class AgentWorker {
     // Monotonic counter — ensures step IDs are unique even within a single tick.
     this._stepSeq = 0;
 
+    // Guards the closing "Done" step so it fires at most once per turn, even
+    // though the reasoning loop has several mutually-exclusive exit paths.
+    this._doneEmitted = false;
+
     // Cancellation: aborts in-flight provider requests (fetch/spawn honor this
     // signal) and is checked between steps so the loop halts even for work
     // that can't be preempted mid-flight (e.g. a running tool call).
@@ -140,8 +144,13 @@ export class AgentWorker {
   /**
    * Emits the turn's closing "Done" step. Must fire before the LLM_DONE that
    * finalizes the message, since the UI snapshots the step trace at that point.
+   * Idempotent per turn: the loop has three mutually-exclusive exit paths, so
+   * exactly one call reaches here today, but the guard keeps that invariant even
+   * if a future exit path is added.
    */
   _emitDoneStep(wbus) {
+    if (this._doneEmitted) return;
+    this._doneEmitted = true;
     wbus.emit(EVENTS.AGENT_STEP, {
       id: this._nextStepId(),
       type: 'response',
