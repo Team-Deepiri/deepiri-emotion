@@ -13,7 +13,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { EventEmitter } from 'events';
-import { AgentWorker } from '../AgentWorker.js';
+import { AgentWorker, formatToolLabel } from '../AgentWorker.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -436,5 +436,56 @@ describe('regression guards', () => {
 
     // Both paths must produce identical output.
     expect(normalToken).toBe(forcedToken);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// formatToolLabel
+// ---------------------------------------------------------------------------
+describe('formatToolLabel', () => {
+  it('formats read_file with the file path', () => {
+    expect(formatToolLabel('read_file', { filePath: 'cli/agent/runner.js' }))
+      .toBe('📄 Reading cli/agent/runner.js…');
+  });
+
+  it('formats run_command with the command text', () => {
+    expect(formatToolLabel('run_command', { command: 'npm test' }))
+      .toBe('⚙ Running npm test…');
+  });
+
+  it('formats write_file/create_file/edit_file as editing the target path', () => {
+    expect(formatToolLabel('edit_file', { filePath: 'src/renderer/App.jsx' }))
+      .toBe('✏ Editing src/renderer/App.jsx');
+    expect(formatToolLabel('write_file', { filePath: 'a.js' })).toBe('✏ Editing a.js');
+    expect(formatToolLabel('create_file', { filePath: 'b.js' })).toBe('✏ Editing b.js');
+  });
+
+  it('falls back to a generic label for unknown tools', () => {
+    expect(formatToolLabel('memory_set', {})).toBe('memory_set…');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TOOL_START / TOOL_END — loop-driven tool calls (not just the initial one)
+// ---------------------------------------------------------------------------
+describe('TOOL_START/TOOL_END events', () => {
+  it('emits TOOL_START with a formatted label and TOOL_END for loop-driven tool calls', async () => {
+    const { worker, evts } = makeWorker('find x', {
+      streamLLM: makeStreamLLM([READ_CALL, 'FINAL_ANSWER: x']),
+      parseToolIntent: parseJsonToolOnly,
+      maybeConfirmAndExecute: fakeRead,
+    });
+    await worker.run();
+
+    const start = evts.find(e => e.event === 'TOOL_START');
+    const end = evts.find(e => e.event === 'TOOL_END');
+
+    expect(start).toBeDefined();
+    expect(start.payload.tool).toBe('read_file');
+    expect(start.payload.label).toBe('📄 Reading x.js…');
+
+    expect(end).toBeDefined();
+    expect(end.payload.tool).toBe('read_file');
+    expect(end.payload.result.content).toBe('hello');
   });
 });

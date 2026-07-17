@@ -53,6 +53,7 @@ export class OllamaProvider extends Provider {
         messages: [userMessage],
         stream: true,
       }),
+      signal: opts.signal,
     });
 
     if (!res.ok) {

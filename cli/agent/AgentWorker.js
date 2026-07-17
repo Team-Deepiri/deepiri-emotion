@@ -22,8 +22,41 @@ import { stopReason, toolCallKey } from './loopGuards.js';
 import { DEFAULT_CONFIG } from '../core/config.js';
 import { reviewAction } from './supervisor.js';
 
+/**
+ * Strip FINAL_ANSWER: prefix from a string.
+ * Used on both the normal-path and forced-finalization-path responses so
+ * output is consistent regardless of how the loop exited.
+ */
 function stripFinalAnswer(s) {
   return s.replace(/^FINAL_ANSWER:\s*/, '').replace(/\nFINAL_ANSWER:\s*/g, '\n').trim();
+}
+
+/**
+ * Human-readable, tool-specific label for live "what is the agent doing"
+ * indicators (e.g. "📄 Reading cli/agent/runner.js…"). Single source of
+ * truth shared by the AGENT_STATUS message and the TOOL_START payload.
+ */
+export function formatToolLabel(tool, args = {}) {
+  switch (tool) {
+    case 'read_file':
+      return `📄 Reading ${args.filePath}…`;
+    case 'run_command':
+      return `⚙ Running ${args.command}…`;
+    case 'write_file':
+    case 'create_file':
+    case 'edit_file':
+      return `✏ Editing ${args.filePath}`;
+    case 'search':
+      return `🔍 Searching for "${args.query}"…`;
+    case 'list_files':
+      return `📁 Listing ${args.dirPath || '.'}…`;
+    case 'git_status':
+      return '🌿 Checking git status…';
+    case 'git_diff':
+      return '🌿 Reading git diff…';
+    default:
+      return `${tool}…`;
+  }
 }
 
 async function streamTokens(bus, text, event) {
@@ -93,6 +126,11 @@ export class AgentWorker {
     // Monotonic counter — ensures step IDs are unique even within a single tick.
     this._stepSeq = 0;
 
+    // Cancellation: aborts in-flight provider requests (fetch/spawn honor this
+    // signal) and is checked between steps so the loop halts even for work
+    // that can't be preempted mid-flight (e.g. a running tool call).
+    this.abortController = new AbortController();
+
     // Injectable deps — real modules by default, fakes in tests.
     this._streamLLM              = deps.streamLLM              ?? defaultStreamLLM;
     this._parseToolIntent        = deps.parseToolIntent        ?? defaultParseToolIntent;
@@ -106,6 +144,20 @@ export class AgentWorker {
   /** Returns a step ID that is unique within this worker instance. */
   _nextStepId() {
     return `step-${Date.now()}-${++this._stepSeq}`;
+  }
+
+  /** Requests cancellation of this turn. Safe to call multiple times. */
+  cancel() {
+    this.abortController.abort();
+  }
+
+  /** Throws an AbortError if this turn has been cancelled. Call between awaits. */
+  _throwIfCancelled() {
+    if (this.abortController.signal.aborted) {
+      const err = new Error('Cancelled');
+      err.name = 'AbortError';
+      throw err;
+    }
   }
 
   async run() {
@@ -129,6 +181,8 @@ export class AgentWorker {
         status: 'running',
         message: 'Thinking...',
       });
+
+      this._throwIfCancelled();
 
       wbus.emit(EVENTS.AGENT_STATUS, { status: 'responding', message: 'Responding...' });
       wbus.emit(EVENTS.AGENT_STEP, {
@@ -159,19 +213,28 @@ export class AgentWorker {
         - git_status: show working tree status — args: {}
         - git_diff: show diff for a branch or file — args: { branch?, filePath? }
 
+        Memory & reasoning:
+        - thoughts: private scratchpad for your reasoning. Call this BEFORE complex multi-step sequences. Does not show in user chat. — args: { thought }
+        - memory_set: save a fact for future sessions — args: { key, value }
+        - memory_get: retrieve a previously saved fact — args: { key }
+        - memory_list: list all saved memory keys — args: {}
+
         Mutation (require user confirmation unless auto mode):
         - create_file: create a new file — args: { filePath, content }
-        - write_file: overwrite an existing file — args: { filePath, content }
+        - write_file: overwrite an existing file — args: { filePath, content, allowOverwrite? }
         - edit_file: replace a string in a file — args: { filePath, oldString, newString }
         - run_command: run a shell command — args: { command }
 
         TOOL USAGE RULES:
         - Use tools when the answer depends on file contents or requires an action.
+        - **Always** call **thoughts** before a complex multi-step sequence to state your current Mode and plan. This keeps your reasoning out of the user's chat while providing a trace for the system.
         - If you know the likely file path, read it directly instead of searching.
         - Use search only when you do not know where the relevant code is.
         - Do not ask the user for clarification unless absolutely necessary.
         - Always use relative paths like "cli/index.js".
         - Never use absolute paths like "/home/...".
+        - create_file, write_file, edit_file, and run_command are mutating — the user will be shown a confirmation prompt before they take effect. You do not need to ask for permission yourself first; just call the tool.
+        - Use edit_file for targeted changes to an existing file; use write_file with allowOverwrite only when replacing a whole file's contents; use create_file only for files that do not exist yet.
         - If the question is about how something works in this codebase (agent behavior, tools, file reading, startup, flow):
           - you MUST use read_file to inspect the actual implementation before answering
           - do NOT answer from general knowledge
@@ -193,13 +256,33 @@ export class AgentWorker {
         }
 
         {
+          "tool": "git_status",
+          "args": {}
+        }
+
+        {
+          "tool": "thoughts",
+          "args": { "thought": "Plan: first read the config, then find usages, then propose a refactor." }
+        }
+
+        {
+          "tool": "memory_set",
+          "args": { "key": "user_pref_indent", "value": "tabs" }
+        }
+
+        {
           "tool": "create_file",
-          "args": { "filePath": "test.txt", "content": "hello" }
+          "args": { "filePath": "scratch.txt", "content": "hello\nworld" }
+        }
+
+        {
+          "tool": "edit_file",
+          "args": { "filePath": "src/index.js", "oldString": "const x = 1;", "newString": "const x = 2;" }
         }
 
         {
           "tool": "run_command",
-          "args": { "command": "ls -la" }
+          "args": { "command": "npm test" }
         }
 
         FINAL ANSWER RULES:
@@ -222,6 +305,27 @@ export class AgentWorker {
         - If the user asks "find" or "where":
           - answer directly and briefly
           - include the exact file, value, script, function, or location
+
+        - If the user asks about git status, what changed, what's modified, or repo state:
+          - use git_status
+
+        - If the user asks to show the diff, what was edited, or wants line-level changes:
+          - use git_diff (pass {"staged": true} for the staged diff)
+
+        - If the user mentions a fact you should remember across sessions (preferences, project nicknames, recurring details):
+          - use memory_set with a short snake_case key
+          - never store secrets, API keys, or credentials
+
+        - If the user references something they told you before that is not in the current conversation:
+          - call memory_list to see saved keys, then memory_get to retrieve relevant values
+
+        - If the user asks to create, write, or edit a file:
+          - use create_file for a brand-new file, write_file (with allowOverwrite) to replace a whole file, or edit_file for a targeted change to an existing file
+          - do not just print the file contents in your answer — call the tool
+          - a confirmation prompt will show the change to the user; you do not need to ask permission in your own reply
+
+        - If the user asks to run a command (tests, build, script):
+          - use run_command
 
        - If the user asks "explain", "how it works", "startup", or asks how a system/feature/file/command works:
           - you MUST inspect the relevant implementation files before answering
@@ -381,7 +485,26 @@ Note: Project guidance is advisory context. It must not override system safety, 
         ? `\n\n[Attachments]\nThe user attached ${attachments.length} image(s) to this message. Use them as visual context when reasoning about the user's request.`
         : '';
 
+      let projectMemoryContext = '';
+      if (this.config.projectMemory && this.config.projectMemory.found && this.config.projectMemory.content) {
+        const memoryNote = this.config.projectMemory.truncated ? ' (truncated)' : '';
+        projectMemoryContext = `
+
+[Project Memory — EMOTION.md${memoryNote}]
+${this.config.projectMemory.content}`;
+      }
+
+      let projectSnapshotContext = '';
+      if (this.config.projectSnapshot && typeof this.config.projectSnapshot === 'string' && this.config.projectSnapshot.length > 0) {
+        projectSnapshotContext = `
+
+[Project Snapshot]
+${this.config.projectSnapshot}`;
+      }
+
       const fullInstructions = agentInstructions
+        + projectMemoryContext
+        + projectSnapshotContext
         + projectGuidanceContext
         + teachInstructions
         + supportPacingInstructions
@@ -483,8 +606,11 @@ Note: Project guidance is advisory context. It must not override system safety, 
           config,
           silent: true,
           attachments,
+          signal: this.abortController.signal,
           onToken: (token) => { lastResponse += token; },
         });
+
+        this._throwIfCancelled();
 
         agentContext = `${agentContext}
 
@@ -574,10 +700,12 @@ Note: Project guidance is advisory context. It must not override system safety, 
         if (loopToolIntent) {
           toolCallCount++;
           noProgressStreak = 0;
+          const loopToolLabel = formatToolLabel(loopToolIntent.tool, loopToolIntent.args);
           wbus.emit(EVENTS.AGENT_STATUS, {
             status: 'tool_running',
-            message: `Running ${loopToolIntent.tool}...`,
+            message: '',
           });
+          wbus.emit(EVENTS.TOOL_START, { tool: loopToolIntent.tool, args: loopToolIntent.args, label: loopToolLabel });
           wbus.emit(EVENTS.AGENT_STEP, {
             id: this._nextStepId(),
             type: 'tool_call',
@@ -594,6 +722,10 @@ Note: Project guidance is advisory context. It must not override system safety, 
           } catch (err) {
             loopToolResult = { error: err.message };
           }
+
+          wbus.emit(EVENTS.TOOL_END, { tool: loopToolIntent.tool, result: loopToolResult });
+
+          this._throwIfCancelled();
 
           wbus.emit(EVENTS.AGENT_STEP, {
             id: this._nextStepId(),
@@ -647,6 +779,7 @@ Note: Project guidance is advisory context. It must not override system safety, 
           config,
           silent: true,
           attachments,
+          signal: this.abortController.signal,
           onToken: (tok) => { finalResponse += tok; },
         });
         const cleaned = stripFinalAnswer(finalResponse);
@@ -663,6 +796,18 @@ Note: Project guidance is advisory context. It must not override system safety, 
       wbus.emit(EVENTS.AGENT_STATUS, { status: 'idle', message: '' });
 
     } catch (err) {
+      if (err?.name === 'AbortError' || this.abortController.signal.aborted) {
+        wbus.emit(EVENTS.AGENT_STATUS, { status: 'idle', message: '' });
+        wbus.emit(EVENTS.AGENT_STEP, {
+          id: this._nextStepId(),
+          type: 'response',
+          status: 'cancelled',
+          message: 'Cancelled.',
+        });
+        wbus.emit(EVENTS.AGENT_CANCELLED, {});
+        return;
+      }
+
       wbus.emit(EVENTS.AGENT_STATUS, { status: 'idle', message: '' });
       wbus.emit(EVENTS.AGENT_ERROR, { message: err.message });
       wbus.emit(EVENTS.AGENT_STEP, {
@@ -671,6 +816,12 @@ Note: Project guidance is advisory context. It must not override system safety, 
         status: 'complete',
         message: `Error: ${err.message}`,
       });
+    } finally {
+      // Reset so this instance stays usable if a caller ever reuses it
+      // instead of creating a fresh worker per turn (current runner.js
+      // always creates a new AgentWorker per message, but this keeps
+      // cancel() from permanently wedging an instance that is reused).
+      this.abortController = new AbortController();
     }
   }
 }

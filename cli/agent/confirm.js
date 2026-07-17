@@ -95,6 +95,7 @@ export async function maybeConfirmAndExecute(bus, tool, args = {}, cwd, { autoAp
       path: preview.path,
       action: preview.action,
       preview: preview.preview,
+      diffLines: preview.diffLines,
       overwrite: preview.overwrite,
     },
     { autoApprove }

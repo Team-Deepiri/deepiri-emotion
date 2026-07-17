@@ -1,7 +1,6 @@
 /**
  * CLI tools: read_file, search, run_command, create_file, write_file, edit_file,
- * git_status, git_diff.
- * thoughts.
+ * git_status, git_diff, thoughts, memory_set, memory_get, memory_list.
  * Used by runner to emit TOOL_START/TOOL_END.
  */
 import { readFile, readdir, stat } from 'fs/promises';
@@ -11,7 +10,9 @@ import { spawn } from 'child_process';
 import { createFileTool, writeFileTool, editFileTool } from './fileEdit.js';
 import { gitStatus, gitDiff } from './gitTools.js';
 import { thoughtsTool } from './thoughtsTool.js';
+import { memorySet, memoryGet, memoryList } from './memoryTools.js';
 import { validateToolCall } from './loopGuards.js';
+import { safeWorkspacePath } from './pathSafety.js';
 
 const DEFAULT_CWD = process.cwd();
 const RUN_TIMEOUT_MS = 30_000;
@@ -19,9 +20,13 @@ const RUN_MAX_OUTPUT = 16_000;
 
 /**
  * Read a file (path relative to cwd or absolute). Max length capped for display.
+ * Path is validated for containment, blocked patterns (.env, secrets, keys),
+ * and symlink-escape before any read.
  */
 export async function readFileTool(filePath, cwd = DEFAULT_CWD) {
-  const resolved = filePath.startsWith('/') ? filePath : join(cwd, filePath);
+  const safety = await safeWorkspacePath(filePath, cwd);
+  if (safety.error) return { error: safety.error };
+  const resolved = safety.resolved;
   if (!existsSync(resolved)) return { error: `File not found: ${resolved}` };
   const content = await readFile(resolved, 'utf-8').catch((e) => e.message);
   const max = 8000;
@@ -74,9 +79,13 @@ export async function searchTool(query, dir = DEFAULT_CWD, limit = 20) {
 
 /**
  * List files and folders in a directory.
+ * Path is validated for containment, blocked patterns, and symlink-escape
+ * before any directory read. Dotfiles are still filtered from the output.
  */
 export async function listFilesTool(dirPath = '.', cwd = DEFAULT_CWD) {
-  const resolved = dirPath.startsWith('/') ? dirPath : join(cwd, dirPath);
+  const safety = await safeWorkspacePath(dirPath, cwd);
+  if (safety.error) return { error: safety.error };
+  const resolved = safety.resolved;
 
   if (!existsSync(resolved)) {
     return { error: `Directory not found: ${resolved}` };
@@ -264,6 +273,18 @@ export async function executeTool(tool, args = {}, cwd = DEFAULT_CWD) {
 
   if (tool === 'thoughts') {
     return thoughtsTool(args);
+  }
+
+  if (tool === 'memory_set') {
+    return memorySet(args, cwd);
+  }
+
+  if (tool === 'memory_get') {
+    return memoryGet(args, cwd);
+  }
+
+  if (tool === 'memory_list') {
+    return memoryList(args, cwd);
   }
 
   return { error: `Unknown tool: ${tool}` };

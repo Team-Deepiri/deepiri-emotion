@@ -9,11 +9,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/deepiri/deepiri-ide-desktop.git"
+    "url": "https://github.com/Team-Deepiri/deepiri-emotion.git"
   },
-  "homepage": "https://github.com/deepiri/deepiri-ide-desktop#readme",
+  "homepage": "https://github.com/Team-Deepiri/deepiri-emotion#readme",
   "bugs": {
-    "url": "https://github.com/deepiri/deepiri-ide-desktop/issues"
+    "url": "https://github.com/Team-Deepiri/deepiri-emotion/issues"
   },
   "scripts": {
     "cli": "node cli/index.js",
@@ -66,7 +66,7 @@
     "@vitest/coverage-v8": "^4.1.4",
     "electron": "^39.8.5",
     "electron-builder": "^26.8.1",
-    "esbuild": "^0.28.0",
+    "esbuild": "^0.28.1",
     "eslint": "^9.15.0",
     "eslint-plugin-react": "^7.37.2",
     "eslint-plugin-react-hooks": "^5.0.0",
@@ -76,7 +76,7 @@
     "jimp": "^1.6.0",
     "jsdom": "^25.0.1",
     "png-to-ico": "^3.0.1",
-    "vite": "^8.0.8",
+    "vite": "^8.0.16",
     "vitest": "^4.1.4"
   },
   "overrides": {
@@ -131,14 +131,6 @@
         {
           "target": "dmg",
           "arch": [
-            "x64",
-            "arm64"
-          ]
-        },
-        {
-          "target": "pkg",
-          "arch": [
-            "x64",
             "arm64"
           ]
         }
@@ -148,12 +140,6 @@
     },
     "linux": {
       "target": [
-        {
-          "target": "deb",
-          "arch": [
-            "x64"
-          ]
-        },
         {
           "target": "AppImage",
           "arch": [

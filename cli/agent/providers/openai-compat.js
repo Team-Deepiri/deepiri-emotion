@@ -60,6 +60,7 @@ export class OpenAICompatProvider extends Provider {
         messages: [{ role: 'user', content: messageContent }],
         stream: true,
       }),
+      signal: opts.signal,
     });
 
     if (!res.ok) {

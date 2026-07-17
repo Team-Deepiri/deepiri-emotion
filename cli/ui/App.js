@@ -22,7 +22,8 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
         messages: [...s.messages, { role: 'user', content: text }],
         streamingMessage: '',
         steps: [],
-        error: null
+        error: null,
+        activeTool: null
       }));
     };
 
@@ -70,6 +71,28 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
       setState((s) => ({ ...s, error: message || 'Something went wrong' }));
     };
 
+    const onAgentCancelled = () => {
+      setState((s) => ({
+        ...s,
+        messages: [...s.messages, { role: 'system', content: 'Cancelled.' }],
+        streamingMessage: '',
+        agentStatus: 'idle',
+        statusMessage: '',
+        activeTool: null,
+        steps: s.steps.map((step) =>
+          step.status === 'running' ? { ...step, status: 'cancelled' } : step
+        ),
+      }));
+    };
+
+    const onToolStart = ({ tool, args, label }) => {
+      setState((s) => ({ ...s, activeTool: { tool, args, label: label || `${tool}...` } }));
+    };
+
+    const onToolEnd = () => {
+      setState((s) => ({ ...s, activeTool: null }));
+    };
+
     const onTeachModeChanged = ({ teachMode }) => {
       setState((s) => ({ ...s, teachMode }));
     };
@@ -112,6 +135,9 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
     eventBus.on(EVENTS.AGENT_STATUS, onAgentStatus);
     eventBus.on(EVENTS.AGENT_STEP, onAgentStep);
     eventBus.on(EVENTS.AGENT_ERROR, onAgentError);
+    eventBus.on(EVENTS.AGENT_CANCELLED, onAgentCancelled);
+    eventBus.on(EVENTS.TOOL_START, onToolStart);
+    eventBus.on(EVENTS.TOOL_END, onToolEnd);
     eventBus.on(EVENTS.SPINNER_TICK, onSpinnerTick);
     eventBus.on(EVENTS.TEACH_MODE_CHANGED, onTeachModeChanged);
     eventBus.on(EVENTS.SUPPORT_MODE_CHANGED, onSupportModeChanged);
@@ -134,6 +160,9 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
       eventBus.off(EVENTS.AGENT_STATUS, onAgentStatus);
       eventBus.off(EVENTS.AGENT_STEP, onAgentStep);
       eventBus.off(EVENTS.AGENT_ERROR, onAgentError);
+      eventBus.off(EVENTS.AGENT_CANCELLED, onAgentCancelled);
+      eventBus.off(EVENTS.TOOL_START, onToolStart);
+      eventBus.off(EVENTS.TOOL_END, onToolEnd);
       eventBus.off(EVENTS.SPINNER_TICK, onSpinnerTick);
       eventBus.off(EVENTS.TEACH_MODE_CHANGED, onTeachModeChanged);
       eventBus.off(EVENTS.SUPPORT_MODE_CHANGED, onSupportModeChanged);
@@ -189,12 +218,16 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
     [eventBus]
   );
 
+  const handleCancel = useCallback(() => {
+    eventBus.emit(EVENTS.CANCEL_REQUESTED);
+  }, [eventBus]);
+
   return React.createElement(
     Box,
     { flexDirection: 'column', padding: 1 },
     React.createElement(Text, { bold: true, color: 'cyan' }, 'Deepiri Emotion CLI'),
     React.createElement(Text, { dimColor: true },
-      workspaceDir ? `Workspace: ${workspaceDir}` : 'Shift+Enter newline, Enter send. Ctrl+V attach image, Ctrl+L clear, Ctrl+C exit.'
+      workspaceDir ? `Workspace: ${workspaceDir}` : 'Shift+Enter newline, Enter send. Ctrl+V attach image, Ctrl+L clear, Ctrl+C exit, Esc cancel.'
     ),
     ...(state.error ? [React.createElement(Text, { key: 'err', color: 'red' }, 'Error: ', state.error)] : []),
     React.createElement(MessageList, {
@@ -202,6 +235,9 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
       streamingMessage: state.streamingMessage
     }),
     React.createElement(StepTimeline, { steps: state.steps, activeModes: state.activeModes }),
+    ...(state.activeTool
+      ? [React.createElement(Text, { key: 'activeTool', dimColor: true }, state.activeTool.label)]
+      : []),
     React.createElement(StatusBar, {
       agentStatus: state.agentStatus,
       statusMessage: state.statusMessage,
@@ -233,7 +269,19 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
         React.createElement(Text, { color: 'yellow', bold: true },
           `Apply ${state.pendingConfirmation.action} to ${state.pendingConfirmation.path}?`
         ),
-        ...(state.pendingConfirmation.preview
+        ...(state.pendingConfirmation.diffLines?.length
+          ? state.pendingConfirmation.diffLines.map((line, i) =>
+              React.createElement(
+                Text,
+                {
+                  key: `diff-${i}`,
+                  color: line.type === 'remove' ? 'red' : line.type === 'add' ? 'green' : undefined,
+                  dimColor: line.type === 'meta',
+                },
+                line.type === 'remove' ? `-${line.text}` : line.type === 'add' ? `+${line.text}` : line.text
+              )
+            )
+          : state.pendingConfirmation.preview
           ? [React.createElement(Text, { key: 'preview', dimColor: true }, state.pendingConfirmation.preview)]
           : []),
         React.createElement(Text, { color: 'cyan' }, '(y) approve    (n) deny')
@@ -248,7 +296,9 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
         onPaste: handlePaste,
         placeholder: state.pendingConfirmation ? 'Awaiting confirmation — press y or n' : 'Type a message...',
         pendingConfirmation: state.pendingConfirmation,
-        onConfirm: handleConfirm
+        onConfirm: handleConfirm,
+        agentStatus: state.agentStatus,
+        onCancel: handleCancel
       })
     )
   );

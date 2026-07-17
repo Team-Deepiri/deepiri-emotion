@@ -137,6 +137,7 @@ export class ClaudeCliProvider extends Provider {
       cwd: process.cwd(),
       stdio: ['pipe', 'pipe', 'pipe'],
       env: cleanClaudeEnv(),
+      signal: opts.signal,
     });
 
     // Append image file paths so the claude CLI can read them as local file context.
@@ -173,6 +174,10 @@ export class ClaudeCliProvider extends Provider {
         clearTimeout(timer);
         if (settled) return;
         settled = true;
+        if (err.name === 'AbortError') {
+          reject(err);
+          return;
+        }
         reject(new ProviderUnavailableError(`Claude CLI spawn failed: ${err.message}`));
       });
 

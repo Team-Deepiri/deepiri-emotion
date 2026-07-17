@@ -6,6 +6,7 @@ import { EVENTS } from '../core/eventBus.js';
 import { MODES } from '../core/modes.js';
 import { discoverGuidance } from './guidance.js';
 import { AgentWorker } from './AgentWorker.js';
+import { listSessions, loadSession, latestSession } from './session.js';
 
 /**
  * @param {import('events').EventEmitter} bus
@@ -17,6 +18,11 @@ export function attachAgentRunner(bus, config = {}) {
   let autoMode         = config.autoMode         ?? false;
   let acceptEdits      = config.acceptEdits      ?? false;
   let guardMode        = config.supervisorEnabled ?? true;
+  let currentWorker    = null;
+
+  bus.on(EVENTS.CANCEL_REQUESTED, () => {
+    currentWorker?.cancel();
+  });
 
   bus.on(EVENTS.USER_MESSAGE, async ({ text, attachments = [] }) => {
     if (text?.trim() === '/teach') {
@@ -76,6 +82,23 @@ export function attachAgentRunner(bus, config = {}) {
       return;
     }
 
+    if (text?.trim() === '/help') {
+      const msg = [
+        'Available commands:',
+        '/teach         explain reasoning as it works',
+        '/debug         full step visibility',
+        '/plan          planning only, no mutations',
+        '/auto          apply edits without confirmation',
+        '/accept-edits  auto-approve file edits only',
+        '/scan          scan workspace for guidance docs',
+        '/resume        resume a previous session',
+        '/help          show this list',
+      ].join('\n');
+      bus.emit(EVENTS.LLM_TOKEN, { token: msg });
+      bus.emit(EVENTS.LLM_DONE, {});
+      return;
+    }
+
     if (text?.trim() === '/scan') {
       const scanResult = await discoverGuidance(config.workspaceDir || process.cwd());
       const msg = scanResult.found
@@ -97,6 +120,51 @@ export function attachAgentRunner(bus, config = {}) {
       return;
     }
 
+    // /resume — load conversation history from a previous session
+    // /resume       → loads the most recent session
+    // /resume list  → lists the 5 most recent sessions
+    // /resume <id>  → loads a specific session by id
+    const resumeMatch = text?.trim().match(/^\/resume(?:\s+(.+))?$/);
+    if (resumeMatch) {
+      const arg = (resumeMatch[1] || '').trim();
+      const sessionsCwd = config.workspaceDir || process.cwd();
+
+      if (arg === 'list') {
+        const sessions = await listSessions(sessionsCwd, 5);
+        const msg = sessions.length === 0
+          ? '📂 No prior sessions found in this workspace.'
+          : `📂 Recent sessions (newest first):\n${sessions
+              .map(s => `  ${s.id} — ${s.messageCount} messages — ${s.firstUserPreview || '(no user message)'}`)
+              .join('\n')}\n\nUse /resume <id> to load one.`;
+        bus.emit(EVENTS.LLM_TOKEN, { token: msg });
+        bus.emit(EVENTS.LLM_DONE, {});
+        return;
+      }
+
+      const result = arg
+        ? await loadSession(sessionsCwd, arg)
+        : await latestSession(sessionsCwd);
+
+      if (result.error || result.found === false) {
+        const msg = result.error
+          ? `📂 Could not resume: ${result.error}`
+          : '📂 No prior sessions to resume.';
+        bus.emit(EVENTS.LLM_TOKEN, { token: msg });
+        bus.emit(EVENTS.LLM_DONE, {});
+        return;
+      }
+
+      const session = result.session || result;
+      const turns = (session.messages || []).slice(-10);
+      const summary = turns
+        .map(m => `${m.role}: ${(m.content || '').slice(0, 200)}`)
+        .join('\n');
+      const msg = `📂 Resumed session ${session.id} — ${session.messages?.length ?? 0} messages restored. Last ${turns.length} turns:\n${summary}`;
+      bus.emit(EVENTS.LLM_TOKEN, { token: msg });
+      bus.emit(EVENTS.LLM_DONE, {});
+      return;
+    }
+
     if (!text?.trim()) return;
 
     const worker = new AgentWorker({
@@ -107,6 +175,11 @@ export function attachAgentRunner(bus, config = {}) {
       attachments,
       modes: { teachMode, activeModes: new Set(activeModes), autoMode, acceptEdits, guardMode },
     });
-    await worker.run();
+    currentWorker = worker;
+    try {
+      await worker.run();
+    } finally {
+      if (currentWorker === worker) currentWorker = null;
+    }
   });
 }

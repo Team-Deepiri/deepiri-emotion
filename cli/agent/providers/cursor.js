@@ -113,6 +113,7 @@ export class CursorProvider extends Provider {
     const child = spawn(bin, args, {
       cwd: process.cwd(),
       stdio: ['pipe', 'pipe', 'pipe'],
+      signal: opts.signal,
     });
 
     // Append image file paths so the cursor agent can reference them as local files.
@@ -149,6 +150,10 @@ export class CursorProvider extends Provider {
         clearTimeout(timer);
         if (settled) return;
         settled = true;
+        if (err.name === 'AbortError') {
+          reject(err);
+          return;
+        }
         reject(new ProviderUnavailableError(`Cursor agent spawn failed: ${err.message}`));
       });
 

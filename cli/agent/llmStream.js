@@ -20,6 +20,7 @@ export async function streamLLM(bus, prompt, opts = {}) {
   try {
     await streamWithFallback(bus, prompt, opts, opts.config || {});
   } catch (err) {
+    if (err?.name === 'AbortError') throw err;
     const friendly = err?.providerChainExhausted
       ? `(No usable AI provider — ${err.message})${STUB_HINT}`
       : `(${err.message})${STUB_HINT}`;

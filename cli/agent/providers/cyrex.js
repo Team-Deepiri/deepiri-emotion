@@ -38,8 +38,10 @@ export class CyrexProvider extends Provider {
           selection: null,
           ...(attachmentPayload.length > 0 ? { attachments: attachmentPayload } : {}),
         }),
+        signal: opts.signal,
       });
     } catch (err) {
+      if (err?.name === 'AbortError') throw err;
       throw new ProviderUnavailableError(`Cyrex unreachable: ${err.message}`);
     }
 
@@ -54,6 +56,11 @@ export class CyrexProvider extends Provider {
       data?.reply ?? data?.content ?? data?.message ?? (typeof data === 'string' ? data : '');
 
     for (const char of String(reply)) {
+      if (opts.signal?.aborted) {
+        const err = new Error('Cancelled');
+        err.name = 'AbortError';
+        throw err;
+      }
       if (!opts.silent) bus.emit(EVENTS.LLM_TOKEN, { token: char });
       if (typeof opts.onToken === 'function') opts.onToken(char);
       // Skip the simulated typing delay for silent/reasoning calls — no UI benefit,

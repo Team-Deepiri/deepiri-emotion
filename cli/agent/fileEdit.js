@@ -1,49 +1,15 @@
 /**
  * Safe file editing tools: create_file, write_file, edit_file.
- * All paths are validated against the workspace root before any I/O.
+ * All paths are validated via pathSafety (containment, blocked patterns,
+ * symlink-escape protection) before any I/O.
  */
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
-import { resolve, isAbsolute, relative, sep, dirname } from 'path';
+import { dirname } from 'path';
 import { findMatch } from './fileEditMatch.js';
+import { safeWorkspacePath } from './pathSafety.js';
 
 const DEFAULT_CWD = process.cwd();
-
-const BLOCKED_NAME_PATTERNS = [
-  /^\.env$/i,
-  /^\.env\./i,
-  /secret/i,
-  /credential/i,
-  /private[_-]?key/i,
-  /\.pem$/i,
-  /\.key$/i,
-];
-
-const BLOCKED_DIR_NAMES = new Set(['.git', 'node_modules']);
-
-function checkPathSafety(filePath, cwd) {
-  const resolvedCwd = resolve(cwd);
-  const resolved = isAbsolute(filePath) ? resolve(filePath) : resolve(cwd, filePath);
-
-  const cwdWithSep = resolvedCwd.endsWith(sep) ? resolvedCwd : resolvedCwd + sep;
-  if (!resolved.startsWith(cwdWithSep) && resolved !== resolvedCwd) {
-    return { error: `Path resolves outside workspace: ${filePath}` };
-  }
-
-  const rel = relative(resolvedCwd, resolved);
-  for (const part of rel.split(sep)) {
-    if (BLOCKED_DIR_NAMES.has(part)) {
-      return { error: `Editing inside ${part} is not allowed` };
-    }
-    for (const pattern of BLOCKED_NAME_PATTERNS) {
-      if (pattern.test(part)) {
-        return { error: `File path matches a blocked pattern: ${part}` };
-      }
-    }
-  }
-
-  return { resolved };
-}
 
 function generateDiffPreview(filePath, oldString, newString) {
   const MAX_LINES = 8;
@@ -58,8 +24,25 @@ function generateDiffPreview(filePath, oldString, newString) {
   ].join('\n');
 }
 
+const MAX_DIFF_LINES = 15;
+
+/**
+ * Structured diff lines for the confirmation prompt, capped at MAX_DIFF_LINES
+ * with a trailing "… N more lines" marker if truncated. `type` is
+ * 'remove' | 'add' so the UI can color them red/green like a git diff.
+ */
+function buildDiffLines(oldString, newString) {
+  const removed = oldString != null ? String(oldString).split('\n').map((text) => ({ type: 'remove', text })) : [];
+  const added = String(newString ?? '').split('\n').map((text) => ({ type: 'add', text }));
+  const all = [...removed, ...added];
+  if (all.length <= MAX_DIFF_LINES) return all;
+  const shown = all.slice(0, MAX_DIFF_LINES);
+  shown.push({ type: 'meta', text: `… ${all.length - MAX_DIFF_LINES} more lines` });
+  return shown;
+}
+
 export async function createFileTool(filePath, content, cwd = DEFAULT_CWD) {
-  const safety = checkPathSafety(filePath, cwd);
+  const safety = await safeWorkspacePath(filePath, cwd);
   if (safety.error) return { error: safety.error };
   const { resolved } = safety;
 
@@ -78,7 +61,7 @@ export async function createFileTool(filePath, content, cwd = DEFAULT_CWD) {
 }
 
 export async function writeFileTool(filePath, content, cwd = DEFAULT_CWD, allowOverwrite = false) {
-  const safety = checkPathSafety(filePath, cwd);
+  const safety = await safeWorkspacePath(filePath, cwd);
   if (safety.error) return { error: safety.error };
   const { resolved } = safety;
 
@@ -99,7 +82,7 @@ export async function writeFileTool(filePath, content, cwd = DEFAULT_CWD, allowO
 }
 
 export async function editFileTool(filePath, oldString, newString, cwd = DEFAULT_CWD) {
-  const safety = checkPathSafety(filePath, cwd);
+  const safety = await safeWorkspacePath(filePath, cwd);
   if (safety.error) return { error: safety.error };
   const { resolved } = safety;
 
@@ -147,7 +130,7 @@ export async function previewMutation(tool, args = {}, cwd = DEFAULT_CWD) {
   const { filePath } = args;
   if (!filePath) return { error: 'filePath is required' };
 
-  const safety = checkPathSafety(filePath, cwd);
+  const safety = await safeWorkspacePath(filePath, cwd);
   if (safety.error) return { error: safety.error };
   const { resolved } = safety;
 
@@ -155,7 +138,12 @@ export async function previewMutation(tool, args = {}, cwd = DEFAULT_CWD) {
     if (existsSync(resolved)) {
       return { error: `File already exists: ${resolved}. Use write_file to overwrite an existing file.` };
     }
-    return { path: resolved, action: 'create', preview: previewContent(args.content) };
+    return {
+      path: resolved,
+      action: 'create',
+      preview: previewContent(args.content),
+      diffLines: buildDiffLines(null, args.content),
+    };
   }
 
   if (tool === 'write_file') {
@@ -168,6 +156,7 @@ export async function previewMutation(tool, args = {}, cwd = DEFAULT_CWD) {
       action: existed ? 'overwrite' : 'create',
       overwrite: existed,
       preview: previewContent(args.content),
+      diffLines: buildDiffLines(null, args.content),
     };
   }
 
@@ -187,6 +176,7 @@ export async function previewMutation(tool, args = {}, cwd = DEFAULT_CWD) {
       path: resolved,
       action: 'edit',
       preview: generateDiffPreview(filePath, oldString, newString),
+      diffLines: buildDiffLines(oldString, newString),
       strategy: match.strategy,
       confidence: match.confidence,
     };
