@@ -81,6 +81,16 @@ function collectEvents(bus) {
   return events;
 }
 
+/**
+ * Joins every LLM_TOKEN payload.token in emission order.
+ * `streamTokens` (AgentWorker.js) emits visible responses one character at a
+ * time for the typing-cursor effect, so tests must reconstruct the full
+ * string instead of asserting on a single LLM_TOKEN event.
+ */
+function tokenText(evts) {
+  return evts.filter(e => e.event === 'LLM_TOKEN').map(e => e.payload.token).join('');
+}
+
 /** Build a fresh worker with injected fakes. config defaults maxSteps=2. */
 function makeWorker(task, deps = {}, config = {}) {
   const bus = new EventEmitter();
@@ -182,11 +192,9 @@ describe('normal FINAL_ANSWER path', () => {
     });
     await worker.run();
 
-    const tokenEvts = evts.filter(e => e.event === 'LLM_TOKEN');
     const doneEvts  = evts.filter(e => e.event === 'LLM_DONE');
-    expect(tokenEvts).toHaveLength(1);
     expect(doneEvts).toHaveLength(1);
-    expect(tokenEvts[0].payload.token).toBe('4');
+    expect(tokenText(evts)).toBe('4');
 
     // Wrapping up status = forced finalization; must NOT appear
     const wrappingUp = evts.filter(
@@ -200,8 +208,7 @@ describe('normal FINAL_ANSWER path', () => {
       streamLLM: makeStreamLLM(['FINAL_ANSWER: the answer']),
     });
     await worker.run();
-    const token = evts.find(e => e.event === 'LLM_TOKEN')?.payload.token;
-    expect(token).toBe('the answer');
+    expect(tokenText(evts)).toBe('the answer');
   });
 });
 
@@ -229,10 +236,8 @@ describe('step exhaustion', () => {
     );
     expect(wrappingUp).toHaveLength(1);
 
-    const tokenEvts = evts.filter(e => e.event === 'LLM_TOKEN');
-    // Only the finalization token is emitted (the tool-call step emits no LLM_TOKEN)
-    expect(tokenEvts).toHaveLength(1);
-    expect(tokenEvts[0].payload.token).toBe('forced answer');
+    // Only the finalization pass emits LLM_TOKEN (the tool-call step emits none)
+    expect(tokenText(evts)).toBe('forced answer');
   });
 
   it('emits exactly one LLM_DONE after forced finalization', async () => {
@@ -255,9 +260,7 @@ describe('step exhaustion', () => {
       maybeConfirmAndExecute: fakeRead,
     }, { maxSteps: 1 });
     await worker.run();
-    const tokenEvts = evts.filter(e => e.event === 'LLM_TOKEN');
-    expect(tokenEvts).toHaveLength(1);
-    expect(tokenEvts[0].payload.token).toBe('(Agent reached budget limit before completing a response.)');
+    expect(tokenText(evts)).toBe('(Agent reached budget limit before completing a response.)');
   });
 });
 
@@ -280,8 +283,7 @@ describe('max_tool_calls budget', () => {
       e => e.event === 'AGENT_STATUS' && e.payload.message === 'Wrapping up...'
     );
     expect(wrappingUp).toHaveLength(1);
-    const tokenEvts = evts.filter(e => e.event === 'LLM_TOKEN');
-    expect(tokenEvts[0].payload.token).toBe('capped');
+    expect(tokenText(evts)).toBe('capped');
   });
 });
 
@@ -295,9 +297,7 @@ describe('plain response (no FINAL_ANSWER)', () => {
     });
     await worker.run();
 
-    const tokenEvts = evts.filter(e => e.event === 'LLM_TOKEN');
-    expect(tokenEvts).toHaveLength(1);
-    expect(tokenEvts[0].payload.token).toBe('plain response text');
+    expect(tokenText(evts)).toBe('plain response text');
 
     const wrappingUp = evts.filter(
       e => e.event === 'AGENT_STATUS' && e.payload.message === 'Wrapping up...'
@@ -396,8 +396,7 @@ describe('regression guards', () => {
     const doneEvts = evts.filter(e => e.event === 'LLM_DONE');
     expect(doneEvts).toHaveLength(1);
 
-    const tokenEvts = evts.filter(e => e.event === 'LLM_TOKEN');
-    expect(tokenEvts[0].payload.token).toBe('recovered');
+    expect(tokenText(evts)).toBe('recovered');
   });
 
   // Findings #2/#7 — FINAL_ANSWER stripping is consistent on both code paths
@@ -406,12 +405,11 @@ describe('regression guards', () => {
       streamLLM: makeStreamLLM(['Some preamble\nFINAL_ANSWER: the real answer']),
     });
     await worker.run();
-    const token = evts.find(e => e.event === 'LLM_TOKEN')?.payload.token;
     // The response starts with 'FINAL_ANSWER:' only if the FULL string starts that way.
     // This response starts with 'Some preamble' → no FINAL_ANSWER strip happens via
     // isFinalAnswer. Falls through to the plain-text branch — verify no "FINAL_ANSWER:"
     // leaks into the output either way.
-    expect(token).not.toMatch(/^FINAL_ANSWER:/);
+    expect(tokenText(evts)).not.toMatch(/^FINAL_ANSWER:/);
   });
 
   it('FINAL_ANSWER: prefix at the very start is stripped consistently across both paths', async () => {
@@ -420,7 +418,7 @@ describe('regression guards', () => {
       streamLLM: makeStreamLLM(['FINAL_ANSWER: clean answer']),
     });
     await w1.run();
-    const normalToken = e1.find(e => e.event === 'LLM_TOKEN')?.payload.token;
+    const normalToken = tokenText(e1);
     expect(normalToken).toBe('clean answer');
 
     // Forced-finalization path: step 1 calls a tool → budget exhausted → second
@@ -431,7 +429,7 @@ describe('regression guards', () => {
       maybeConfirmAndExecute: fakeRead,
     }, { maxSteps: 1 });
     await w2.run();
-    const forcedToken = e2.find(e => e.event === 'LLM_TOKEN')?.payload.token;
+    const forcedToken = tokenText(e2);
     expect(forcedToken).toBe('clean answer');
 
     // Both paths must produce identical output.
