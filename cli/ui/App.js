@@ -4,14 +4,25 @@ import { EVENTS } from '../core/eventBus.js';
 import { INITIAL_STATE, NUM_SPINNER_FRAMES } from '../core/stateStore.js';
 import { MessageList } from './MessageList.js';
 import { StatusBar } from './StatusBar.js';
-import { StepTimeline } from './StepTimeline.js';
 import { PromptInput } from './PromptInput.js';
 import { grabClipboardImage, resolveImagePath } from '../agent/attachments.js';
+import { Welcome } from './Welcome.js';
 
 const SPINNER_INTERVAL_MS = 80;
 
-export default function App({ eventBus, workspaceDir = null, teachMode: initialTeachMode = false }) {
-  const [state, setState] = useState({ ...INITIAL_STATE, teachMode: initialTeachMode });
+export default function App({
+  eventBus,
+  workspaceDir = null,
+  teachMode: initialTeachMode = false,
+  initialProvider = null,
+  initialModel = null
+}) {
+  const [state, setState] = useState({
+    ...INITIAL_STATE,
+    teachMode: initialTeachMode,
+    activeProvider: initialProvider,
+    activeModel: initialModel
+  });
   const [inputValue, setInputValue] = useState('');
   const [pendingAttachments, setPendingAttachments] = useState([]);
 
@@ -22,7 +33,9 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
         messages: [...s.messages, { role: 'user', content: text }],
         streamingMessage: '',
         steps: [],
+        plan: [],
         error: null,
+        errorHint: null,
         activeTool: null
       }));
     };
@@ -34,15 +47,21 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
       }));
     };
 
-    const onLlmDone = () => {
+    const onLlmDone = ({ silent } = {}) => {
+      // AgentWorker's internal reasoning loop makes silent, intermediate
+      // streamLLM calls that also emit LLM_DONE — those aren't the real end
+      // of the turn, so skip finalizing the message/step trace for them.
+      if (silent) return;
       setState((s) => {
         const full = s.streamingMessage;
         return {
           ...s,
           messages: full
-            ? [...s.messages, { role: 'assistant', content: full }]
+            ? [...s.messages, { role: 'assistant', content: full, steps: s.steps, plan: s.plan }]
             : s.messages,
           streamingMessage: '',
+          steps: [],
+          plan: [],
           agentStatus: 'idle',
           statusMessage: ''
         };
@@ -67,8 +86,16 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
       }));
     };
 
-    const onAgentError = ({ message }) => {
-      setState((s) => ({ ...s, error: message || 'Something went wrong' }));
+    const onAgentError = ({ message, hint }) => {
+      setState((s) => ({ ...s, error: message || 'Something went wrong', errorHint: hint || null }));
+    };
+
+    const onProviderResolved = ({ provider, model }) => {
+      setState((s) => ({ ...s, activeProvider: provider, activeModel: model }));
+    };
+
+    const onPlanUpdate = ({ items }) => {
+      setState((s) => ({ ...s, plan: items || [] }));
     };
 
     const onAgentCancelled = () => {
@@ -135,6 +162,8 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
     eventBus.on(EVENTS.AGENT_STATUS, onAgentStatus);
     eventBus.on(EVENTS.AGENT_STEP, onAgentStep);
     eventBus.on(EVENTS.AGENT_ERROR, onAgentError);
+    eventBus.on(EVENTS.PROVIDER_RESOLVED, onProviderResolved);
+    eventBus.on(EVENTS.PLAN_UPDATE, onPlanUpdate);
     eventBus.on(EVENTS.AGENT_CANCELLED, onAgentCancelled);
     eventBus.on(EVENTS.TOOL_START, onToolStart);
     eventBus.on(EVENTS.TOOL_END, onToolEnd);
@@ -160,6 +189,8 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
       eventBus.off(EVENTS.AGENT_STATUS, onAgentStatus);
       eventBus.off(EVENTS.AGENT_STEP, onAgentStep);
       eventBus.off(EVENTS.AGENT_ERROR, onAgentError);
+      eventBus.off(EVENTS.PROVIDER_RESOLVED, onProviderResolved);
+      eventBus.off(EVENTS.PLAN_UPDATE, onPlanUpdate);
       eventBus.off(EVENTS.AGENT_CANCELLED, onAgentCancelled);
       eventBus.off(EVENTS.TOOL_START, onToolStart);
       eventBus.off(EVENTS.TOOL_END, onToolEnd);
@@ -222,19 +253,52 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
     eventBus.emit(EVENTS.CANCEL_REQUESTED);
   }, [eventBus]);
 
+  const isEmptyConversation = state.messages.length === 0 && !state.streamingMessage;
+
   return React.createElement(
     Box,
     { flexDirection: 'column', padding: 1 },
-    React.createElement(Text, { bold: true, color: 'cyan' }, 'Deepiri Emotion CLI'),
-    React.createElement(Text, { dimColor: true },
-      workspaceDir ? `Workspace: ${workspaceDir}` : 'Shift+Enter newline, Enter send. Ctrl+V attach image, Ctrl+L clear, Ctrl+C exit, Esc cancel.'
-    ),
-    ...(state.error ? [React.createElement(Text, { key: 'err', color: 'red' }, 'Error: ', state.error)] : []),
+    isEmptyConversation
+      ? React.createElement(Welcome, {
+          workspaceDir,
+          activeProvider: state.activeProvider,
+          activeModel: state.activeModel
+        })
+      : React.createElement(
+          Box,
+          { flexDirection: 'column' },
+          React.createElement(
+            Text,
+            { bold: true, color: 'cyan' },
+            'Deepiri Emotion CLI',
+            state.activeProvider ? `  |  ${state.activeProvider}${state.activeModel ? ` / ${state.activeModel}` : ''}` : ''
+          ),
+          React.createElement(Text, { dimColor: true },
+            workspaceDir ? `Workspace: ${workspaceDir}` : 'Shift+Enter newline, Enter send. Ctrl+V attach image, Ctrl+L clear, Ctrl+C exit, Esc cancel.'
+          )
+        ),
+    ...(state.error ? [
+      React.createElement(Box, {
+        key: 'err',
+        flexDirection: 'column',
+        marginY: 1,
+        paddingX: 1,
+        borderStyle: 'round',
+        borderColor: 'red'
+      },
+        React.createElement(Text, { color: 'red', bold: true }, 'Error: ', state.error),
+        ...(state.errorHint
+          ? [React.createElement(Text, { key: 'hint', color: 'yellow' }, '→ ', state.errorHint)]
+          : [])
+      )
+    ] : []),
     React.createElement(MessageList, {
       messages: state.messages,
-      streamingMessage: state.streamingMessage
+      streamingMessage: state.streamingMessage,
+      liveSteps: state.steps,
+      livePlan: state.plan,
+      activeModes: state.activeModes
     }),
-    React.createElement(StepTimeline, { steps: state.steps, activeModes: state.activeModes }),
     ...(state.activeTool
       ? [React.createElement(Text, { key: 'activeTool', dimColor: true }, state.activeTool.label)]
       : []),
@@ -298,7 +362,8 @@ export default function App({ eventBus, workspaceDir = null, teachMode: initialT
         pendingConfirmation: state.pendingConfirmation,
         onConfirm: handleConfirm,
         agentStatus: state.agentStatus,
-        onCancel: handleCancel
+        onCancel: handleCancel,
+        workspaceDir
       })
     )
   );

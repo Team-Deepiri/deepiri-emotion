@@ -30,11 +30,20 @@ export function StepTimeline({ steps, activeModes }) {
 
   if (!visibleSteps.length) return null;
 
+  // Cap the rendered trace so a pathological, many-step turn can't flood the
+  // view; keep the most recent steps and note how many were elided.
+  const MAX_VISIBLE = 15;
+  const hiddenCount = Math.max(0, visibleSteps.length - MAX_VISIBLE);
+  const shownSteps = hiddenCount ? visibleSteps.slice(-MAX_VISIBLE) : visibleSteps;
+
   return React.createElement(
     Box,
     { flexDirection: 'column', gap: 0, marginBottom: 1 },
     React.createElement(Text, { dimColor: true }, 'Steps:'),
-    ...visibleSteps.slice(-8).map((s, i) => {
+    hiddenCount
+      ? React.createElement(Text, { dimColor: true }, `  … ${hiddenCount} earlier step${hiddenCount === 1 ? '' : 's'} hidden`)
+      : null,
+    ...shownSteps.map((s, i) => {
       if (s.type === 'supervisor') {
         return React.createElement(
           Box,

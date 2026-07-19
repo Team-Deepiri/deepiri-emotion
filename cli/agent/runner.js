@@ -4,6 +4,7 @@
  */
 import { EVENTS } from '../core/eventBus.js';
 import { MODES } from '../core/modes.js';
+import { formatCommandList } from '../core/commands.js';
 import { discoverGuidance } from './guidance.js';
 import { AgentWorker } from './AgentWorker.js';
 import { listSessions, loadSession, latestSession } from './session.js';
@@ -83,18 +84,7 @@ export function attachAgentRunner(bus, config = {}) {
     }
 
     if (text?.trim() === '/help') {
-      const msg = [
-        'Available commands:',
-        '/teach         explain reasoning as it works',
-        '/debug         full step visibility',
-        '/plan          planning only, no mutations',
-        '/auto          apply edits without confirmation',
-        '/accept-edits  auto-approve file edits only',
-        '/scan          scan workspace for guidance docs',
-        '/resume        resume a previous session',
-        '/help          show this list',
-      ].join('\n');
-      bus.emit(EVENTS.LLM_TOKEN, { token: msg });
+      bus.emit(EVENTS.LLM_TOKEN, { token: formatCommandList() });
       bus.emit(EVENTS.LLM_DONE, {});
       return;
     }

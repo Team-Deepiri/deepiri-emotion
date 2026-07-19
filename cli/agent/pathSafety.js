@@ -31,7 +31,7 @@ const BLOCKED_NAME_PATTERNS = [
   /^\.pypirc$/i,
 ];
 
-const BLOCKED_DIRS = new Set([
+export const BLOCKED_DIRS = new Set([
   '.git',
   'node_modules',
   '.ssh',
@@ -48,6 +48,11 @@ export function isBlockedDir(part) {
 
 export function isBlockedName(part) {
   return BLOCKED_NAME_PATTERNS.some((p) => p.test(part));
+}
+
+/** Exported for reuse by callers that need the raw name-pattern check (e.g. fileIndex.js). */
+export function isBlockedPathPart(part) {
+  return isBlockedName(part);
 }
 
 /**
