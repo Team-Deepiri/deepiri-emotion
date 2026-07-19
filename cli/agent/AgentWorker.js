@@ -57,6 +57,7 @@ import { discoverGuidance as defaultDiscoverGuidance } from './guidance.js';
 import { detectSupportNeed as defaultDetectSupportNeed } from './support.js';
 import { stopReason, toolCallKey } from './loopGuards.js';
 import { DEFAULT_CONFIG } from '../core/config.js';
+import { getErrorHint } from '../core/errorHints.js';
 
 /**
  * Thin bus wrapper that stamps `workerId` on every emit.
@@ -116,6 +117,10 @@ export class AgentWorker {
     // Monotonic counter — ensures step IDs are unique even within a single tick.
     this._stepSeq = 0;
 
+    // Guards the closing "Done" step so it fires at most once per turn, even
+    // though the reasoning loop has several mutually-exclusive exit paths.
+    this._doneEmitted = false;
+
     // Cancellation: aborts in-flight provider requests (fetch/spawn honor this
     // signal) and is checked between steps so the loop halts even for work
     // that can't be preempted mid-flight (e.g. a running tool call).
@@ -134,6 +139,24 @@ export class AgentWorker {
   /** Returns a step ID that is unique within this worker instance. */
   _nextStepId() {
     return `step-${Date.now()}-${++this._stepSeq}`;
+  }
+
+  /**
+   * Emits the turn's closing "Done" step. Must fire before the LLM_DONE that
+   * finalizes the message, since the UI snapshots the step trace at that point.
+   * Idempotent per turn: the loop has three mutually-exclusive exit paths, so
+   * exactly one call reaches here today, but the guard keeps that invariant even
+   * if a future exit path is added.
+   */
+  _emitDoneStep(wbus) {
+    if (this._doneEmitted) return;
+    this._doneEmitted = true;
+    wbus.emit(EVENTS.AGENT_STEP, {
+      id: this._nextStepId(),
+      type: 'response',
+      status: 'complete',
+      message: 'Done',
+    });
   }
 
   /** Requests cancellation of this turn. Safe to call multiple times. */
@@ -539,14 +562,45 @@ ${this.config.projectSnapshot}`;
 
       const simplePlan = this._createSimplePlan(text);
 
+      // Only surface a checklist for genuinely multi-step turns (>1 planned file
+      // read); single-file or tool-free turns stay noise-free.
+      const planItems = simplePlan.needsTools && simplePlan.requiredFiles.length > 1
+        ? [
+            ...simplePlan.requiredFiles.map((f) => ({ text: `Read ${f}`, status: 'pending' })),
+            { text: 'Answer', status: 'pending' },
+          ]
+        : [];
+      const emitPlanUpdate = () => {
+        if (planItems.length) {
+          wbus.emit(EVENTS.PLAN_UPDATE, { items: planItems.map((i) => ({ ...i })) });
+        }
+      };
+      if (planItems.length) {
+        planItems[0].status = 'in_progress';
+        emitPlanUpdate();
+      }
+      const finalizePlanItems = () => {
+        if (planItems.length) {
+          planItems[planItems.length - 1].status = 'done';
+          emitPlanUpdate();
+        }
+      };
+
       let plannedToolContext = '';
       if (simplePlan.needsTools && simplePlan.requiredFiles.length > 0) {
-        for (const filePath of simplePlan.requiredFiles) {
+        for (let i = 0; i < simplePlan.requiredFiles.length; i++) {
+          const filePath = simplePlan.requiredFiles[i];
           const result = await this._executeTool('read_file', { filePath });
           plannedToolContext += `
 
         [Planned file read: ${filePath}]
         ${JSON.stringify(result, null, 2).slice(0, 4000)}`;
+
+          if (planItems.length) {
+            planItems[i].status = 'done';
+            if (planItems[i + 1]) planItems[i + 1].status = 'in_progress';
+            emitPlanUpdate();
+          }
         }
       }
 
@@ -751,6 +805,8 @@ ${this.config.projectSnapshot}`;
           noProgressStreak = 0;
           const cleanedResponse = stripFinalAnswer(lastResponse);
           wbus.emit(EVENTS.LLM_TOKEN, { token: cleanedResponse });
+          this._emitDoneStep(wbus);
+          finalizePlanItems();
           wbus.emit(EVENTS.LLM_DONE, {});
           break;
         }
@@ -758,6 +814,8 @@ ${this.config.projectSnapshot}`;
         if (lastResponse.trim()) {
           noProgressStreak = 0;
           wbus.emit(EVENTS.LLM_TOKEN, { token: lastResponse.trim() });
+          this._emitDoneStep(wbus);
+          finalizePlanItems();
           wbus.emit(EVENTS.LLM_DONE, {});
         } else {
           // Empty response with no tool call and no FINAL_ANSWER — force finalization
@@ -785,15 +843,11 @@ ${this.config.projectSnapshot}`;
         });
         const cleaned = stripFinalAnswer(finalResponse);
         wbus.emit(EVENTS.LLM_TOKEN, { token: cleaned || '(Agent reached budget limit before completing a response.)' });
+        this._emitDoneStep(wbus);
+        finalizePlanItems();
         wbus.emit(EVENTS.LLM_DONE, {});
       }
 
-      wbus.emit(EVENTS.AGENT_STEP, {
-        id: this._nextStepId(),
-        type: 'response',
-        status: 'complete',
-        message: 'Done',
-      });
       wbus.emit(EVENTS.AGENT_STATUS, { status: 'idle', message: '' });
 
     } catch (err) {
@@ -810,7 +864,7 @@ ${this.config.projectSnapshot}`;
       }
 
       wbus.emit(EVENTS.AGENT_STATUS, { status: 'idle', message: '' });
-      wbus.emit(EVENTS.AGENT_ERROR, { message: err.message });
+      wbus.emit(EVENTS.AGENT_ERROR, { message: err.message, hint: getErrorHint(err.message) });
       wbus.emit(EVENTS.AGENT_STEP, {
         id: this._nextStepId(),
         type: 'response',
