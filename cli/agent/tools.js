@@ -12,7 +12,7 @@ import { gitStatus, gitDiff } from './gitTools.js';
 import { thoughtsTool } from './thoughtsTool.js';
 import { memorySet, memoryGet, memoryList } from './memoryTools.js';
 import { validateToolCall } from './loopGuards.js';
-import { safeWorkspacePath } from './pathSafety.js';
+import { safeWorkspacePath, isBlockedDir, isBlockedName } from './pathSafety.js';
 
 const DEFAULT_CWD = process.cwd();
 const RUN_TIMEOUT_MS = 30_000;
@@ -54,10 +54,11 @@ export async function searchTool(query, dir = DEFAULT_CWD, limit = 20) {
       return;
     }
     for (const e of entries) {
-      // Skip all dotfiles (includes .env — never let secrets reach the LLM),
-      // and skip heavy directories that don't contain user source code.
-      if (e.name.startsWith('.')) continue;
-      if (e.name === 'node_modules' || e.name === '.git') continue;
+      // Block secrets/credentials by name (.env*, keys, etc.) and heavy/VCS
+      // directories, but otherwise allow dotfiles — .gitignore, .eslintrc,
+      // .prettierrc and similar are useful search targets.
+      if (isBlockedName(e.name)) continue;
+      if (e.isDirectory() && isBlockedDir(e.name)) continue;
       const full = join(d, e.name);
       if (e.isDirectory()) {
         await walk(full, depth + 1);

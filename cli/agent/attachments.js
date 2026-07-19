@@ -7,10 +7,13 @@
  *
  * Attachment shape: { path: string, mime: string, base64: string }
  */
-import { execFileSync, execSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, extname } from 'node:path';
+
+const execFileAsync = promisify(execFile);
 
 const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
 
@@ -58,7 +61,7 @@ export async function grabClipboardImage() {
 
   // Strategy 1: pngpaste (preferred, no AppleScript overhead)
   try {
-    execFileSync('pngpaste', [dest], { stdio: ['pipe', 'pipe', 'pipe'], timeout: 5000 });
+    await execFileAsync('pngpaste', [dest], { timeout: 5000 });
     if (existsSync(dest)) {
       return { path: dest, mime: 'image/png', base64: toBase64(dest) };
     }
@@ -66,20 +69,18 @@ export async function grabClipboardImage() {
     // pngpaste not installed or clipboard has no image — fall through
   }
 
-  // Strategy 2: osascript — write PNG clipboard data to file
+  // Strategy 2: osascript — write PNG clipboard data to file.
+  // Each statement passed as its own -e argument (argv array, no shell) so
+  // this stays a non-blocking child process rather than a shell heredoc.
   try {
-    // Single-quoted AppleScript; escape internal single quotes.
-    const script = [
+    const statements = [
       `set imgData to the clipboard as «class PNGf»`,
       `set tmpFile to POSIX file "${dest}"`,
       `set fileRef to open for access tmpFile with write permission`,
       `write imgData to fileRef`,
       `close access fileRef`,
-    ].join('\n');
-    execSync(`osascript << 'OSASCRIPT_EOF'\n${script}\nOSASCRIPT_EOF`, {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      timeout: 5000,
-    });
+    ];
+    await execFileAsync('osascript', statements.flatMap((s) => ['-e', s]), { timeout: 5000 });
     if (existsSync(dest)) {
       return { path: dest, mime: 'image/png', base64: toBase64(dest) };
     }

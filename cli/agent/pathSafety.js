@@ -42,11 +42,11 @@ const BLOCKED_DIRS = new Set([
   '.terraform',
 ]);
 
-function isBlockedDir(part) {
+export function isBlockedDir(part) {
   return BLOCKED_DIRS.has(part.toLowerCase());
 }
 
-function isBlockedName(part) {
+export function isBlockedName(part) {
   return BLOCKED_NAME_PATTERNS.some((p) => p.test(part));
 }
 

@@ -57,7 +57,7 @@ export function MarkdownText({ content }) {
           Box,
           { key: k++, borderStyle: 'single', borderColor: 'gray', paddingX: 1, flexShrink: 1, width: codeWidth },
           ...codeLines.map((cl, ci) =>
-            React.createElement(Text, { key: ci, color: 'green', wrap: 'truncate-end' }, cl)
+            React.createElement(Text, { key: ci, color: 'green', wrap: 'wrap' }, cl)
           )
         )
       );
