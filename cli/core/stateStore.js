@@ -8,6 +8,7 @@ export const INITIAL_STATE = {
   agentStatus: 'idle', // idle | thinking | responding | tool_running
   statusMessage: '',
   steps: [],
+  plan: [],
   spinnerFrame: 0,
   inputBuffer: '',
   error: null,

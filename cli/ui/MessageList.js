@@ -2,8 +2,9 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import { MarkdownText } from './MarkdownText.js';
 import { StepTimeline } from './StepTimeline.js';
+import { PlanChecklist } from './PlanChecklist.js';
 
-export function MessageList({ messages, streamingMessage, liveSteps, activeMode }) {
+export function MessageList({ messages, streamingMessage, liveSteps, livePlan, activeMode }) {
   return React.createElement(
     Box,
     { flexDirection: 'column', gap: 0, paddingY: 1 },
@@ -18,6 +19,9 @@ export function MessageList({ messages, streamingMessage, liveSteps, activeMode 
             Box,
             { key: i, flexDirection: 'column' },
             React.createElement(Text, { bold: true, color: m.role === 'user' ? 'green' : 'blue' }, m.role === 'user' ? 'You' : 'Assistant' + ':'),
+            m.role === 'assistant' && m.plan?.length
+              ? React.createElement(PlanChecklist, { items: m.plan })
+              : null,
             m.role === 'assistant'
               ? React.createElement(MarkdownText, { content: m.content })
               : React.createElement(Text, null, m.content),
@@ -26,6 +30,9 @@ export function MessageList({ messages, streamingMessage, liveSteps, activeMode 
               : null
           )
     ),
+    livePlan?.length
+      ? React.createElement(PlanChecklist, { items: livePlan })
+      : null,
     streamingMessage
       ? React.createElement(
           Box,

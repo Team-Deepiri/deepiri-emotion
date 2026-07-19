@@ -89,3 +89,30 @@ export async function streamWithFallback(bus, prompt, opts = {}, config = {}) {
   err.attempts = errors;
   throw err;
 }
+
+/**
+ * Walk the chain the same way `streamWithFallback` does, but only as far as
+ * isAvailable/isAuthenticated — no request is sent. Used to resolve the active
+ * provider/model at CLI startup so the header/welcome screen doesn't have to
+ * wait for the first real turn.
+ */
+export async function resolveActiveProvider(config = {}) {
+  const chain = Array.isArray(config.providerChain) && config.providerChain.length
+    ? config.providerChain
+    : DEFAULT_CHAIN;
+
+  for (const name of chain) {
+    const ProviderClass = getProviderClass(name);
+    if (!ProviderClass) continue;
+
+    const options = configFor(name, config);
+    try {
+      if (!(await ProviderClass.isAvailable(options))) continue;
+      if (!(await ProviderClass.isAuthenticated(options))) continue;
+    } catch {
+      continue;
+    }
+    return { provider: name, model: options.model || null };
+  }
+  return null;
+}
