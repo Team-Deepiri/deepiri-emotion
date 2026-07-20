@@ -19,9 +19,32 @@ export function attachAgentRunner(bus, config = {}) {
   let autoMode    = config.autoMode    ?? false;
   let acceptEdits = config.acceptEdits ?? false;
   let currentWorker = null;
+  let queuedText = null;
 
   bus.on(EVENTS.CANCEL_REQUESTED, () => {
     currentWorker?.cancel();
+  });
+
+  bus.on(EVENTS.MESSAGE_QUEUED, ({ text } = {}) => {
+    queuedText = text || null;
+  });
+
+  // Picks up a queued message as the next turn once the current one has
+  // actually finished — either a real (non-silent) completion, or a cancel.
+  const dequeueAndSend = () => {
+    if (!queuedText) return;
+    const text = queuedText;
+    queuedText = null;
+    bus.emit(EVENTS.USER_MESSAGE, { text });
+  };
+
+  bus.on(EVENTS.LLM_DONE, ({ silent } = {}) => {
+    if (silent) return;
+    dequeueAndSend();
+  });
+
+  bus.on(EVENTS.AGENT_CANCELLED, () => {
+    dequeueAndSend();
   });
 
   bus.on(EVENTS.USER_MESSAGE, async ({ text }) => {

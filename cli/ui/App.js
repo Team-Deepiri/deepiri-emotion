@@ -34,7 +34,8 @@ export default function App({
         plan: [],
         error: null,
         errorHint: null,
-        activeTool: null
+        activeTool: null,
+        queuedMessage: null
       }));
     };
 
@@ -199,9 +200,16 @@ export default function App({
       const t = (text || inputValue || '').trim();
       if (!t) return;
       setInputValue('');
+      if (state.agentStatus !== 'idle') {
+        // Agent is mid-turn — queue instead of firing a second concurrent
+        // AgentWorker. Single-slot: a later submit overwrites an earlier one.
+        setState((s) => ({ ...s, queuedMessage: t }));
+        eventBus.emit(EVENTS.MESSAGE_QUEUED, { text: t });
+        return;
+      }
       eventBus.emit(EVENTS.USER_MESSAGE, { text: t });
     },
-    [inputValue, eventBus]
+    [inputValue, eventBus, state.agentStatus]
   );
 
   const handleClear = useCallback(() => {
@@ -322,6 +330,11 @@ export default function App({
         onCancel: handleCancel,
         workspaceDir
       })
-    )
+    ),
+    ...(state.queuedMessage ? [
+      React.createElement(Box, { key: 'queued' },
+        React.createElement(Text, { color: 'yellow', bold: true }, `⏳ queued: ${state.queuedMessage}`)
+      )
+    ] : [])
   );
 }
