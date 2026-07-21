@@ -10,6 +10,8 @@ export const COMMANDS = [
   { name: '/accept-edits', description: 'auto-approve file edits only' },
   { name: '/scan', description: 'scan workspace for guidance docs' },
   { name: '/resume', description: 'resume a previous session' },
+  { name: '/clear', description: 'reset the conversation' },
+  { name: '/init', description: 'scan workspace and write starter EMOTION.md' },
   { name: '/help', description: 'show this list' },
 ];
 

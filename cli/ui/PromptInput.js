@@ -101,11 +101,15 @@ export function PromptInput({ value, onChange, onSubmit, onClear, placeholder, p
         process.exit(0);
       }
       if (input === 'y' || input === 'Y') {
-        if (typeof onConfirm === 'function') onConfirm(true);
+        if (typeof onConfirm === 'function') onConfirm('once');
+        return;
+      }
+      if (input === 'a' || input === 'A') {
+        if (typeof onConfirm === 'function') onConfirm('always');
         return;
       }
       if (input === 'n' || input === 'N' || key.escape) {
-        if (typeof onConfirm === 'function') onConfirm(false);
+        if (typeof onConfirm === 'function') onConfirm('deny');
         return;
       }
       return;

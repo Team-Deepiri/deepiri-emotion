@@ -21,6 +21,11 @@ export function attachAgentRunner(bus, config = {}) {
   let currentWorker = null;
   let queuedText = null;
 
+  // Session-scoped "always allow" set (Task 5) — a tool (file mutations) or
+  // tool+command (run_command) key added here is skipped by the confirmation
+  // gate for the rest of the session. Reset only by restarting the CLI.
+  config.allowSet = config.allowSet ?? new Set();
+
   bus.on(EVENTS.CANCEL_REQUESTED, () => {
     currentWorker?.cancel();
   });
@@ -100,6 +105,45 @@ export function attachAgentRunner(bus, config = {}) {
         : 'Accept-edits OFF.';
       bus.emit(EVENTS.LLM_TOKEN, { token: msg });
       bus.emit(EVENTS.LLM_DONE, {});
+      return;
+    }
+
+    if (text?.trim() === '/clear') {
+      bus.emit(EVENTS.CLEAR);
+      // No token/response for this command, but LLM_DONE still must fire —
+      // headless print mode (-p) waits on it to know the turn is over.
+      bus.emit(EVENTS.LLM_DONE, {});
+      return;
+    }
+
+    if (text?.trim() === '/init') {
+      const snapshotText = config.projectSnapshot || '(no snapshot available)';
+      const bootstrapTask = `Scan this workspace and write a starter EMOTION.md capturing project memory for future sessions.
+
+Use this auto-discovered snapshot as a starting point, but verify/expand on it by reading key files (e.g. package.json, README.md, top-level source dirs) as needed:
+
+${snapshotText}
+
+EMOTION.md should include, in this order:
+1. Project overview — what this project is and does, in 2-3 sentences.
+2. Key directories — the main source dirs and what lives in each.
+3. Conventions — coding conventions, testing approach, and anything a new contributor should know.
+
+Keep it concise (aim for well under 100 lines). When ready, write it with create_file to EMOTION.md at the workspace root. Do not ask clarifying questions — make reasonable inferences from what you find.`;
+
+      const initWorker = new AgentWorker({
+        id: 'main',
+        bus,
+        config,
+        task: bootstrapTask,
+        modes: { teachMode, activeMode, autoMode, acceptEdits },
+      });
+      currentWorker = initWorker;
+      try {
+        await initWorker.run();
+      } finally {
+        if (currentWorker === initWorker) currentWorker = null;
+      }
       return;
     }
 

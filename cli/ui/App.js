@@ -24,8 +24,16 @@ export default function App({
   });
   const [inputValue, setInputValue] = useState('');
 
+  const handleClear = useCallback(() => {
+    setState({ ...INITIAL_STATE });
+    setInputValue('');
+  }, []);
+
   useEffect(() => {
     const onUserMessage = ({ text }) => {
+      // /clear resets via the CLEAR event (see onClear below) — it shouldn't
+      // also show up as a chat turn in the transcript it's about to wipe.
+      if (text?.trim() === '/clear') return;
       setState((s) => ({
         ...s,
         messages: [...s.messages, { role: 'user', content: text }],
@@ -147,6 +155,14 @@ export default function App({
       setState((s) => ({ ...s, pendingConfirmation: null }));
     };
 
+    const onAllowedToolsChanged = ({ count }) => {
+      setState((s) => ({ ...s, allowedCount: count ?? 0 }));
+    };
+
+    const onClear = () => {
+      handleClear();
+    };
+
     eventBus.on(EVENTS.USER_MESSAGE, onUserMessage);
     eventBus.on(EVENTS.LLM_TOKEN, onLlmToken);
     eventBus.on(EVENTS.LLM_DONE, onLlmDone);
@@ -166,6 +182,8 @@ export default function App({
     eventBus.on(EVENTS.ACCEPT_EDITS_CHANGED, onAcceptEditsChanged);
     eventBus.on(EVENTS.CONFIRMATION_REQUEST, onConfirmationRequest);
     eventBus.on(EVENTS.CONFIRMATION_RESPONSE, onConfirmationResponse);
+    eventBus.on(EVENTS.ALLOWED_TOOLS_CHANGED, onAllowedToolsChanged);
+    eventBus.on(EVENTS.CLEAR, onClear);
 
     const spinnerTimer = setInterval(() => {
       eventBus.emit(EVENTS.SPINNER_TICK);
@@ -191,9 +209,11 @@ export default function App({
       eventBus.off(EVENTS.ACCEPT_EDITS_CHANGED, onAcceptEditsChanged);
       eventBus.off(EVENTS.CONFIRMATION_REQUEST, onConfirmationRequest);
       eventBus.off(EVENTS.CONFIRMATION_RESPONSE, onConfirmationResponse);
+      eventBus.off(EVENTS.ALLOWED_TOOLS_CHANGED, onAllowedToolsChanged);
+      eventBus.off(EVENTS.CLEAR, onClear);
       clearInterval(spinnerTimer);
     };
-  }, [eventBus]);
+  }, [eventBus, handleClear]);
 
   const handleSubmit = useCallback(
     (text) => {
@@ -212,14 +232,9 @@ export default function App({
     [inputValue, eventBus, state.agentStatus]
   );
 
-  const handleClear = useCallback(() => {
-    setState({ ...INITIAL_STATE });
-    setInputValue('');
-  }, []);
-
   const handleConfirm = useCallback(
-    (approved) => {
-      eventBus.emit(EVENTS.CONFIRMATION_RESPONSE, { approved });
+    (choice) => {
+      eventBus.emit(EVENTS.CONFIRMATION_RESPONSE, { choice });
     },
     [eventBus]
   );
@@ -285,7 +300,8 @@ export default function App({
       supportMode: state.supportMode,
       activeMode: state.activeMode,
       autoMode: state.autoMode,
-      acceptEdits: state.acceptEdits
+      acceptEdits: state.acceptEdits,
+      allowedCount: state.allowedCount
     }),
     ...(state.pendingConfirmation ? [
       React.createElement(Box, {
@@ -297,7 +313,9 @@ export default function App({
         borderColor: 'yellow'
       },
         React.createElement(Text, { color: 'yellow', bold: true },
-          `Apply ${state.pendingConfirmation.action} to ${state.pendingConfirmation.path}?`
+          state.pendingConfirmation.tool === 'run_command'
+            ? 'Run this command?'
+            : `Apply ${state.pendingConfirmation.action} to ${state.pendingConfirmation.path}?`
         ),
         ...(state.pendingConfirmation.diffLines?.length
           ? state.pendingConfirmation.diffLines.map((line, i) =>
@@ -314,7 +332,7 @@ export default function App({
           : state.pendingConfirmation.preview
           ? [React.createElement(Text, { key: 'preview', dimColor: true }, state.pendingConfirmation.preview)]
           : []),
-        React.createElement(Text, { color: 'cyan' }, '(y) approve    (n) deny')
+        React.createElement(Text, { color: 'cyan' }, '(y) approve once    (a) always allow    (n) deny')
       )
     ] : []),
     React.createElement(Box, { marginTop: 1 },
@@ -323,7 +341,7 @@ export default function App({
         onChange: setInputValue,
         onSubmit: handleSubmit,
         onClear: handleClear,
-        placeholder: state.pendingConfirmation ? 'Awaiting confirmation — press y or n' : 'Type a message...',
+        placeholder: state.pendingConfirmation ? 'Awaiting confirmation — press y, a, or n' : 'Type a message...',
         pendingConfirmation: state.pendingConfirmation,
         onConfirm: handleConfirm,
         agentStatus: state.agentStatus,
