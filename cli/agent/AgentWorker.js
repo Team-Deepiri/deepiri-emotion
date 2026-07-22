@@ -110,12 +110,13 @@ export class AgentWorker {
    *   }>,
    * }} opts
    */
-  constructor({ id = 'main', bus, config = {}, task, modes = {}, attachments = [], deps = {} }) {
+  constructor({ id = 'main', bus, config = {}, task, modes = {}, attachments = [], deps = {}, history = [] }) {
     this.id          = id;
     this.wbus        = new WorkerBus(bus, id);
     this.config      = config;
     this.task        = task;
     this.attachments = attachments;
+    this.history     = history;
     this.modes  = {
       teachMode:   modes.teachMode   ?? false,
       activeModes: modes.activeModes ?? new Set(),
@@ -579,8 +580,12 @@ ${this.config.projectSnapshot}`;
         }
       }
 
-      const promptForLlm = `${fullInstructions}
+      const historyBlock = this.history.length
+        ? `\n\n[Conversation so far]\n${this.history.map(m => `${m.role}: ${m.content}`).join('\n\n')}\n`
+        : '';
 
+      const promptForLlm = `${fullInstructions}
+        ${historyBlock}
         [Planning guidance]
         ${JSON.stringify(simplePlan, null, 2)}
 

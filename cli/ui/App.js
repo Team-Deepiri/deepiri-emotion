@@ -173,6 +173,10 @@ export default function App({
       handleClear();
     };
 
+    const onTokenUsage = ({ used, limit }) => {
+      setState((s) => ({ ...s, tokenUsage: { used: used ?? 0, limit: limit ?? s.tokenUsage.limit } }));
+    };
+
     eventBus.on(EVENTS.USER_MESSAGE, onUserMessage);
     eventBus.on(EVENTS.LLM_TOKEN, onLlmToken);
     eventBus.on(EVENTS.LLM_DONE, onLlmDone);
@@ -196,6 +200,7 @@ export default function App({
     eventBus.on(EVENTS.CLEAR, onClear);
     eventBus.on(EVENTS.GUARD_MODE_CHANGED, onGuardModeChanged);
     eventBus.on(EVENTS.PROVIDER_SELECTED, onProviderSelected);
+    eventBus.on(EVENTS.TOKEN_USAGE_CHANGED, onTokenUsage);
 
     const spinnerTimer = setInterval(() => {
       eventBus.emit(EVENTS.SPINNER_TICK);
@@ -225,6 +230,7 @@ export default function App({
       eventBus.off(EVENTS.CLEAR, onClear);
       eventBus.off(EVENTS.GUARD_MODE_CHANGED, onGuardModeChanged);
       eventBus.off(EVENTS.PROVIDER_SELECTED, onProviderSelected);
+      eventBus.off(EVENTS.TOKEN_USAGE_CHANGED, onTokenUsage);
       clearInterval(spinnerTimer);
     };
   }, [eventBus, handleClear]);
@@ -339,6 +345,7 @@ export default function App({
       allowedCount: state.allowedCount,
       guardMode: state.guardMode,
       activeProvider: state.activeProvider,
+      tokenUsage: state.tokenUsage
     }),
     ...(pendingAttachments.length > 0 ? [
       React.createElement(Box, { key: 'attachments', marginTop: 0 },

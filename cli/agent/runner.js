@@ -8,6 +8,10 @@ import { formatCommandList } from '../core/commands.js';
 import { discoverGuidance } from './guidance.js';
 import { AgentWorker } from './AgentWorker.js';
 import { listSessions, loadSession, latestSession } from './session.js';
+import { streamLLM } from './llmStream.js';
+import { estimateTokens, contextWindowFor } from '../core/tokens.js';
+
+const AUTO_COMPACT_THRESHOLD = 0.8;
 
 /**
  * @param {import('events').EventEmitter} bus
@@ -26,6 +30,63 @@ export function attachAgentRunner(bus, config = {}) {
   // tool+command (run_command) key added here is skipped by the confirmation
   // gate for the rest of the session. Reset only by restarting the CLI.
   config.allowSet = config.allowSet ?? new Set();
+
+  // Conversation memory (Task 1) — plain user/assistant turns, fed back into
+  // each new AgentWorker's prompt so the agent isn't stateless turn-to-turn.
+  // Slash-commands and /init's bootstrap task are deliberately not recorded
+  // here; only real dialogue turns are.
+  let history = [];
+  let recording = false;
+  let turnUserText = '';
+  let turnBuffer = '';
+  let compacting = false;
+
+  const recomputeTokenUsage = () => {
+    const serialized = history.map(m => `${m.role}: ${m.content}`).join('\n\n');
+    const used = estimateTokens(serialized);
+    const limit = contextWindowFor(config);
+    bus.emit(EVENTS.TOKEN_USAGE_CHANGED, { used, limit });
+    if (!compacting && limit > 0 && used / limit >= AUTO_COMPACT_THRESHOLD) {
+      runCompact('auto');
+    }
+  };
+
+  const runCompact = async (reason) => {
+    if (compacting) return;
+    if (history.length === 0) {
+      if (reason === 'manual') {
+        bus.emit(EVENTS.LLM_TOKEN, { token: 'Nothing to compact yet.' });
+        bus.emit(EVENTS.LLM_DONE, {});
+      }
+      return;
+    }
+    compacting = true;
+    try {
+      const serialized = history.map(m => `${m.role}: ${m.content}`).join('\n\n');
+      let summary = '';
+      await streamLLM(bus, `Summarize the following conversation concisely, preserving key facts, decisions, and any file paths or code discussed. Write a short paragraph, no preamble.\n\n${serialized}`, {
+        config,
+        silent: true,
+        onToken: (token) => { summary += token; },
+      });
+      history = [{ role: 'system', content: `[Compacted summary of earlier conversation]\n${summary.trim()}` }];
+      recomputeTokenUsage();
+      const note = reason === 'auto'
+        ? '🗜 Auto-compacted conversation history — it was getting close to the context limit.'
+        : '🗜 Compacted conversation history into a summary.';
+      bus.emit(EVENTS.LLM_TOKEN, { token: note });
+      bus.emit(EVENTS.LLM_DONE, {});
+    } catch (err) {
+      bus.emit(EVENTS.AGENT_ERROR, { message: `Compact failed: ${err.message}` });
+      bus.emit(EVENTS.LLM_DONE, {});
+    } finally {
+      compacting = false;
+    }
+  };
+
+  bus.on(EVENTS.LLM_TOKEN, ({ token }) => {
+    if (recording) turnBuffer += token;
+  });
 
   bus.on(EVENTS.CANCEL_REQUESTED, () => {
     currentWorker?.cancel();
@@ -46,10 +107,19 @@ export function attachAgentRunner(bus, config = {}) {
 
   bus.on(EVENTS.LLM_DONE, ({ silent } = {}) => {
     if (silent) return;
+    if (recording) {
+      history.push({ role: 'user', content: turnUserText });
+      history.push({ role: 'assistant', content: turnBuffer });
+      recording = false;
+      turnBuffer = '';
+      recomputeTokenUsage();
+    }
     dequeueAndSend();
   });
 
   bus.on(EVENTS.AGENT_CANCELLED, () => {
+    recording = false;
+    turnBuffer = '';
     dequeueAndSend();
   });
 
@@ -116,6 +186,11 @@ export function attachAgentRunner(bus, config = {}) {
       // No token/response for this command, but LLM_DONE still must fire —
       // headless print mode (-p) waits on it to know the turn is over.
       bus.emit(EVENTS.LLM_DONE, {});
+      return;
+    }
+
+    if (text?.trim() === '/compact') {
+      await runCompact('manual');
       return;
     }
 
@@ -224,6 +299,10 @@ Keep it concise (aim for well under 100 lines). When ready, write it with create
 
     if (!text?.trim()) return;
 
+    recording = true;
+    turnUserText = text;
+    turnBuffer = '';
+
     const worker = new AgentWorker({
       id: 'main',
       bus,
@@ -231,6 +310,7 @@ Keep it concise (aim for well under 100 lines). When ready, write it with create
       task: text,
       attachments,
       modes: { teachMode, activeModes: new Set(activeModes), autoMode, acceptEdits, guardMode },
+      history,
     });
     currentWorker = worker;
     try {
