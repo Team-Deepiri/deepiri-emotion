@@ -29,10 +29,10 @@ describe('parseToolIntent', () => {
     });
   });
 
-  it('returns search for "search X"', () => {
+  it('returns search for "search X" preserving original case', () => {
     expect(parseToolIntent('search openFile')).toEqual({
       tool: 'search',
-      args: { query: 'openfile' }
+      args: { query: 'openFile' }
     });
   });
 

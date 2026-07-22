@@ -17,10 +17,11 @@ export const INITIAL_STATE = {
   activeModel: null,
   teachMode: false,
   supportMode: false,
-  activeMode: null,
+  activeModes: new Set(),
   autoMode: false,
   acceptEdits: false,
   pendingConfirmation: null,
+  guardMode: true,
   activeTool: null
 };
 

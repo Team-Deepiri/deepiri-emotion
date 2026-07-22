@@ -15,7 +15,14 @@ export async function streamLLM(bus, prompt, opts = {}) {
     await streamWithFallback(bus, prompt, opts, opts.config || {});
   } catch (err) {
     if (err?.name === 'AbortError') throw err;
-    bus.emit(EVENTS.AGENT_ERROR, { message: err.message, hint: getErrorHint(err.message) });
+    if (!opts.silent) {
+      // Only surface the error banner for visible (non-reasoning) calls.
+      bus.emit(EVENTS.AGENT_ERROR, { message: err.message, hint: getErrorHint(err.message) });
+    } else if (typeof opts.onToken === 'function') {
+      // Silent callers (reasoning loop, supervisor) get the error via onToken
+      // so the loop can incorporate it — but nothing reaches the UI stream.
+      opts.onToken(`(${err.message})`);
+    }
   }
   bus.emit(EVENTS.LLM_DONE, { silent: !!opts.silent });
 }

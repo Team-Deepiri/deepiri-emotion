@@ -12,7 +12,7 @@ function emitProviderStep(bus, kind, message) {
   if (!bus || typeof bus.emit !== 'function') return;
   bus.emit(EVENTS.AGENT_STEP, {
     id: `provider-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    type: 'tool_call',
+    type: 'thinking',
     status: 'complete',
     message: `Provider ${kind}: ${message}`,
   });
@@ -63,6 +63,7 @@ export async function streamWithFallback(bus, prompt, opts = {}, config = {}) {
 
     emitProviderStep(bus, 'using', name);
     if (bus && typeof bus.emit === 'function') {
+      bus.emit(EVENTS.PROVIDER_SELECTED, { provider: name });
       bus.emit(EVENTS.PROVIDER_RESOLVED, { provider: name, model: options.model || null });
     }
     try {

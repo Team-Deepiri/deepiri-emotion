@@ -12,7 +12,7 @@ import { gitStatus, gitDiff } from './gitTools.js';
 import { thoughtsTool } from './thoughtsTool.js';
 import { memorySet, memoryGet, memoryList } from './memoryTools.js';
 import { validateToolCall } from './loopGuards.js';
-import { safeWorkspacePath } from './pathSafety.js';
+import { safeWorkspacePath, isBlockedDir, isBlockedName } from './pathSafety.js';
 
 const DEFAULT_CWD = process.cwd();
 const RUN_TIMEOUT_MS = 30_000;
@@ -54,7 +54,11 @@ export async function searchTool(query, dir = DEFAULT_CWD, limit = 20) {
       return;
     }
     for (const e of entries) {
-      if (e.name.startsWith('.')) continue;
+      // Block secrets/credentials by name (.env*, keys, etc.) and heavy/VCS
+      // directories, but otherwise allow dotfiles — .gitignore, .eslintrc,
+      // .prettierrc and similar are useful search targets.
+      if (isBlockedName(e.name)) continue;
+      if (e.isDirectory() && isBlockedDir(e.name)) continue;
       const full = join(d, e.name);
       if (e.isDirectory()) {
         await walk(full, depth + 1);
@@ -158,41 +162,57 @@ export function runCommandTool(command, cwd = DEFAULT_CWD) {
  * JSON path: validates tool name and required args via loopGuards.validateToolCall.
  * Regex path: unchanged fallback for natural-language commands.
  */
-export function parseToolIntent(text) {
-  // Try parsing structured JSON tool call first; reject unknown/malformed calls.
+function tryValidateJson(str) {
   try {
-    const parsed = JSON.parse(text.trim());
-    const validated = validateToolCall(parsed);
-    if (validated) return validated;
+    const parsed = JSON.parse(str.trim());
+    return validateToolCall(parsed) || null;
   } catch {
-    // Not JSON, continue to regex parsing
+    return null;
   }
-  const raw = (text || '').trim();
-  const t = raw.toLowerCase();
-  // const readMatch = t.match(/read\s+file\s+(.+)/) || t.match(/read\s+(.+\.\w+)/);
+}
+
+export function parseToolIntent(text) {
+  // Strip thinking/reasoning blocks emitted by Qwen3, DeepSeek-R1, etc.
+  let raw = (text || '').trim().replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
+  // 1. Direct JSON parse (clean output)
+  const direct = tryValidateJson(raw);
+  if (direct) return direct;
+
+  // 2. JSON inside markdown code fences: ```json ... ``` or ``` ... ```
+  const fenceMatch = /```(?:json)?\s*([\s\S]*?)```/i.exec(raw);
+  if (fenceMatch) {
+    const fenced = tryValidateJson(fenceMatch[1]);
+    if (fenced) return fenced;
+  }
+
+  // 3. Bare JSON object containing a "tool" key embedded in prose
+  const jsonMatch = /(\{[^{}]*"tool"\s*:[\s\S]*?\})/m.exec(raw);
+  if (jsonMatch) {
+    const embedded = tryValidateJson(jsonMatch[1]);
+    if (embedded) return embedded;
+  }
+
+  // 4. Natural language fallback — preserves original-case for paths/commands.
   const readMatch =
-  t.match(/read\s+file\s+([^\s,]+)/) ||
-  t.match(/read\s+([^\s,]+\.\w+)/);
+    /read\s+file\s+([^\s,]+)/i.exec(raw) ||
+    /read\s+([^\s,]+\.\w+)/i.exec(raw);
   if (readMatch) {
     return { tool: 'read_file', args: { filePath: readMatch[1].trim() } };
   }
-  const searchMatch = t.match(/search\s+(?:for\s+)?["']?([^"']+)["']?/) || t.match(/search\s+(.+)/);
+  const searchMatch =
+    /search\s+(?:for\s+)?["']?([^"']+)["']?/i.exec(raw) ||
+    /search\s+(.+)/i.exec(raw);
   if (searchMatch) {
     return { tool: 'search', args: { query: searchMatch[1].trim() } };
   }
-
   const listFilesMatch =
-  t.match(/list\s+files\s+(.+)/) ||
-  t.match(/list\s+(.+)/);
-
+    /list\s+files\s+(.+)/i.exec(raw) ||
+    /list\s+(.+)/i.exec(raw);
   if (listFilesMatch) {
-    return {
-      tool: 'list_files',
-      args: { dirPath: listFilesMatch[1].trim() }
-    };
+    return { tool: 'list_files', args: { dirPath: listFilesMatch[1].trim() } };
   }
-
-  const runMatch = t.match(/^run\s+(.+)/);
+  const runMatch = /^run\s+(.+)/i.exec(raw);
   if (runMatch) {
     return { tool: 'run_command', args: { command: runMatch[1].trim() } };
   }

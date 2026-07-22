@@ -22,6 +22,17 @@ import { bootstrapProject, formatSnapshot } from './agent/bootstrap.js';
 import { attachSessionRecorder } from './agent/session.js';
 import App from './ui/App.js';
 
+process.on('uncaughtException', (err) => {
+  process.stdout.write('\x1B[?25h\x1B[0m\n');  // restore cursor + reset colour
+  process.stderr.write(`\n[deepiri-cli] uncaughtException: ${err?.stack || err}\n`);
+  process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+  process.stdout.write('\x1B[?25h\x1B[0m\n');
+  process.stderr.write(`\n[deepiri-cli] unhandledRejection: ${reason?.stack || reason}\n`);
+  process.exit(1);
+});
+
 const argv = process.argv.slice(2);
 if (argv.includes('--help') || argv.includes('-h')) {
   console.log(`
