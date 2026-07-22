@@ -776,7 +776,12 @@ ${this.config.projectSnapshot}`;
           try {
             loopToolResult = await this._maybeConfirmAndExecute(
               wbus, loopToolIntent.tool, loopToolIntent.args, config.workspaceDir,
-              { autoApprove: autoMode || acceptEdits, allowSet: config.allowSet }
+              {
+                autoApprove: autoMode || acceptEdits,
+                allowSet: config.allowSet,
+                checkpoints: config.checkpoints,
+                turnId: config.currentTurnId,
+              }
             );
           } catch (err) {
             loopToolResult = { error: err.message };

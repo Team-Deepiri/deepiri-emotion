@@ -2,6 +2,7 @@
  * Agent runner: dispatch layer. Handles slash-commands and mode state,
  * then delegates each user turn to an AgentWorker instance.
  */
+import { writeFile, unlink } from 'fs/promises';
 import { EVENTS } from '../core/eventBus.js';
 import { MODES } from '../core/modes.js';
 import { formatCommandList } from '../core/commands.js';
@@ -30,6 +31,20 @@ export function attachAgentRunner(bus, config = {}) {
   // tool+command (run_command) key added here is skipped by the confirmation
   // gate for the rest of the session. Reset only by restarting the CLI.
   config.allowSet = config.allowSet ?? new Set();
+
+  // Checkpoints (Task 2) — one entry per turn that touched disk, capped at
+  // the last 10 by confirm.js. turnHistoryIndex remembers how long `history`
+  // was right before each turn, so /rewind can truncate memory back to match.
+  config.checkpoints = config.checkpoints ?? [];
+  let turnSeq = 0;
+  const turnHistoryIndex = new Map();
+  const beginTurn = () => {
+    const turnId = ++turnSeq;
+    config.currentTurnId = turnId;
+    turnHistoryIndex.set(turnId, history.length);
+    bus.emit(EVENTS.TURN_STARTED, { turnId });
+    return turnId;
+  };
 
   // Conversation memory (Task 1) — plain user/assistant turns, fed back into
   // each new AgentWorker's prompt so the agent isn't stateless turn-to-turn.
@@ -194,6 +209,65 @@ export function attachAgentRunner(bus, config = {}) {
       return;
     }
 
+    const rewindMatch = text?.trim().match(/^\/rewind(?:\s+(\d+))?$/);
+    if (rewindMatch) {
+      const checkpoints = config.checkpoints || [];
+      if (checkpoints.length === 0) {
+        bus.emit(EVENTS.LLM_TOKEN, { token: '⏪ No checkpoints yet — nothing to rewind.' });
+        bus.emit(EVENTS.LLM_DONE, {});
+        return;
+      }
+
+      const newestFirst = [...checkpoints].reverse();
+
+      if (!rewindMatch[1]) {
+        const listing = newestFirst
+          .map((cp, i) => {
+            const names = cp.files.map((f) => f.path.split('/').pop()).join(', ');
+            const when = new Date(cp.timestamp).toLocaleTimeString();
+            return `  ${i + 1}. ${when} — ${names}`;
+          })
+          .join('\n');
+        bus.emit(EVENTS.LLM_TOKEN, { token: `⏪ Recent checkpoints (newest first):\n${listing}\n\nUse /rewind <n> to restore.` });
+        bus.emit(EVENTS.LLM_DONE, {});
+        return;
+      }
+
+      const idx = Number(rewindMatch[1]);
+      const target = newestFirst[idx - 1];
+      if (!target) {
+        bus.emit(EVENTS.LLM_TOKEN, { token: `⏪ No checkpoint #${idx}. Run /rewind to see the list.` });
+        bus.emit(EVENTS.LLM_DONE, {});
+        return;
+      }
+
+      // Restore each snapshotted file. The path was already validated by
+      // safeWorkspacePath when the checkpoint was captured, and we're only
+      // writing back content that was already on disk at that time.
+      for (const f of target.files) {
+        try {
+          if (f.existed) {
+            await writeFile(f.path, f.before ?? '', 'utf-8');
+          } else {
+            await unlink(f.path);
+          }
+        } catch {
+          // best-effort restore; a single failed file shouldn't abort the rest
+        }
+      }
+
+      const targetPos = checkpoints.indexOf(target);
+      config.checkpoints = checkpoints.slice(0, targetPos);
+      const keepHistoryLen = turnHistoryIndex.get(target.turnId) ?? history.length;
+      history = history.slice(0, keepHistoryLen);
+      recomputeTokenUsage();
+
+      bus.emit(EVENTS.REWIND, { turnId: target.turnId });
+      bus.emit(EVENTS.LLM_TOKEN, { token: `⏪ Rewound — restored ${target.files.length} file(s) and dropped that turn from the conversation.` });
+      bus.emit(EVENTS.LLM_DONE, {});
+      return;
+    }
+
     if (text?.trim() === '/init') {
       const snapshotText = config.projectSnapshot || '(no snapshot available)';
       const bootstrapTask = `Scan this workspace and write a starter EMOTION.md capturing project memory for future sessions.
@@ -209,6 +283,7 @@ EMOTION.md should include, in this order:
 
 Keep it concise (aim for well under 100 lines). When ready, write it with create_file to EMOTION.md at the workspace root. Do not ask clarifying questions — make reasonable inferences from what you find.`;
 
+      beginTurn();
       const initWorker = new AgentWorker({
         id: 'main',
         bus,
@@ -302,6 +377,7 @@ Keep it concise (aim for well under 100 lines). When ready, write it with create
     recording = true;
     turnUserText = text;
     turnBuffer = '';
+    beginTurn();
 
     const worker = new AgentWorker({
       id: 'main',

@@ -5,12 +5,41 @@
  * specific tool (file mutations) or tool+command (run_command) for the rest
  * of the session, without granting blanket auto mode.
  */
+import { readFile } from 'fs/promises';
+import { existsSync } from 'fs';
 import { EVENTS } from '../core/eventBus.js';
 import { executeTool } from './tools.js';
 import { previewMutation } from './fileEdit.js';
+import { safeWorkspacePath } from './pathSafety.js';
 
 const MUTATING_TOOLS = new Set(['create_file', 'write_file', 'edit_file']);
 const GATED_TOOLS = new Set([...MUTATING_TOOLS, 'run_command']);
+const MAX_CHECKPOINTS = 10;
+
+/**
+ * Snapshot a file's pre-write state into `checkpoints` (Task 2), grouped by
+ * turnId so a turn that touches several files rewinds as one unit. Runs
+ * regardless of whether the write was freshly approved or skipped via
+ * allowSet, since either way disk is about to change.
+ */
+async function recordCheckpoint(checkpoints, turnId, filePath, cwd) {
+  if (!checkpoints || !turnId || !filePath) return;
+  const safety = await safeWorkspacePath(filePath, cwd);
+  if (safety.error) return;
+  const { resolved } = safety;
+  const existed = existsSync(resolved);
+  const before = existed ? await readFile(resolved, 'utf-8').catch(() => null) : null;
+
+  let entry = checkpoints[checkpoints.length - 1];
+  if (!entry || entry.turnId !== turnId) {
+    entry = { turnId, timestamp: Date.now(), files: [] };
+    checkpoints.push(entry);
+    if (checkpoints.length > MAX_CHECKPOINTS) checkpoints.shift();
+  }
+  if (!entry.files.some((f) => f.path === resolved)) {
+    entry.files.push({ path: resolved, before, existed });
+  }
+}
 
 // Shell-command patterns that are irreversible or destructive enough to require
 // explicit confirmation regardless of /auto or /accept-edits mode.
@@ -74,14 +103,21 @@ export function requestConfirmation(bus, payload = {}, { autoApprove = false } =
  * prompt. Other tools run directly. Returns the tool result, or
  * { denied: true, ... } if the user rejected the action.
  */
-export async function maybeConfirmAndExecute(bus, tool, args = {}, cwd, { autoApprove = false, allowSet = null } = {}) {
+export async function maybeConfirmAndExecute(bus, tool, args = {}, cwd, { autoApprove = false, allowSet = null, checkpoints = null, turnId = null } = {}) {
   if (!isGatedTool(tool)) {
     return executeTool(tool, args, cwd);
   }
 
+  const snapshotAndExecute = async () => {
+    if (isMutatingTool(tool)) {
+      await recordCheckpoint(checkpoints, turnId, args.filePath, cwd);
+    }
+    return executeTool(tool, args, cwd);
+  };
+
   const key = allowKeyFor(tool, args);
   if (allowSet?.has(key)) {
-    return executeTool(tool, args, cwd);
+    return snapshotAndExecute();
   }
 
   let preview;
@@ -122,5 +158,5 @@ export async function maybeConfirmAndExecute(bus, tool, args = {}, cwd, { autoAp
     bus.emit(EVENTS.ALLOWED_TOOLS_CHANGED, { count: allowSet.size });
   }
 
-  return executeTool(tool, args, cwd);
+  return snapshotAndExecute();
 }
