@@ -28,7 +28,17 @@ async function recordCheckpoint(checkpoints, turnId, filePath, cwd) {
   if (safety.error) return;
   const { resolved } = safety;
   const existed = existsSync(resolved);
-  const before = existed ? await readFile(resolved, 'utf-8').catch(() => null) : null;
+  // readError is tracked separately from "file didn't exist" so /rewind can
+  // tell the two apart — a failed read must not be restored as empty content.
+  let before = null;
+  let readError = null;
+  if (existed) {
+    try {
+      before = await readFile(resolved, 'utf-8');
+    } catch (err) {
+      readError = err.message;
+    }
+  }
 
   let entry = checkpoints[checkpoints.length - 1];
   if (!entry || entry.turnId !== turnId) {
@@ -37,7 +47,7 @@ async function recordCheckpoint(checkpoints, turnId, filePath, cwd) {
     if (checkpoints.length > MAX_CHECKPOINTS) checkpoints.shift();
   }
   if (!entry.files.some((f) => f.path === resolved)) {
-    entry.files.push({ path: resolved, before, existed });
+    entry.files.push({ path: resolved, before, existed, readError });
   }
 }
 

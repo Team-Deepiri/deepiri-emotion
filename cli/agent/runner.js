@@ -76,6 +76,7 @@ export function attachAgentRunner(bus, config = {}) {
       return;
     }
     compacting = true;
+    bus.emit(EVENTS.AGENT_STATUS, { status: 'thinking', message: '🗜 Compacting conversation history...' });
     try {
       const serialized = history.map(m => `${m.role}: ${m.content}`).join('\n\n');
       let summary = '';
@@ -244,15 +245,22 @@ export function attachAgentRunner(bus, config = {}) {
       // Restore each snapshotted file. The path was already validated by
       // safeWorkspacePath when the checkpoint was captured, and we're only
       // writing back content that was already on disk at that time.
+      const restoreFailures = [];
       for (const f of target.files) {
         try {
           if (f.existed) {
-            await writeFile(f.path, f.before ?? '', 'utf-8');
+            if (f.before === null) {
+              // Original content couldn't be read when the checkpoint was taken
+              // (e.g. a permissions error) — skip rather than overwrite with ''.
+              restoreFailures.push(`${f.path} (original content unavailable${f.readError ? `: ${f.readError}` : ''})`);
+              continue;
+            }
+            await writeFile(f.path, f.before, 'utf-8');
           } else {
             await unlink(f.path);
           }
-        } catch {
-          // best-effort restore; a single failed file shouldn't abort the rest
+        } catch (err) {
+          restoreFailures.push(`${f.path} (${err.message})`);
         }
       }
 
@@ -263,7 +271,11 @@ export function attachAgentRunner(bus, config = {}) {
       recomputeTokenUsage();
 
       bus.emit(EVENTS.REWIND, { turnId: target.turnId });
-      bus.emit(EVENTS.LLM_TOKEN, { token: `⏪ Rewound — restored ${target.files.length} file(s) and dropped that turn from the conversation.` });
+      if (restoreFailures.length) {
+        bus.emit(EVENTS.AGENT_ERROR, { message: `⏪ Rewind incomplete — could not restore: ${restoreFailures.join(', ')}` });
+      }
+      const restoredCount = target.files.length - restoreFailures.length;
+      bus.emit(EVENTS.LLM_TOKEN, { token: `⏪ Rewound — restored ${restoredCount} of ${target.files.length} file(s) and dropped that turn from the conversation.` });
       bus.emit(EVENTS.LLM_DONE, {});
       return;
     }
