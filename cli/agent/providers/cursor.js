@@ -116,7 +116,12 @@ export class CursorProvider extends Provider {
       signal: opts.signal,
     });
 
-    child.stdin.end(prompt);
+    // Append image file paths so the cursor agent can reference them as local files.
+    const attachments = Array.isArray(opts.attachments) ? opts.attachments : [];
+    const attachNote = attachments.length > 0
+      ? '\n\n' + attachments.map((a) => `[Attached image: ${a.path}]`).join('\n')
+      : '';
+    child.stdin.end(prompt + attachNote);
 
     return new Promise((resolve, reject) => {
       let settled = false;

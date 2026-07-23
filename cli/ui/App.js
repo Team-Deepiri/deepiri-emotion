@@ -5,6 +5,7 @@ import { INITIAL_STATE, NUM_SPINNER_FRAMES } from '../core/stateStore.js';
 import { MessageList } from './MessageList.js';
 import { StatusBar } from './StatusBar.js';
 import { PromptInput } from './PromptInput.js';
+import { grabClipboardImage, resolveImagePath } from '../agent/attachments.js';
 import { Welcome } from './Welcome.js';
 
 const SPINNER_INTERVAL_MS = 80;
@@ -23,6 +24,7 @@ export default function App({
     activeModel: initialModel
   });
   const [inputValue, setInputValue] = useState('');
+  const [pendingAttachments, setPendingAttachments] = useState([]);
 
   const handleClear = useCallback(() => {
     setState({ ...INITIAL_STATE });
@@ -135,8 +137,8 @@ export default function App({
       setState((s) => ({ ...s, supportMode: active }));
     };
 
-    const onModeChanged = ({ activeMode }) => {
-      setState((s) => ({ ...s, activeMode }));
+    const onModeChanged = ({ activeModes }) => {
+      setState((s) => ({ ...s, activeModes }));
     };
 
     const onAutoModeChanged = ({ autoMode }) => {
@@ -145,6 +147,14 @@ export default function App({
 
     const onAcceptEditsChanged = ({ acceptEdits }) => {
       setState((s) => ({ ...s, acceptEdits }));
+    };
+
+    const onGuardModeChanged = ({ guardMode }) => {
+      setState((s) => ({ ...s, guardMode }));
+    };
+
+    const onProviderSelected = ({ provider }) => {
+      setState((s) => ({ ...s, activeProvider: provider }));
     };
 
     const onConfirmationRequest = (payload) => {
@@ -184,6 +194,8 @@ export default function App({
     eventBus.on(EVENTS.CONFIRMATION_RESPONSE, onConfirmationResponse);
     eventBus.on(EVENTS.ALLOWED_TOOLS_CHANGED, onAllowedToolsChanged);
     eventBus.on(EVENTS.CLEAR, onClear);
+    eventBus.on(EVENTS.GUARD_MODE_CHANGED, onGuardModeChanged);
+    eventBus.on(EVENTS.PROVIDER_SELECTED, onProviderSelected);
 
     const spinnerTimer = setInterval(() => {
       eventBus.emit(EVENTS.SPINNER_TICK);
@@ -211,25 +223,48 @@ export default function App({
       eventBus.off(EVENTS.CONFIRMATION_RESPONSE, onConfirmationResponse);
       eventBus.off(EVENTS.ALLOWED_TOOLS_CHANGED, onAllowedToolsChanged);
       eventBus.off(EVENTS.CLEAR, onClear);
+      eventBus.off(EVENTS.GUARD_MODE_CHANGED, onGuardModeChanged);
+      eventBus.off(EVENTS.PROVIDER_SELECTED, onProviderSelected);
       clearInterval(spinnerTimer);
     };
   }, [eventBus, handleClear]);
+
+  const handlePaste = useCallback(() => {
+    grabClipboardImage()
+      .then((attachment) => {
+        if (attachment) {
+          setPendingAttachments((prev) => [...prev, attachment]);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const handleSubmit = useCallback(
     (text) => {
       const t = (text || inputValue || '').trim();
       if (!t) return;
       setInputValue('');
+
+      // Merge clipboard attachments with any image path detected in the text.
+      const allAttachments = [...pendingAttachments];
+      let finalText = t;
+      const pathResult = resolveImagePath(t);
+      if (pathResult) {
+        allAttachments.push(pathResult.attachment);
+        finalText = pathResult.text || t;
+      }
+      setPendingAttachments([]);
+
       if (state.agentStatus !== 'idle') {
         // Agent is mid-turn — queue instead of firing a second concurrent
         // AgentWorker. Single-slot: a later submit overwrites an earlier one.
-        setState((s) => ({ ...s, queuedMessage: t }));
-        eventBus.emit(EVENTS.MESSAGE_QUEUED, { text: t });
+        setState((s) => ({ ...s, queuedMessage: finalText }));
+        eventBus.emit(EVENTS.MESSAGE_QUEUED, { text: finalText });
         return;
       }
-      eventBus.emit(EVENTS.USER_MESSAGE, { text: t });
+      eventBus.emit(EVENTS.USER_MESSAGE, { text: finalText, attachments: allAttachments });
     },
-    [inputValue, eventBus, state.agentStatus]
+    [inputValue, pendingAttachments, eventBus, state.agentStatus]
   );
 
   const handleConfirm = useCallback(
@@ -264,7 +299,7 @@ export default function App({
             state.activeProvider ? `  |  ${state.activeProvider}${state.activeModel ? ` / ${state.activeModel}` : ''}` : ''
           ),
           React.createElement(Text, { dimColor: true },
-            workspaceDir ? `Workspace: ${workspaceDir}` : 'Shift+Enter newline, Enter send. Ctrl+C exit, Ctrl+L clear, Esc cancel.'
+            workspaceDir ? `Workspace: ${workspaceDir}` : 'Shift+Enter newline, Enter send. Ctrl+V attach image, Ctrl+L clear, Ctrl+C exit, Esc cancel.'
           )
         ),
     ...(state.error ? [
@@ -287,7 +322,7 @@ export default function App({
       streamingMessage: state.streamingMessage,
       liveSteps: state.steps,
       livePlan: state.plan,
-      activeMode: state.activeMode
+      activeModes: state.activeModes
     }),
     ...(state.activeTool
       ? [React.createElement(Text, { key: 'activeTool', dimColor: true }, state.activeTool.label)]
@@ -298,11 +333,20 @@ export default function App({
       spinnerFrame: state.spinnerFrame,
       teachMode: state.teachMode,
       supportMode: state.supportMode,
-      activeMode: state.activeMode,
+      activeModes: state.activeModes,
       autoMode: state.autoMode,
       acceptEdits: state.acceptEdits,
-      allowedCount: state.allowedCount
+      allowedCount: state.allowedCount,
+      guardMode: state.guardMode,
+      activeProvider: state.activeProvider,
     }),
+    ...(pendingAttachments.length > 0 ? [
+      React.createElement(Box, { key: 'attachments', marginTop: 0 },
+        React.createElement(Text, { color: 'magenta' },
+          `📎 ${pendingAttachments.length} image${pendingAttachments.length > 1 ? 's' : ''} attached — will send with next message`
+        )
+      )
+    ] : []),
     ...(state.pendingConfirmation ? [
       React.createElement(Box, {
         key: 'confirm',
@@ -341,6 +385,7 @@ export default function App({
         onChange: setInputValue,
         onSubmit: handleSubmit,
         onClear: handleClear,
+        onPaste: handlePaste,
         placeholder: state.pendingConfirmation ? 'Awaiting confirmation — press y, a, or n' : 'Type a message...',
         pendingConfirmation: state.pendingConfirmation,
         onConfirm: handleConfirm,

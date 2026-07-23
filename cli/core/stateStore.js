@@ -17,13 +17,14 @@ export const INITIAL_STATE = {
   activeModel: null,
   teachMode: false,
   supportMode: false,
-  activeMode: null,
+  activeModes: new Set(),
   autoMode: false,
   acceptEdits: false,
   pendingConfirmation: null,
   activeTool: null,
   queuedMessage: null,
-  allowedCount: 0
+  allowedCount: 0,
+  guardMode: true
 };
 
 export const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];

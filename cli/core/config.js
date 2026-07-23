@@ -27,6 +27,8 @@ export const DEFAULT_CONFIG = {
   maxSteps: Number(process.env.AGENT_MAX_STEPS) || 5,
   maxToolCalls: Number(process.env.AGENT_MAX_TOOL_CALLS) || 8,
   agentTimeoutMs: Number(process.env.AGENT_TIMEOUT_MS) || 60_000,
+  // Voice-of-reason supervisor — set SUPERVISOR_ENABLED=false or supervisorEnabled:false to disable
+  supervisorEnabled: process.env.SUPERVISOR_ENABLED !== 'false',
   claudeCliPath: process.env.CLAUDE_CLI_PATH || undefined,
   claudeCliModel: process.env.CLAUDE_CLI_MODEL || undefined,
   cursorPath: process.env.CURSOR_PATH || undefined,

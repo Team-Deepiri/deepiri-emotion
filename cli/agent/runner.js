@@ -14,11 +14,12 @@ import { listSessions, loadSession, latestSession } from './session.js';
  * @param {Record<string,unknown>} [config] - CLI config (provider, keys, URLs)
  */
 export function attachAgentRunner(bus, config = {}) {
-  let teachMode   = config.teachMode   ?? false;
-  let activeMode  = null;
-  let autoMode    = config.autoMode    ?? false;
-  let acceptEdits = config.acceptEdits ?? false;
-  let currentWorker = null;
+  let teachMode        = config.teachMode        ?? false;
+  let activeModes      = new Set();
+  let autoMode         = config.autoMode         ?? false;
+  let acceptEdits      = config.acceptEdits      ?? false;
+  let guardMode        = config.supervisorEnabled ?? true;
+  let currentWorker    = null;
   let queuedText = null;
 
   // Session-scoped "always allow" set (Task 5) — a tool (file mutations) or
@@ -52,7 +53,7 @@ export function attachAgentRunner(bus, config = {}) {
     dequeueAndSend();
   });
 
-  bus.on(EVENTS.USER_MESSAGE, async ({ text }) => {
+  bus.on(EVENTS.USER_MESSAGE, async ({ text, attachments = [] }) => {
     if (text?.trim() === '/teach') {
       teachMode = !teachMode;
       bus.emit(EVENTS.TEACH_MODE_CHANGED, { teachMode });
@@ -65,9 +66,10 @@ export function attachAgentRunner(bus, config = {}) {
     }
 
     if (text?.trim() === '/debug') {
-      activeMode = activeMode === MODES.DEBUG ? null : MODES.DEBUG;
-      bus.emit(EVENTS.MODE_CHANGED, { activeMode });
-      const msg = activeMode === MODES.DEBUG
+      if (activeModes.has(MODES.DEBUG)) activeModes.delete(MODES.DEBUG);
+      else activeModes.add(MODES.DEBUG);
+      bus.emit(EVENTS.MODE_CHANGED, { activeModes: new Set(activeModes) });
+      const msg = activeModes.has(MODES.DEBUG)
         ? '🔍 Debug mode ON — full step visibility enabled.'
         : 'Debug mode OFF.';
       bus.emit(EVENTS.LLM_TOKEN, { token: msg });
@@ -76,9 +78,10 @@ export function attachAgentRunner(bus, config = {}) {
     }
 
     if (text?.trim() === '/plan') {
-      activeMode = activeMode === MODES.PLAN ? null : MODES.PLAN;
-      bus.emit(EVENTS.MODE_CHANGED, { activeMode });
-      const msg = activeMode === MODES.PLAN
+      if (activeModes.has(MODES.PLAN)) activeModes.delete(MODES.PLAN);
+      else activeModes.add(MODES.PLAN);
+      bus.emit(EVENTS.MODE_CHANGED, { activeModes: new Set(activeModes) });
+      const msg = activeModes.has(MODES.PLAN)
         ? '📋 Plan mode ON — responses will focus on planning and avoid mutations.'
         : 'Plan mode OFF.';
       bus.emit(EVENTS.LLM_TOKEN, { token: msg });
@@ -136,7 +139,7 @@ Keep it concise (aim for well under 100 lines). When ready, write it with create
         bus,
         config,
         task: bootstrapTask,
-        modes: { teachMode, activeMode, autoMode, acceptEdits },
+        modes: { teachMode, activeModes: new Set(activeModes), autoMode, acceptEdits, guardMode },
       });
       currentWorker = initWorker;
       try {
@@ -158,6 +161,17 @@ Keep it concise (aim for well under 100 lines). When ready, write it with create
       const msg = scanResult.found
         ? `Scanned local guidance docs. Found: ${scanResult.files.map(f => f.path).join(', ')} (${scanResult.total_chars} chars)`
         : 'Scanned local guidance docs. No guidance files found. Add DIRECTION.md or README.md to your workspace root.';
+      bus.emit(EVENTS.LLM_TOKEN, { token: msg });
+      bus.emit(EVENTS.LLM_DONE, {});
+      return;
+    }
+
+    if (text?.trim() === '/guard') {
+      guardMode = !guardMode;
+      bus.emit(EVENTS.GUARD_MODE_CHANGED, { guardMode });
+      const msg = guardMode
+        ? '🛡 Guard mode ON — supervisor will review agent actions in real time.'
+        : 'Guard mode OFF — supervisor disabled.';
       bus.emit(EVENTS.LLM_TOKEN, { token: msg });
       bus.emit(EVENTS.LLM_DONE, {});
       return;
@@ -215,7 +229,8 @@ Keep it concise (aim for well under 100 lines). When ready, write it with create
       bus,
       config,
       task: text,
-      modes: { teachMode, activeMode, autoMode, acceptEdits },
+      attachments,
+      modes: { teachMode, activeModes: new Set(activeModes), autoMode, acceptEdits, guardMode },
     });
     currentWorker = worker;
     try {

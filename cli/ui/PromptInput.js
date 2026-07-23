@@ -37,7 +37,7 @@ export function detectTrigger(value, cursor) {
   return { type: null, query: '', tokenStart: cursor, tokenEnd: cursor };
 }
 
-export function PromptInput({ value, onChange, onSubmit, onClear, placeholder, pendingConfirmation, onConfirm, agentStatus, onCancel, workspaceDir }) {
+export function PromptInput({ value, onChange, onSubmit, onClear, onPaste, placeholder, pendingConfirmation, onConfirm, agentStatus, onCancel, workspaceDir }) {
   const [cursor, setCursor] = useState(value.length);
   const [menuIndex, setMenuIndex] = useState(0);
   const [menuDismissed, setMenuDismissed] = useState(false);
@@ -157,6 +157,10 @@ export function PromptInput({ value, onChange, onSubmit, onClear, placeholder, p
     }
     if (key.ctrl && input === 'l') {
       if (typeof onClear === 'function') onClear();
+      return;
+    }
+    if (key.ctrl && input === 'v') {
+      if (typeof onPaste === 'function') onPaste();
       return;
     }
     if (key.leftArrow) {

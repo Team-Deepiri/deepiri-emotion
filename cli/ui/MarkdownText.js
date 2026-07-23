@@ -51,12 +51,13 @@ export function MarkdownText({ content }) {
         i++;
       }
       i++;
+      const codeWidth = Math.max(20, (process.stdout.columns || 80) - 6);
       elements.push(
         React.createElement(
           Box,
-          { key: k++, borderStyle: 'single', borderColor: 'gray', paddingX: 1 },
+          { key: k++, borderStyle: 'single', borderColor: 'gray', paddingX: 1, flexShrink: 1, width: codeWidth },
           ...codeLines.map((cl, ci) =>
-            React.createElement(Text, { key: ci, color: 'green' }, cl)
+            React.createElement(Text, { key: ci, color: 'green', wrap: 'wrap' }, cl)
           )
         )
       );
@@ -65,7 +66,7 @@ export function MarkdownText({ content }) {
 
     if (line.startsWith('# ')) {
       elements.push(
-        React.createElement(Text, { key: k++, bold: true, color: 'cyan', underline: true }, line.slice(2))
+        React.createElement(Text, { key: k++, bold: true, color: 'cyan', underline: true, wrap: 'wrap' }, line.slice(2))
       );
       i++;
       continue;
@@ -73,7 +74,7 @@ export function MarkdownText({ content }) {
 
     if (line.startsWith('## ')) {
       elements.push(
-        React.createElement(Text, { key: k++, bold: true, color: 'cyan' }, line.slice(3))
+        React.createElement(Text, { key: k++, bold: true, color: 'cyan', wrap: 'wrap' }, line.slice(3))
       );
       i++;
       continue;
@@ -81,7 +82,7 @@ export function MarkdownText({ content }) {
 
     if (/^[*-] /.test(line)) {
       elements.push(
-        React.createElement(Text, { key: k++ }, '• ', ...renderInlineChildren(line.slice(2)))
+        React.createElement(Text, { key: k++, wrap: 'wrap' }, '• ', ...renderInlineChildren(line.slice(2)))
       );
       i++;
       continue;
@@ -93,9 +94,10 @@ export function MarkdownText({ content }) {
       continue;
     }
 
-    elements.push(React.createElement(Text, { key: k++ }, ...renderInlineChildren(line)));
+    elements.push(React.createElement(Text, { key: k++, wrap: 'wrap' }, ...renderInlineChildren(line)));
     i++;
   }
 
-  return React.createElement(Box, { flexDirection: 'column' }, ...elements);
+  const outerWidth = Math.max(20, (process.stdout.columns || 80) - 4);
+  return React.createElement(Box, { flexDirection: 'column', flexShrink: 1, width: outerWidth }, ...elements);
 }
