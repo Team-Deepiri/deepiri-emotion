@@ -109,15 +109,21 @@ export async function getOllamaRuntimeInfo(baseUrl, modelName) {
 
 /**
  * Choose an Ollama num_ctx that fits the prompt (+ reserve) without jumping
- * straight to the model's theoretical max (VRAM blowups).
+ * straight to the model's theoretical max (VRAM blowups). `minNumCtx` sets a
+ * floor for hardware that can comfortably hold more than the smallest rung
+ * that would technically fit — otherwise the ladder always picks the
+ * cheapest sufficient step, which reads as "stuck low" on beefier setups.
  */
-export function chooseNumCtx(promptTokens, explicitNumCtx) {
+export function chooseNumCtx(promptTokens, explicitNumCtx, minNumCtx) {
   if (Number.isFinite(explicitNumCtx) && explicitNumCtx > 0) return explicitNumCtx;
   const need = Math.max(0, promptTokens) + RESERVE_OUTPUT_TOKENS;
   for (const step of NUM_CTX_LADDER) {
-    if (step >= need) return step;
+    if (step >= need) {
+      return Number.isFinite(minNumCtx) && minNumCtx > step ? minNumCtx : step;
+    }
   }
-  return NUM_CTX_LADDER[NUM_CTX_LADDER.length - 1];
+  const max = NUM_CTX_LADDER[NUM_CTX_LADDER.length - 1];
+  return Number.isFinite(minNumCtx) && minNumCtx > max ? minNumCtx : max;
 }
 
 function parseContextError(body) {
@@ -145,10 +151,11 @@ function parseContextError(body) {
 export class OllamaProvider extends Provider {
   static providerName = 'ollama';
 
-  constructor({ baseUrl, model } = {}) {
+  constructor({ baseUrl, model, minNumCtx } = {}) {
     super();
     this.baseUrl = trimSlash(baseUrl);
     this.model = model || DEFAULT_MODEL;
+    this.minNumCtx = Number.isFinite(minNumCtx) && minNumCtx > 0 ? minNumCtx : null;
   }
 
   /** Cheap probe: GET the root and see if Ollama answers within ~1s. */
@@ -194,7 +201,7 @@ export class OllamaProvider extends Provider {
     const userOptions = (opts.ollamaOptions && typeof opts.ollamaOptions === 'object')
       ? { ...opts.ollamaOptions }
       : {};
-    const numCtx = chooseNumCtx(promptTokens, userOptions.num_ctx);
+    const numCtx = chooseNumCtx(promptTokens, userOptions.num_ctx, this.minNumCtx);
     userOptions.num_ctx = numCtx;
 
     const runtime = await getOllamaRuntimeInfo(this.baseUrl, model);
@@ -269,7 +276,7 @@ export class OllamaProvider extends Provider {
     const emitProgress = (phase, extra = {}) => {
       const now = Date.now();
       if (phase === 'generating' || phase === 'reasoning') {
-        if (now - lastProgressAt < 200 && !extra.force) return;
+        if (now - lastProgressAt < 300 && !extra.force) return;
       }
       lastProgressAt = now;
       const elapsed = Math.max(0.001, (now - startedAt) / 1000);

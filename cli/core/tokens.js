@@ -11,7 +11,7 @@ export function estimateTokens(text = '') {
 }
 
 export function contextWindowFor(config = {}) {
-  return config.contextWindow || config.ollamaNumCtx || DEFAULT_CONTEXT_LIMIT;
+  return config.contextWindow || config.ollamaMinNumCtx || DEFAULT_CONTEXT_LIMIT;
 }
 
 /** Compact display: 5054 → "5.1k", 76 → "76". */

@@ -1,5 +1,5 @@
 import React, { memo } from 'react';
-import { Box, Text } from 'ink';
+import { Box, Text, Static } from 'ink';
 
 function UserTurn({ content }) {
   return (
@@ -21,26 +21,36 @@ function EmotionTurn({ children }) {
   );
 }
 
-function MessageListImpl({ messages, streamingMessage }) {
+function CompletedMessage({ message: m }) {
+  if (m.role === 'system') {
+    return (
+      <Box marginLeft={2} marginBottom={1} flexShrink={1}>
+        <Text dimColor>{m.content}</Text>
+      </Box>
+    );
+  }
+  if (m.role === 'user') {
+    return (
+      <Box marginBottom={1} flexShrink={1}>
+        <UserTurn content={m.content} />
+      </Box>
+    );
+  }
   return (
-    <Box flexDirection="column" gap={1} paddingY={1} flexShrink={1}>
-      {messages.map((m, i) => {
-        if (m.role === 'system') {
-          return (
-            <Box key={i} marginLeft={2} flexShrink={1}>
-              <Text dimColor>{m.content}</Text>
-            </Box>
-          );
-        }
-        if (m.role === 'user') {
-          return <UserTurn key={i} content={m.content} />;
-        }
-        return (
-          <EmotionTurn key={i}>
-            <Text wrap="wrap">{m.content}</Text>
-          </EmotionTurn>
-        );
-      })}
+    <Box marginBottom={1} flexShrink={1}>
+      <EmotionTurn>
+        <Text wrap="wrap">{m.content}</Text>
+      </EmotionTurn>
+    </Box>
+  );
+}
+
+function MessageListImpl({ messages, streamingMessage, staticEpoch = 0 }) {
+  return (
+    <Box flexDirection="column" flexShrink={1} paddingY={1}>
+      <Static key={`static-${staticEpoch}`} items={messages}>
+        {(m, i) => <CompletedMessage key={`${m.role}-${i}`} message={m} />}
+      </Static>
       {streamingMessage ? (
         <EmotionTurn>
           <Text wrap="wrap">

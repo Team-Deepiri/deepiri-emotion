@@ -13,6 +13,23 @@ describe('chooseNumCtx', () => {
     expect(chooseNumCtx(100, undefined)).toBe(4096);
     expect(chooseNumCtx(20_000, undefined)).toBe(24576);
   });
+
+  it('raises the picked step to minNumCtx when the floor is higher', () => {
+    expect(chooseNumCtx(100, undefined, 65_536)).toBe(65_536);
+    expect(chooseNumCtx(5054, undefined, 65_536)).toBe(65_536);
+  });
+
+  it('does not lower the picked step when minNumCtx is smaller', () => {
+    expect(chooseNumCtx(20_000, undefined, 4096)).toBe(24576);
+  });
+
+  it('applies minNumCtx above the ladder max too', () => {
+    expect(chooseNumCtx(1_000_000, undefined, 131_072)).toBe(131_072);
+  });
+
+  it('still honors an explicit num_ctx over minNumCtx', () => {
+    expect(chooseNumCtx(100, 8192, 65_536)).toBe(8192);
+  });
 });
 
 describe('token helpers', () => {

@@ -40,7 +40,7 @@ export const PROVIDER_MODEL_CONFIG_KEY = {
 export function configFor(name, config = {}) {
   switch (name) {
     case 'ollama':
-      return { baseUrl: config.ollamaUrl, model: config.ollamaModel };
+      return { baseUrl: config.ollamaUrl, model: config.ollamaModel, minNumCtx: config.ollamaMinNumCtx };
     case 'claude-cli':
       return { binPath: config.claudeCliPath, model: config.claudeCliModel };
     case 'cursor':

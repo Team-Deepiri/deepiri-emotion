@@ -31,6 +31,9 @@ export const DEFAULT_CONFIG = {
   aiServiceUrl: DEFAULT_AI_SERVICE,
   ollamaUrl: process.env.OLLAMA_HOST || DEFAULT_OLLAMA,
   ollamaModel: process.env.OLLAMA_MODEL || 'llama3.2', // preferred; Ollama auto-picks an installed model if missing
+  // Floor for num_ctx regardless of prompt size — raise this on hardware that can
+  // hold more than the smallest sufficient ladder rung (see chooseNumCtx in ollama.js).
+  ollamaMinNumCtx: Number(process.env.OLLAMA_MIN_NUM_CTX) || null,
   // Cloud plans — null means "not chosen yet" (first-run / /account will ask).
   // Env still wins when set.
   openaiPlan: process.env.OPENAI_PLAN || null,

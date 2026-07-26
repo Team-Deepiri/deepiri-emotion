@@ -9,34 +9,52 @@ import { SelectMenu } from './SelectMenu.js';
 import { grabClipboardImage, resolveImagePath } from '../agent/attachments.js';
 import { Welcome } from './Welcome.js';
 
-const SPINNER_INTERVAL_MS = 80;
+const SPINNER_INTERVAL_MS = 200; // slower ticks = fewer Ink redraws of the dynamic region
+const STATUS_THROTTLE_MS = 300; // don't rewrite status on every thinking char / progress ping
 
 export default function App({
   eventBus,
   workspaceDir = null,
   teachMode: initialTeachMode = false,
   initialProvider = null,
-  initialModel = null
+  initialModel = null,
+  initialContextWindow = null
 }) {
   const [state, setState] = useState({
     ...INITIAL_STATE,
     teachMode: initialTeachMode,
     activeProvider: initialProvider,
-    activeModel: initialModel
+    activeModel: initialModel,
+    tokenUsage: {
+      ...INITIAL_STATE.tokenUsage,
+      limit: initialContextWindow || INITIAL_STATE.tokenUsage.limit
+    }
   });
   // Keep spinner out of the main chat state — otherwise every frame re-renders
   // the whole transcript and Ink flashes (especially on WSL once history grows).
   const [spinnerFrame, setSpinnerFrame] = useState(0);
+  // Bumped on /clear so Ink <Static> remounts (Static output is permanent otherwise).
+  const [staticEpoch, setStaticEpoch] = useState(0);
   const [inputValue, setInputValue] = useState('');
   const [pendingAttachments, setPendingAttachments] = useState([]);
   const turnIdRef = useRef(null);
   const agentStatusRef = useRef(state.agentStatus);
   const tokenBufferRef = useRef('');
   const tokenFlushTimerRef = useRef(null);
+  const lastStatusWriteRef = useRef(0);
 
   const handleClear = useCallback(() => {
-    setState({ ...INITIAL_STATE });
+    setState({
+      ...INITIAL_STATE,
+      activeProvider: initialProvider,
+      activeModel: initialModel,
+      tokenUsage: {
+        ...INITIAL_STATE.tokenUsage,
+        limit: initialContextWindow || INITIAL_STATE.tokenUsage.limit
+      }
+    });
     setInputValue('');
+    setStaticEpoch((n) => n + 1);
   }, []);
 
   useEffect(() => {
@@ -110,7 +128,19 @@ export default function App({
 
     const onAgentStatus = ({ status, message }) => {
       agentStatusRef.current = status;
-      setState((s) => ({ ...s, agentStatus: status, statusMessage: message || '' }));
+      const now = Date.now();
+      const nextMsg = message || '';
+      // Char-count "Thinking… (N chars)" spam was rewriting the dynamic region
+      // every few tokens — throttle those; always apply real status transitions.
+      setState((s) => {
+        const statusChanged = s.agentStatus !== status;
+        const isNoisy = /^Thinking|^Reasoning|^Generating|^Calling model|^Waiting on ollama/i.test(nextMsg);
+        if (!statusChanged && isNoisy && now - lastStatusWriteRef.current < STATUS_THROTTLE_MS) {
+          return s;
+        }
+        lastStatusWriteRef.current = now;
+        return { ...s, agentStatus: status, statusMessage: nextMsg };
+      });
     };
 
     const onAgentStep = (step) => {
@@ -238,10 +268,21 @@ export default function App({
     };
 
     const onLlmProgress = (payload) => {
+      const now = Date.now();
+      const phase = payload?.phase;
+      const noisy = phase === 'reasoning' || phase === 'generating' || phase === 'waiting';
+      if (noisy && now - lastStatusWriteRef.current < STATUS_THROTTLE_MS && phase !== 'error') {
+        // Still track busy state for the spinner without rewriting the footer line.
+        if (phase === 'generating') agentStatusRef.current = 'responding';
+        else if (phase === 'reasoning' || phase === 'waiting' || phase === 'request') {
+          agentStatusRef.current = 'thinking';
+        }
+        return;
+      }
+      lastStatusWriteRef.current = now;
       setState((s) => ({
         ...s,
-        llmProgress: payload?.phase === 'done' || payload?.phase === 'error' ? payload : payload,
-        // Keep the busy line in sync with real provider activity (reasoning models).
+        llmProgress: payload?.phase === 'done' ? null : payload,
         statusMessage: payload?.message && payload.phase !== 'done'
           ? payload.message
           : s.statusMessage,
@@ -478,7 +519,8 @@ export default function App({
       streamingMessage: state.streamingMessage,
       liveSteps: state.steps,
       livePlan: state.plan,
-      activeModes: state.activeModes
+      activeModes: state.activeModes,
+      staticEpoch,
     }),
     ...(state.activeTool
       ? [React.createElement(Text, { key: 'activeTool', dimColor: true }, state.activeTool.label)]

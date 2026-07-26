@@ -305,60 +305,9 @@ export class AgentWorker {
           - do NOT guess
 
         WHEN USING A TOOL:
-        Output ONLY valid JSON.
-        Do not include explanations, markdown, comments, or extra text.
-
-        Valid tool call examples:
-        {
-          "tool": "read_file",
-          "args": { "filePath": "package.json" }
-        }
-
-        {
-          "tool": "search",
-          "args": { "query": "startup logic" }
-        }
-
-        {
-          "tool": "git_status",
-          "args": {}
-        }
-
-        {
-          "tool": "thoughts",
-          "args": { "thought": "Plan: first read the config, then find usages, then propose a refactor." }
-        }
-
-        {
-          "tool": "memory_set",
-          "args": { "key": "user_pref_indent", "value": "tabs" }
-        }
-
-        {
-          "tool": "create_file",
-          "args": { "filePath": "scratch.txt", "content": "hello\nworld" }
-        }
-
-        {
-          "tool": "edit_file",
-          "args": { "filePath": "src/index.js", "oldString": "const x = 1;", "newString": "const x = 2;" }
-        }
-
-        {
-          "tool": "run_command",
-          "args": { "command": "npm test" }
-        }
-
-        {
-          "tool": "delegate",
-          "args": {
-            "prompt": "Explain the tradeoffs of X vs Y in this codebase",
-            "tasks": [
-              { "provider": "ollama", "model": "gemma2:9b" },
-              { "provider": "anthropic", "model": "claude-sonnet-5" }
-            ]
-          }
-        }
+        Output ONLY valid JSON matching { "tool": "<name>", "args": {...} } using the
+        arg names listed above for that tool — no markdown, comments, or extra text.
+        Example: {"tool": "read_file", "args": {"filePath": "package.json"}}
 
         FINAL ANSWER RULES:
         When you have enough information, answer with:
@@ -454,32 +403,15 @@ export class AgentWorker {
             - do not start with a paragraph summary
             - do NOT use multi-line ASCII art, wide tables, or box-drawing diagrams
           - If intent is "file_overview":
-            - explain the file's role
-            - include "What matters"
-            - end with a short mental model
+            - start with 1-2 plain-English sentences: what role does this file play in the system?
+            - then a "What matters" section, 3-5 bullets — each explains WHY the detail
+              matters (using concrete details from the file: script names, entry points,
+              dependencies, config), not just naming it
+            - end with a one-sentence mental model tying the pieces together
+            - base any claim about the app's type/purpose on explicit evidence in the
+              file, not a guess; prefer insight over completeness
           - If intent is "find_specific":
             - answer directly in 1-3 sentences
-
-        - For overview or explain answers, use this structure:
-          - Start with a plain-English summary of what this file does in this project.
-          - Then include a short "What matters" section with 3-5 bullets.
-          - Each bullet must explain why the detail matters, not just name it.
-          - End with a short "Mental model" sentence that connects the pieces together.
-          - Do not give generic explanations that could apply to any project.
-          - Do not just list fields, imports, dependencies, or sections.
-        - Start overview/explain answers with 1-2 plain-English sentences answering:
-          "What role does this file play in the system?"
-        - Use concrete details from the file, such as:
-          - actual script names
-          - entry points
-          - key dependencies
-          - important configuration
-          - referenced files
-        - Explain what those details do in this project.
-        - Prefer insight over completeness.
-        - Keep answers concise unless the user asks for depth.
-        - When identifying what kind of application this is, base it on explicit signals from the file (e.g., presence of Electron, main entry file, scripts).
-        - Do not guess or infer the type of application without referencing specific evidence.
 
         CODEBASE GUIDANCE:
         - For startup or entrypoint questions, inspect package.json and the target entry file.
