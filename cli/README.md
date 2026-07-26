@@ -36,6 +36,23 @@ npm run cli:dev
 
 **Must be run in an interactive terminal** (real TTY). Piping or running under CI will show “Raw mode is not supported” because Ink needs keyboard input. Use `-p` / `--print` for headless/non-TTY runs.
 
+## Slash commands
+
+Type `/` in the prompt for autocomplete. Highlights:
+
+| Command | What it does |
+| --- | --- |
+| `/models` | **Interactive** model menu (↑↓ Enter). Use installed models, install from catalog, switch provider. |
+| `/account` | Link cloud accounts: opens provider website, paste API key, pick plan. Also runs on first launch. |
+| `/provider` | Interactive provider switch (or `/provider ollama`). |
+| `/skills` | Interactive skill browser. |
+| `/status` | cwd + provider/model + saved plans. |
+| `/help` | Full command list. |
+
+Plans are stored in `~/.config/deepiri-emotion/cli.json` (not env-only). Env still overrides when set (`OPENAI_PLAN`, etc.).
+
+Power-user shortcuts still work: `/models use <name>`, `/models pull <name>`.
+
 ## Architecture
 
 - **Event bus** (`core/eventBus.js`) – central pub/sub for `USER_MESSAGE`, `LLM_TOKEN`, `AGENT_STATUS`, `AGENT_STEP`, `SPINNER_TICK`, etc.
