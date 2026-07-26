@@ -113,8 +113,7 @@
           ]
         }
       ],
-      "icon": "assets/icon.ico",
-      "publisherName": "Deepiri"
+      "icon": "assets/icon.ico"
     },
     "nsis": {
       "oneClick": false,

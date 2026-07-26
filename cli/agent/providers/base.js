@@ -19,7 +19,17 @@ export class Provider {
     return true;
   }
 
-  /** Stream a completion. Emit LLM_TOKEN on the bus per chunk. Throw on error. */
+  /**
+   * Stream a completion. Emit LLM_TOKEN on the bus per chunk. Throw on error.
+   *
+   * opts shape:
+   *   config       — CLI config object
+   *   silent       — if true, do not emit LLM_TOKEN (accumulate via onToken only)
+   *   onToken      — (token: string) => void  called per token chunk
+   *   attachments  — Array<{ path: string, mime: string, base64: string }>
+   *                  Image attachments to include in the request. Providers that
+   *                  support vision consume this; others may append a text note.
+   */
   async stream(_bus, _prompt, _opts) {
     throw new Error('Provider.stream not implemented');
   }

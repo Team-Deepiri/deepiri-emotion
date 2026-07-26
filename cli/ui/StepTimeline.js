@@ -7,7 +7,8 @@ const STEP_ICONS = {
   tool_call: '🔍',
   tool_result: '✓',
   response: '✍',
-  teach: '📖'
+  teach: '📖',
+  supervisor: '🛑',
 };
 
 const CATEGORY_LABELS = {
@@ -16,20 +17,53 @@ const CATEGORY_LABELS = {
   best_practice: 'Best Practice'
 };
 
-export function StepTimeline({ steps, activeMode }) {
+// Cap the rendered trace so a pathological, many-step turn can't flood the
+// view; keep the most recent steps and note how many were elided.
+const MAX_VISIBLE_STEPS = 15;
+
+export function StepTimeline({ steps, activeModes }) {
   if (!steps.length) return null;
 
-  const visibleSteps = activeMode === MODES.DEBUG
+  const modeSet = activeModes instanceof Set ? activeModes : new Set();
+  // Non-debug: only show meaningful tool use (tool_call/tool_result), teach, supervisor.
+  // Hide thinking (internal reasoning), response (done/status noise), provider steps.
+  // Debug: show everything including reasoning steps and provider selection.
+  const visibleSteps = modeSet.has(MODES.DEBUG)
     ? steps
-    : steps.filter((s) => s.type !== 'thinking' && s.type !== 'tool_call' && s.type !== 'tool_result');
+    : steps.filter((s) => s.type === 'tool_call' || s.type === 'tool_result' || s.type === 'teach' || s.type === 'supervisor');
 
   if (!visibleSteps.length) return null;
+
+  const hiddenCount = Math.max(0, visibleSteps.length - MAX_VISIBLE_STEPS);
+  const shownSteps = hiddenCount ? visibleSteps.slice(-MAX_VISIBLE_STEPS) : visibleSteps;
 
   return React.createElement(
     Box,
     { flexDirection: 'column', gap: 0, marginBottom: 1 },
     React.createElement(Text, { dimColor: true }, 'Steps:'),
-    ...visibleSteps.slice(-5).map((s, i) => {
+    hiddenCount
+      ? React.createElement(Text, { dimColor: true }, `  … ${hiddenCount} earlier step${hiddenCount === 1 ? '' : 's'} hidden`)
+      : null,
+    ...shownSteps.map((s, i) => {
+      if (s.type === 'supervisor') {
+        return React.createElement(
+          Box,
+          { key: `${s.id || 'step'}-${i}`, flexDirection: 'column', marginLeft: 1 },
+          React.createElement(
+            Text,
+            { color: 'red', bold: true },
+            '  🛑 Supervisor halted — ',
+            s.reason || s.message || 'action flagged for review'
+          ),
+          s.suggestion && React.createElement(
+            Text,
+            { color: 'yellow', dimColor: true },
+            '     → ',
+            String(s.suggestion).slice(0, 140)
+          )
+        );
+      }
+
       if (s.type === 'teach') {
         const label = CATEGORY_LABELS[s.category] || s.category || '';
         const explanation = s.explanation || '';

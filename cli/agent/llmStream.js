@@ -8,23 +8,21 @@
  */
 import { EVENTS } from '../core/eventBus.js';
 import { streamWithFallback } from './providers/router.js';
-
-const STUB_HINT =
-  '\n\nHello from the CLI. Set OPENAI_API_KEY, run Ollama locally, or log into Claude Code (`claude`) to get started.';
-
-function emitAsTokens(bus, text) {
-  for (const char of text || '') bus.emit(EVENTS.LLM_TOKEN, { token: char });
-}
+import { getErrorHint } from '../core/errorHints.js';
 
 export async function streamLLM(bus, prompt, opts = {}) {
   try {
     await streamWithFallback(bus, prompt, opts, opts.config || {});
   } catch (err) {
     if (err?.name === 'AbortError') throw err;
-    const friendly = err?.providerChainExhausted
-      ? `(No usable AI provider — ${err.message})${STUB_HINT}`
-      : `(${err.message})${STUB_HINT}`;
-    emitAsTokens(bus, friendly);
+    if (!opts.silent) {
+      // Only surface the error banner for visible (non-reasoning) calls.
+      bus.emit(EVENTS.AGENT_ERROR, { message: err.message, hint: getErrorHint(err.message) });
+    } else if (typeof opts.onToken === 'function') {
+      // Silent callers (reasoning loop, supervisor) get the error via onToken
+      // so the loop can incorporate it — but nothing reaches the UI stream.
+      opts.onToken(`(${err.message})`);
+    }
   }
-  bus.emit(EVENTS.LLM_DONE, {});
+  bus.emit(EVENTS.LLM_DONE, { silent: !!opts.silent });
 }

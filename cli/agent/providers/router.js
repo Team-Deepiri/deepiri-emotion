@@ -12,7 +12,7 @@ function emitProviderStep(bus, kind, message) {
   if (!bus || typeof bus.emit !== 'function') return;
   bus.emit(EVENTS.AGENT_STEP, {
     id: `provider-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    type: 'tool_call',
+    type: 'thinking',
     status: 'complete',
     message: `Provider ${kind}: ${message}`,
   });
@@ -62,6 +62,10 @@ export async function streamWithFallback(bus, prompt, opts = {}, config = {}) {
     }
 
     emitProviderStep(bus, 'using', name);
+    if (bus && typeof bus.emit === 'function') {
+      bus.emit(EVENTS.PROVIDER_SELECTED, { provider: name });
+      bus.emit(EVENTS.PROVIDER_RESOLVED, { provider: name, model: options.model || null });
+    }
     try {
       const provider = new ProviderClass(options);
       await provider.stream(bus, prompt, opts);
@@ -85,4 +89,31 @@ export async function streamWithFallback(bus, prompt, opts = {}, config = {}) {
   err.providerChainExhausted = true;
   err.attempts = errors;
   throw err;
+}
+
+/**
+ * Walk the chain the same way `streamWithFallback` does, but only as far as
+ * isAvailable/isAuthenticated — no request is sent. Used to resolve the active
+ * provider/model at CLI startup so the header/welcome screen doesn't have to
+ * wait for the first real turn.
+ */
+export async function resolveActiveProvider(config = {}) {
+  const chain = Array.isArray(config.providerChain) && config.providerChain.length
+    ? config.providerChain
+    : DEFAULT_CHAIN;
+
+  for (const name of chain) {
+    const ProviderClass = getProviderClass(name);
+    if (!ProviderClass) continue;
+
+    const options = configFor(name, config);
+    try {
+      if (!(await ProviderClass.isAvailable(options))) continue;
+      if (!(await ProviderClass.isAuthenticated(options))) continue;
+    } catch {
+      continue;
+    }
+    return { provider: name, model: options.model || null };
+  }
+  return null;
 }
