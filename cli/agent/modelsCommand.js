@@ -9,7 +9,7 @@ import { listOllamaModels, modelMatches } from './providers/ollama.js';
 import { rankOllamaCatalog, OLLAMA_CATALOG } from '../core/ollamaCatalog.js';
 import { getCloudCatalog, listCloudPlanNames } from '../core/cloudModels.js';
 import { EVENTS } from '../core/eventBus.js';
-import { DEFAULT_PROVIDER_CHAIN, saveUserConfig, saveProjectConfig } from '../core/config.js';
+import { DEFAULT_PROVIDER_CHAIN, saveUserConfig } from '../core/config.js';
 import { requestSelect, requestTextInput, openBrowser } from '../core/select.js';
 
 function trimSlash(url) {
@@ -112,7 +112,7 @@ async function activateModel(bus, config, provider, model) {
               : provider === 'cursor'
                 ? 'cursorModel'
                 : null;
-      if (key) await saveProjectConfig(config, { [key]: model });
+      if (key) await saveUserConfig(config, { [key]: model });
     } catch {
       /* session-only ok */
     }

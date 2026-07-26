@@ -139,25 +139,6 @@ export async function saveUserConfig(config, partial) {
   return path;
 }
 
-/**
- * Merge keys into cwd `.emotion-cli.json` (project-local prefs like model).
- */
-export async function saveProjectConfig(config, partial, cwd = process.cwd()) {
-  const path = projectConfigPath(cwd);
-  let existing = {};
-  if (existsSync(path)) {
-    try {
-      existing = JSON.parse(await readFile(path, 'utf-8'));
-    } catch {
-      existing = {};
-    }
-  }
-  const next = { ...existing, ...partial };
-  await writeFile(path, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
-  Object.assign(config, partial);
-  return path;
-}
-
 /** True when we should run the first-run account/plan wizard. */
 export function needsOnboarding(config = {}) {
   if (config.onboardingComplete) return false;
