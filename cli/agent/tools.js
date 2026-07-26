@@ -171,6 +171,45 @@ function tryValidateJson(str) {
   }
 }
 
+/**
+ * Find a `{"tool": ...}` object embedded in prose and return its exact
+ * substring, respecting brace nesting and quoted strings. A regex with a
+ * non-greedy `\}` (the previous approach) stops at the FIRST closing brace,
+ * which truncates any tool call whose args is itself an object (create_file,
+ * write_file, edit_file, delegate — i.e. most mutating tools) before the
+ * real closing brace, so it never parses as valid JSON.
+ */
+function extractEmbeddedToolJson(raw) {
+  const start = raw.search(/\{\s*"tool"\s*:/);
+  if (start === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < raw.length; i++) {
+    const ch = raw[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) return raw.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
 export function parseToolIntent(text) {
   // Strip thinking/reasoning blocks emitted by Qwen3, DeepSeek-R1, etc.
   let raw = (text || '').trim().replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
@@ -187,9 +226,9 @@ export function parseToolIntent(text) {
   }
 
   // 3. Bare JSON object containing a "tool" key embedded in prose
-  const jsonMatch = /(\{[^{}]*"tool"\s*:[\s\S]*?\})/m.exec(raw);
-  if (jsonMatch) {
-    const embedded = tryValidateJson(jsonMatch[1]);
+  const embeddedRaw = extractEmbeddedToolJson(raw);
+  if (embeddedRaw) {
+    const embedded = tryValidateJson(embeddedRaw);
     if (embedded) return embedded;
   }
 

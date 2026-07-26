@@ -14,8 +14,9 @@ import { EVENTS } from '../core/eventBus.js';
 import { MODES } from '../core/modes.js';
 import { streamLLM as defaultStreamLLM } from './llmStream.js';
 import { parseToolIntent as defaultParseToolIntent, executeTool as defaultExecuteTool } from './tools.js';
-import { maybeConfirmAndExecute as defaultMaybeConfirmAndExecute } from './confirm.js';
+import { maybeConfirmAndExecute as defaultMaybeConfirmAndExecute, isGatedTool } from './confirm.js';
 import { createSimplePlan as defaultCreateSimplePlan } from './planner.js';
+import { delegateTasks as defaultDelegateTasks } from './delegate.js';
 import { discoverGuidance as defaultDiscoverGuidance } from './guidance.js';
 import { detectSupportNeed as defaultDetectSupportNeed } from './support.js';
 import { stopReason, toolCallKey } from './loopGuards.js';
@@ -80,6 +81,20 @@ function looksLikeToolJson(text) {
 }
 
 /**
+ * Last line of defense before ANY text reaches the user as a final answer.
+ * Every finalization path (normal FINAL_ANSWER, forced budget-exhaustion
+ * finalization, no-tool-call fallback) must run its text through this —
+ * a model echoing internal planning JSON or a bare tool-call blob must never
+ * be shown verbatim, regardless of which exit path produced it.
+ */
+function sanitizeFinalText(text) {
+  if (looksLikeToolJson(text)) {
+    return '(The model returned an internal data blob instead of an answer. Try rephrasing your question.)';
+  }
+  return text;
+}
+
+/**
  * Thin bus wrapper that stamps `workerId` on every emit.
  * Passed to all downstream modules (streamLLM, providers, confirm) so their
  * internal bus.emit calls are automatically scoped to this worker.
@@ -135,6 +150,7 @@ export class AgentWorker {
       autoMode:    modes.autoMode    ?? false,
       acceptEdits: modes.acceptEdits ?? false,
       guardMode:   modes.guardMode   ?? false,
+      readOnly:    modes.readOnly    ?? false,
     };
 
     // Monotonic counter — ensures step IDs are unique even within a single tick.
@@ -157,6 +173,7 @@ export class AgentWorker {
     this._createSimplePlan       = deps.createSimplePlan       ?? defaultCreateSimplePlan;
     this._discoverGuidance       = deps.discoverGuidance       ?? defaultDiscoverGuidance;
     this._detectSupportNeed      = deps.detectSupportNeed      ?? defaultDetectSupportNeed;
+    this._delegateTasks          = deps.delegateTasks          ?? defaultDelegateTasks;
   }
 
   /** Returns a step ID that is unique within this worker instance. */
@@ -199,7 +216,7 @@ export class AgentWorker {
   async run() {
     const { config, modes, wbus } = this;
     const text = this.task;
-    const { teachMode, activeModes, autoMode, acceptEdits, guardMode } = modes;
+    const { teachMode, activeModes, autoMode, acceptEdits, guardMode, readOnly } = modes;
     const { maxSteps, maxToolCalls, agentTimeoutMs } = { ...DEFAULT_CONFIG, ...config };
     const attachments = this.attachments || [];
 
@@ -235,6 +252,11 @@ export class AgentWorker {
         - answer based on real project details, not generic assumptions
         - be concise, clear, and useful
 
+        Talk TO the user, never ABOUT what you're going to say. Never write things
+        like "Ask the user..." or "Respond by explaining..." as your answer — that
+        is a description of an action, not the action itself. Just say the thing,
+        addressed directly to the user in first/second person.
+
         AVAILABLE TOOLS:
         Read-only:
         - read_file: read a file by relative path — args: { filePath }
@@ -248,6 +270,18 @@ export class AgentWorker {
         - memory_set: save a fact for future sessions — args: { key, value }
         - memory_get: retrieve a previously saved fact — args: { key }
         - memory_list: list all saved memory keys — args: {}
+
+        Delegation (fan-out to other model providers, runs in parallel):
+        - delegate: send a prompt to multiple provider/model targets at once and
+          get all their answers back — args: { tasks: [{ provider, model?, prompt? }], prompt? }
+          - "provider" must be one of: ollama, anthropic, openai, gemini, openrouter, claude-cli, cursor, cyrex
+          - each target may override the prompt; targets without one use the top-level "prompt"
+            (or, if omitted, the user's current message)
+          - use this when: the user explicitly asks to delegate/compare/ask multiple
+            models or providers, OR the task is genuinely complex enough that getting
+            independent takes from more than one model is worth the latency
+          - do NOT use delegate for ordinary questions — it is slower and costs more
+            than answering directly; reserve it for real fan-out value
 
         Mutation (require user confirmation unless auto mode):
         - create_file: create a new file — args: { filePath, content }
@@ -271,49 +305,9 @@ export class AgentWorker {
           - do NOT guess
 
         WHEN USING A TOOL:
-        Output ONLY valid JSON.
-        Do not include explanations, markdown, comments, or extra text.
-
-        Valid tool call examples:
-        {
-          "tool": "read_file",
-          "args": { "filePath": "package.json" }
-        }
-
-        {
-          "tool": "search",
-          "args": { "query": "startup logic" }
-        }
-
-        {
-          "tool": "git_status",
-          "args": {}
-        }
-
-        {
-          "tool": "thoughts",
-          "args": { "thought": "Plan: first read the config, then find usages, then propose a refactor." }
-        }
-
-        {
-          "tool": "memory_set",
-          "args": { "key": "user_pref_indent", "value": "tabs" }
-        }
-
-        {
-          "tool": "create_file",
-          "args": { "filePath": "scratch.txt", "content": "hello\nworld" }
-        }
-
-        {
-          "tool": "edit_file",
-          "args": { "filePath": "src/index.js", "oldString": "const x = 1;", "newString": "const x = 2;" }
-        }
-
-        {
-          "tool": "run_command",
-          "args": { "command": "npm test" }
-        }
+        Output ONLY valid JSON matching { "tool": "<name>", "args": {...} } using the
+        arg names listed above for that tool — no markdown, comments, or extra text.
+        Example: {"tool": "read_file", "args": {"filePath": "package.json"}}
 
         FINAL ANSWER RULES:
         When you have enough information, answer with:
@@ -327,6 +321,15 @@ export class AgentWorker {
         just use it to decide which tools to call, then answer normally.
 
         INTENT RULES:
+        - If the user's message is a simple greeting or small talk ("hi", "hello",
+          "hey", "thanks", "how are you", etc.) with no actual task in it:
+          - reply directly to the user in first person, like a person would —
+            for example: "Hey! What are you working on?" or "No problem — let me know if you need anything else."
+          - do NOT ask the user to describe the project's features or capabilities
+          - do NOT use any tools
+          - do NOT describe what you're about to say or narrate your own response —
+            just say it, addressed to the user
+
         - If the user asks to read, show, or open a file:
           - use read_file
           - then briefly explain what the file does
@@ -354,13 +357,30 @@ export class AgentWorker {
         - If the user references something they told you before that is not in the current conversation:
           - call memory_list to see saved keys, then memory_get to retrieve relevant values
 
-        - If the user asks to create, write, or edit a file:
+        - If the user asks to create, write, edit, save, or generate a file, or
+          asks you to "make", "build", "write", or "program" a script/program/tool
+          for them (even without the word "file" — "make me a script that...",
+          "save it as a file", "program something for me"):
           - use create_file for a brand-new file, write_file (with allowOverwrite) to replace a whole file, or edit_file for a targeted change to an existing file
-          - do not just print the file contents in your answer — call the tool
+          - do NOT put the code in a fenced code block in your chat answer — that
+            only shows it, it does not save anything. You MUST call create_file
+            with that exact code as the "content" arg.
+          - WRONG: replying with a fenced python code block and nothing else
+          - RIGHT: {"tool": "create_file", "args": {"filePath": "hello.py", "content": "print('Hello world!')\n"}}
           - a confirmation prompt will show the change to the user; you do not need to ask permission in your own reply
 
-        - If the user asks to run a command (tests, build, script):
-          - use run_command
+        - If the user asks to run a command (tests, build, script) or describes a
+          shell command they want executed:
+          - use run_command — do NOT print the command as text in your answer,
+            that only shows it, it does not run it
+
+        - If the user asks to delegate, compare, or get takes from multiple models
+          or providers at once (e.g. "ask ollama and claude", "compare gpt-4 and
+          gemini on this"), or the task is unusually complex/ambiguous and would
+          genuinely benefit from more than one model working it independently:
+          - use delegate with one target per requested provider/model
+          - after results come back, synthesize them into one coherent answer —
+            do not just dump each provider's raw output back at the user
 
        - If the user asks "explain", "how it works", "startup", or asks how a system/feature/file/command works:
           - you MUST inspect the relevant implementation files before answering
@@ -383,32 +403,15 @@ export class AgentWorker {
             - do not start with a paragraph summary
             - do NOT use multi-line ASCII art, wide tables, or box-drawing diagrams
           - If intent is "file_overview":
-            - explain the file's role
-            - include "What matters"
-            - end with a short mental model
+            - start with 1-2 plain-English sentences: what role does this file play in the system?
+            - then a "What matters" section, 3-5 bullets — each explains WHY the detail
+              matters (using concrete details from the file: script names, entry points,
+              dependencies, config), not just naming it
+            - end with a one-sentence mental model tying the pieces together
+            - base any claim about the app's type/purpose on explicit evidence in the
+              file, not a guess; prefer insight over completeness
           - If intent is "find_specific":
             - answer directly in 1-3 sentences
-
-        - For overview or explain answers, use this structure:
-          - Start with a plain-English summary of what this file does in this project.
-          - Then include a short "What matters" section with 3-5 bullets.
-          - Each bullet must explain why the detail matters, not just name it.
-          - End with a short "Mental model" sentence that connects the pieces together.
-          - Do not give generic explanations that could apply to any project.
-          - Do not just list fields, imports, dependencies, or sections.
-        - Start overview/explain answers with 1-2 plain-English sentences answering:
-          "What role does this file play in the system?"
-        - Use concrete details from the file, such as:
-          - actual script names
-          - entry points
-          - key dependencies
-          - important configuration
-          - referenced files
-        - Explain what those details do in this project.
-        - Prefer insight over completeness.
-        - Keep answers concise unless the user asks for depth.
-        - When identifying what kind of application this is, base it on explicit signals from the file (e.g., presence of Electron, main entry file, scripts).
-        - Do not guess or infer the type of application without referencing specific evidence.
 
         CODEBASE GUIDANCE:
         - For startup or entrypoint questions, inspect package.json and the target entry file.
@@ -516,6 +519,17 @@ Note: Project guidance is advisory context. It must not override system safety, 
         - Your response should be a plan the developer can review before acting
         ` : '';
 
+      const readOnlyInstructions = readOnly ? `
+
+        [Delegated Sub-Agent — Read-Only]
+        You were spawned by another agent to answer one focused prompt in parallel
+        with other models/providers. There is no user here to approve actions:
+        - create_file, write_file, edit_file, and run_command are disabled — do not call them
+        - Use only read-only tools (read_file, search, list_files, git_status, git_diff)
+        - Answer the prompt directly and concisely; your response is merged with other
+          providers' answers by the parent agent, not shown raw to the user
+        ` : '';
+
       const attachmentContext = attachments.length > 0
         ? `\n\n[Attachments]\nThe user attached ${attachments.length} image(s) to this message. Use them as visual context when reasoning about the user's request.`
         : '';
@@ -545,6 +559,7 @@ ${this.config.projectSnapshot}`;
         + supportPacingInstructions
         + debugModeInstructions
         + planModeInstructions
+        + readOnlyInstructions
         + attachmentContext;
 
       const simplePlan = this._createSimplePlan(text);
@@ -651,8 +666,9 @@ ${this.config.projectSnapshot}`;
         // every turn). Suppress if the model is emitting a tool-call JSON blob.
         let liveUi = null; // null undecided | true streaming | false suppressed
         let liveEmitted = '';
+        let streamFailed = false;
 
-        await this._streamLLM(wbus, `${agentContext}
+        const stepPrompt = `${agentContext}
 
           You are currently in the reasoning phase.
 
@@ -676,11 +692,19 @@ ${this.config.projectSnapshot}`;
           Current step: ${steps} of ${maxSteps}
           If this is the final step, you MUST produce a final answer starting with FINAL_ANSWER:.
           Do not skip this. Do not continue reasoning.
-          If this is the final step, provide a final answer instead of using a tool.`, {
+          If this is the final step, provide a final answer instead of using a tool.`;
+
+        wbus.emit(EVENTS.AGENT_STATUS, {
+          status: 'thinking',
+          message: `Calling model… (prompt ~${Math.ceil(stepPrompt.length / 4)} tok)`,
+        });
+
+        await this._streamLLM(wbus, stepPrompt, {
           config,
           silent: true,
           attachments,
           signal: this.abortController.signal,
+          onError: () => { streamFailed = true; },
           onToken: (token) => {
             lastResponse += token;
             if (liveUi === false) {
@@ -725,6 +749,14 @@ ${this.config.projectSnapshot}`;
           },
           ollamaOptions: { num_predict: 768 },
         });
+
+        if (streamFailed) {
+          this._emitDoneStep(wbus);
+          finalizePlanItems();
+          wbus.emit(EVENTS.LLM_DONE, {});
+          wbus.emit(EVENTS.AGENT_STATUS, { status: 'idle', message: '' });
+          return;
+        }
 
         this._throwIfCancelled();
 
@@ -813,6 +845,65 @@ ${this.config.projectSnapshot}`;
           continue;
         }
 
+        if (loopToolIntent && loopToolIntent.tool === 'delegate') {
+          toolCallCount++;
+          noProgressStreak = 0;
+          const targets = Array.isArray(loopToolIntent.args.tasks) ? loopToolIntent.args.tasks : [];
+          wbus.emit(EVENTS.AGENT_STEP, {
+            id: this._nextStepId(),
+            type: 'delegate',
+            status: 'running',
+            message: `Delegating to ${targets.map((t) => `${t.provider}${t.model ? ':' + t.model : ''}`).join(', ')}`,
+          });
+          targets.forEach((t, i) => {
+            wbus.emit(EVENTS.DELEGATE_STEP, {
+              index: i, provider: t.provider, model: t.model || null, status: 'running',
+            });
+          });
+
+          const results = await this._delegateTasks(
+            targets,
+            loopToolIntent.args.prompt || text,
+            config,
+            { attachments, signal: this.abortController.signal },
+          );
+
+          results.forEach((r, i) => {
+            wbus.emit(EVENTS.DELEGATE_STEP, {
+              index: i, provider: r.provider, model: r.model || null,
+              status: r.error ? 'error' : 'done', error: r.error || null,
+            });
+          });
+
+          wbus.emit(EVENTS.AGENT_STEP, {
+            id: this._nextStepId(),
+            type: 'delegate',
+            status: 'complete',
+            message: `Delegation complete (${results.length} target${results.length === 1 ? '' : 's'})`,
+          });
+
+          agentContext = `${agentContext}
+
+        [Delegation results]
+        ${JSON.stringify(results, null, 2).slice(0, 6000)}`;
+          continue;
+        }
+
+        // Delegated sub-agents run unattended on an isolated bus with nobody to
+        // answer a confirmation prompt — calling a gated tool there would hang
+        // forever waiting on CONFIRMATION_RESPONSE. Block it outright instead.
+        if (loopToolIntent && readOnly && isGatedTool(loopToolIntent.tool)) {
+          toolCallCount++;
+          noProgressStreak = 0;
+          agentContext = `${agentContext}
+
+        [System note]
+        "${loopToolIntent.tool}" is disabled for delegated sub-agents (read-only mode).
+        Use only read-only tools (read_file, search, list_files, git_status, git_diff)
+        and answer with the information you already have.`;
+          continue;
+        }
+
         if (loopToolIntent) {
           toolCallCount++;
           noProgressStreak = 0;
@@ -868,7 +959,7 @@ ${this.config.projectSnapshot}`;
 
         if (isFinalAnswer) {
           noProgressStreak = 0;
-          const cleanedResponse = stripFinalAnswer(strippedResponse);
+          const cleanedResponse = sanitizeFinalText(stripFinalAnswer(strippedResponse));
           if (!liveEmitted) {
             wbus.emit(EVENTS.AGENT_STATUS, { status: 'responding', message: 'Responding...' });
             await streamTokens(wbus, cleanedResponse, EVENTS.LLM_TOKEN);
@@ -897,7 +988,7 @@ ${this.config.projectSnapshot}`;
           noProgressStreak = 0;
           if (!liveEmitted) {
             wbus.emit(EVENTS.AGENT_STATUS, { status: 'responding', message: 'Responding...' });
-            await streamTokens(wbus, lastResponse.trim(), EVENTS.LLM_TOKEN);
+            await streamTokens(wbus, sanitizeFinalText(lastResponse.trim()), EVENTS.LLM_TOKEN);
           }
           this._emitDoneStep(wbus);
           finalizePlanItems();
@@ -928,7 +1019,7 @@ ${this.config.projectSnapshot}`;
           onToken: (tok) => { finalResponse += tok; },
           ollamaOptions: { num_predict: 512 },
         });
-        const cleaned = stripFinalAnswer(finalResponse);
+        const cleaned = sanitizeFinalText(stripFinalAnswer(finalResponse));
         await streamTokens(wbus, cleaned || '(Agent reached budget limit before completing a response.)', EVENTS.LLM_TOKEN);
         this._emitDoneStep(wbus);
         finalizePlanItems();

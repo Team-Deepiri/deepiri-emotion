@@ -37,8 +37,11 @@ export const EVENTS = {
   PROVIDER_SELECTED: 'PROVIDER_SELECTED',
   PROVIDER_RESOLVED: 'PROVIDER_RESOLVED',
   TOKEN_USAGE_CHANGED: 'TOKEN_USAGE_CHANGED',
+  /** Live LLM/provider observability: prompt size, ctx, reasoning, tok/s, errors. */
+  LLM_PROGRESS: 'LLM_PROGRESS',
   TURN_STARTED: 'TURN_STARTED',
-  REWIND: 'REWIND'
+  REWIND: 'REWIND',
+  DELEGATE_STEP: 'DELEGATE_STEP'
 };
 
 export function createEventBus() {

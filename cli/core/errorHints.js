@@ -11,6 +11,8 @@ const ERROR_HINTS = [
     'Authentication failed — check your API key or run the provider\'s login command.'],
   [/rate limit|429/i,
     'Rate limited — wait a moment and try again, or switch providers.'],
+  [/exceed_context_size|exceeds the available context|n_prompt_tokens/i,
+    'Prompt is larger than the model context — Emotion will raise num_ctx / trim context. Retry, or pick a smaller model.'],
   [/ENOENT.*ollama|command not found.*ollama/i,
     'Ollama CLI not found — install it or run `ollama serve`.'],
 ];

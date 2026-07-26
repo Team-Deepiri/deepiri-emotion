@@ -9,28 +9,52 @@ import { SelectMenu } from './SelectMenu.js';
 import { grabClipboardImage, resolveImagePath } from '../agent/attachments.js';
 import { Welcome } from './Welcome.js';
 
-const SPINNER_INTERVAL_MS = 80;
+const SPINNER_INTERVAL_MS = 200; // slower ticks = fewer Ink redraws of the dynamic region
+const STATUS_THROTTLE_MS = 300; // don't rewrite status on every thinking char / progress ping
 
 export default function App({
   eventBus,
   workspaceDir = null,
   teachMode: initialTeachMode = false,
   initialProvider = null,
-  initialModel = null
+  initialModel = null,
+  initialContextWindow = null
 }) {
   const [state, setState] = useState({
     ...INITIAL_STATE,
     teachMode: initialTeachMode,
     activeProvider: initialProvider,
-    activeModel: initialModel
+    activeModel: initialModel,
+    tokenUsage: {
+      ...INITIAL_STATE.tokenUsage,
+      limit: initialContextWindow || INITIAL_STATE.tokenUsage.limit
+    }
   });
+  // Keep spinner out of the main chat state — otherwise every frame re-renders
+  // the whole transcript and Ink flashes (especially on WSL once history grows).
+  const [spinnerFrame, setSpinnerFrame] = useState(0);
+  // Bumped on /clear so Ink <Static> remounts (Static output is permanent otherwise).
+  const [staticEpoch, setStaticEpoch] = useState(0);
   const [inputValue, setInputValue] = useState('');
   const [pendingAttachments, setPendingAttachments] = useState([]);
   const turnIdRef = useRef(null);
+  const agentStatusRef = useRef(state.agentStatus);
+  const tokenBufferRef = useRef('');
+  const tokenFlushTimerRef = useRef(null);
+  const lastStatusWriteRef = useRef(0);
 
   const handleClear = useCallback(() => {
-    setState({ ...INITIAL_STATE });
+    setState({
+      ...INITIAL_STATE,
+      activeProvider: initialProvider,
+      activeModel: initialModel,
+      tokenUsage: {
+        ...INITIAL_STATE.tokenUsage,
+        limit: initialContextWindow || INITIAL_STATE.tokenUsage.limit
+      }
+    });
     setInputValue('');
+    setStaticEpoch((n) => n + 1);
   }, []);
 
   useEffect(() => {
@@ -38,6 +62,11 @@ export default function App({
       // /clear resets via the CLEAR event (see onClear below) — it shouldn't
       // also show up as a chat turn in the transcript it's about to wipe.
       if (text?.trim() === '/clear') return;
+      if (tokenFlushTimerRef.current != null) {
+        clearTimeout(tokenFlushTimerRef.current);
+        tokenFlushTimerRef.current = null;
+      }
+      tokenBufferRef.current = '';
       setState((s) => ({
         ...s,
         messages: [...s.messages, { role: 'user', content: text, turnId: turnIdRef.current }],
@@ -47,15 +76,25 @@ export default function App({
         error: null,
         errorHint: null,
         activeTool: null,
-        queuedMessage: null
+        queuedMessage: null,
+        llmProgress: null,
       }));
     };
 
     const onLlmToken = ({ token }) => {
-      setState((s) => ({
-        ...s,
-        streamingMessage: s.streamingMessage + token
-      }));
+      tokenBufferRef.current += token;
+      if (tokenFlushTimerRef.current != null) return;
+      // Batch tokens (~20fps) so Ink isn't clear+redrawing on every character.
+      tokenFlushTimerRef.current = setTimeout(() => {
+        tokenFlushTimerRef.current = null;
+        const chunk = tokenBufferRef.current;
+        tokenBufferRef.current = '';
+        if (!chunk) return;
+        setState((s) => ({
+          ...s,
+          streamingMessage: s.streamingMessage + chunk
+        }));
+      }, 50);
     };
 
     const onLlmDone = ({ silent } = {}) => {
@@ -63,8 +102,15 @@ export default function App({
       // streamLLM calls that also emit LLM_DONE — those aren't the real end
       // of the turn, so skip finalizing the message/step trace for them.
       if (silent) return;
+      if (tokenFlushTimerRef.current != null) {
+        clearTimeout(tokenFlushTimerRef.current);
+        tokenFlushTimerRef.current = null;
+      }
+      const pending = tokenBufferRef.current;
+      tokenBufferRef.current = '';
       setState((s) => {
-        const full = s.streamingMessage;
+        const full = s.streamingMessage + pending;
+        agentStatusRef.current = 'idle';
         return {
           ...s,
           messages: full
@@ -74,13 +120,27 @@ export default function App({
           steps: [],
           plan: [],
           agentStatus: 'idle',
-          statusMessage: ''
+          statusMessage: '',
+          llmProgress: s.llmProgress?.phase === 'error' ? s.llmProgress : null,
         };
       });
     };
 
     const onAgentStatus = ({ status, message }) => {
-      setState((s) => ({ ...s, agentStatus: status, statusMessage: message || '' }));
+      agentStatusRef.current = status;
+      const now = Date.now();
+      const nextMsg = message || '';
+      // Char-count "Thinking… (N chars)" spam was rewriting the dynamic region
+      // every few tokens — throttle those; always apply real status transitions.
+      setState((s) => {
+        const statusChanged = s.agentStatus !== status;
+        const isNoisy = /^Thinking|^Reasoning|^Generating|^Calling model|^Waiting on ollama/i.test(nextMsg);
+        if (!statusChanged && isNoisy && now - lastStatusWriteRef.current < STATUS_THROTTLE_MS) {
+          return s;
+        }
+        lastStatusWriteRef.current = now;
+        return { ...s, agentStatus: status, statusMessage: nextMsg };
+      });
     };
 
     const onAgentStep = (step) => {
@@ -91,10 +151,10 @@ export default function App({
     };
 
     const onSpinnerTick = () => {
-      setState((s) => ({
-        ...s,
-        spinnerFrame: (s.spinnerFrame + 1) % NUM_SPINNER_FRAMES
-      }));
+      // Only animate while the agent is working — idle ticks were redrawing
+      // the full message list ~12×/sec and made the TUI flash.
+      if (agentStatusRef.current === 'idle') return;
+      setSpinnerFrame((f) => (f + 1) % NUM_SPINNER_FRAMES);
     };
 
     const onAgentError = ({ message, hint }) => {
@@ -110,6 +170,7 @@ export default function App({
     };
 
     const onAgentCancelled = () => {
+      agentStatusRef.current = 'idle';
       setState((s) => ({
         ...s,
         messages: [...s.messages, { role: 'system', content: 'Cancelled.' }],
@@ -206,6 +267,42 @@ export default function App({
       setState((s) => ({ ...s, tokenUsage: { used: used ?? 0, limit: limit ?? s.tokenUsage.limit } }));
     };
 
+    const onLlmProgress = (payload) => {
+      const now = Date.now();
+      const phase = payload?.phase;
+      const noisy = phase === 'reasoning' || phase === 'generating' || phase === 'waiting';
+      if (noisy && now - lastStatusWriteRef.current < STATUS_THROTTLE_MS && phase !== 'error') {
+        // Still track busy state for the spinner without rewriting the footer line.
+        if (phase === 'generating') agentStatusRef.current = 'responding';
+        else if (phase === 'reasoning' || phase === 'waiting' || phase === 'request') {
+          agentStatusRef.current = 'thinking';
+        }
+        return;
+      }
+      lastStatusWriteRef.current = now;
+      setState((s) => ({
+        ...s,
+        llmProgress: payload?.phase === 'done' ? null : payload,
+        statusMessage: payload?.message && payload.phase !== 'done'
+          ? payload.message
+          : s.statusMessage,
+        agentStatus: payload?.phase === 'error'
+          ? 'idle'
+          : payload?.phase === 'reasoning' || payload?.phase === 'waiting' || payload?.phase === 'request'
+            ? 'thinking'
+            : payload?.phase === 'generating'
+              ? 'responding'
+              : s.agentStatus,
+      }));
+      if (payload?.phase === 'error') {
+        agentStatusRef.current = 'idle';
+      } else if (payload?.phase === 'generating') {
+        agentStatusRef.current = 'responding';
+      } else if (payload?.phase === 'reasoning' || payload?.phase === 'waiting' || payload?.phase === 'request') {
+        agentStatusRef.current = 'thinking';
+      }
+    };
+
     const onTurnStarted = ({ turnId }) => {
       turnIdRef.current = turnId;
     };
@@ -248,6 +345,7 @@ export default function App({
     eventBus.on(EVENTS.GUARD_MODE_CHANGED, onGuardModeChanged);
     eventBus.on(EVENTS.PROVIDER_SELECTED, onProviderSelected);
     eventBus.on(EVENTS.TOKEN_USAGE_CHANGED, onTokenUsage);
+    eventBus.on(EVENTS.LLM_PROGRESS, onLlmProgress);
     eventBus.on(EVENTS.TURN_STARTED, onTurnStarted);
     eventBus.on(EVENTS.REWIND, onRewind);
 
@@ -284,9 +382,15 @@ export default function App({
       eventBus.off(EVENTS.GUARD_MODE_CHANGED, onGuardModeChanged);
       eventBus.off(EVENTS.PROVIDER_SELECTED, onProviderSelected);
       eventBus.off(EVENTS.TOKEN_USAGE_CHANGED, onTokenUsage);
+      eventBus.off(EVENTS.LLM_PROGRESS, onLlmProgress);
       eventBus.off(EVENTS.TURN_STARTED, onTurnStarted);
       eventBus.off(EVENTS.REWIND, onRewind);
       clearInterval(spinnerTimer);
+      if (tokenFlushTimerRef.current != null) {
+        clearTimeout(tokenFlushTimerRef.current);
+        tokenFlushTimerRef.current = null;
+      }
+      tokenBufferRef.current = '';
     };
   }, [eventBus, handleClear]);
 
@@ -415,7 +519,8 @@ export default function App({
       streamingMessage: state.streamingMessage,
       liveSteps: state.steps,
       livePlan: state.plan,
-      activeModes: state.activeModes
+      activeModes: state.activeModes,
+      staticEpoch,
     }),
     ...(state.activeTool
       ? [React.createElement(Text, { key: 'activeTool', dimColor: true }, state.activeTool.label)]
@@ -505,7 +610,7 @@ export default function App({
       key: 'footer',
       agentStatus: state.agentStatus,
       statusMessage: state.statusMessage,
-      spinnerFrame: state.spinnerFrame,
+      spinnerFrame: spinnerFrame,
       teachMode: state.teachMode,
       supportMode: state.supportMode,
       activeModes: state.activeModes,
@@ -516,7 +621,8 @@ export default function App({
       activeProvider: state.activeProvider,
       activeModel: state.activeModel,
       tokenUsage: state.tokenUsage,
-      workspaceDir: workspaceDir || process.cwd()
+      workspaceDir: workspaceDir || process.cwd(),
+      llmProgress: state.llmProgress,
     })
   );
 }

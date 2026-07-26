@@ -9,10 +9,8 @@ import chalk from 'chalk';
 
 const PURPLE = chalk.hex('#a855f7');
 const DEEP = chalk.hex('#6b21a8');
-const DEEPER = chalk.hex('#3b0764');
 const MUTED = chalk.hex('#c4b5fd');
 
-// Figlet-style block letters for EMOTION
 const LOGO_LINES = [
   '███████╗███╗   ███╗ ██████╗ ████████╗██╗ ██████╗ ███╗   ██╗',
   '██╔════╝████╗ ████║██╔═══██╗╚══██╔══╝██║██╔═══██╗████╗  ██║',
@@ -28,11 +26,6 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function colorForLine(i, pulse) {
-  const palette = pulse % 3 === 0 ? [DEEP, PURPLE] : pulse % 3 === 1 ? [PURPLE, DEEP] : [DEEPER, PURPLE];
-  return palette[i % 2];
-}
-
 function hideCursor() {
   process.stdout.write('\x1B[?25l');
 }
@@ -42,7 +35,8 @@ function showCursor() {
 }
 
 function clearScreen() {
-  process.stdout.write('\x1B[2J\x1B[H');
+  // Clear scrollback-visible region + home cursor (works better on WSL than pulse rewrites).
+  process.stdout.write('\x1B[2J\x1B[3J\x1B[H');
 }
 
 /**
@@ -52,21 +46,18 @@ function clearScreen() {
 export async function playSplash(opts = {}) {
   if (!process.stdout.isTTY) return;
 
-  const durationMs = opts.durationMs ?? 1100;
   hideCursor();
   clearScreen();
- 
 
   try {
     for (let i = 0; i < LOGO_LINES.length; i++) {
       const paint = i % 2 === 0 ? DEEP : PURPLE;
       process.stdout.write(`${paint(LOGO_LINES[i])}\n`);
-      await sleep(55);
+      await sleep(40);
     }
 
     process.stdout.write('\n');
 
-    // Tagline typewriter
     let built = '';
     for (const ch of TAGLINE) {
       built += ch;
@@ -74,24 +65,8 @@ export async function playSplash(opts = {}) {
       await sleep(22);
     }
     process.stdout.write(`\r  ${PURPLE(TAGLINE)}\n`);
-      await sleep(opts.durationMs ?? 450);
-    
-    // Brief pulse on the logo region (rewrite in place)
-    const pulses = 3;
-    const pulseDelay = Math.max(40, Math.floor((durationMs - 500) / pulses));
-    for (let p = 1; p <= pulses; p++) {
-      // Move cursor up over logo + blank + tagline
-      process.stdout.write(`\x1B[${LOGO_LINES.length + 2}A`);
-      for (let i = 0; i < LOGO_LINES.length; i++) {
-        const paint = colorForLine(i, p);
-        process.stdout.write(`\r\x1B[2K${paint(LOGO_LINES[i])}\n`);
-      }
-      process.stdout.write('\n');
-      process.stdout.write(`\r\x1B[2K  ${p % 2 === 0 ? PURPLE(TAGLINE) : MUTED(TAGLINE)}\n`);
-      await sleep(pulseDelay);
-    }
 
-    await sleep(120);
+    await sleep(opts.durationMs ?? 450);
   } finally {
     clearScreen();
     showCursor();

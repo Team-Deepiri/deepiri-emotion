@@ -15,6 +15,7 @@ import { resolve } from 'path';
 import { existsSync, statSync } from 'fs';
 import { createEventBus, EVENTS } from './core/eventBus.js';
 import { loadConfig, needsOnboarding } from './core/config.js';
+import { contextWindowFor } from './core/tokens.js';
 import { resolveActiveProvider } from './agent/providers/router.js';
 import { attachAgentRunner } from './agent/runner.js';
 import { loadProjectMemory } from './agent/projectMemory.js';
@@ -195,14 +196,13 @@ if (resolvedProvider?.provider) {
 
 await playSplash();
 
-await playSplash();
-
 render(React.createElement(App, {
   eventBus,
   workspaceDir,
   teachMode: config.teachMode ?? false,
   initialProvider: resolvedProvider?.provider ?? null,
-  initialModel: resolvedProvider?.model ?? null
+  initialModel: resolvedProvider?.model ?? null,
+  initialContextWindow: contextWindowFor(config)
 }));
 
 // First-run: interactive provider/account setup once the TUI is live.
