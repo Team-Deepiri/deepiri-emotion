@@ -366,7 +366,7 @@ export class AgentWorker {
             only shows it, it does not save anything. You MUST call create_file
             with that exact code as the "content" arg.
           - WRONG: replying with a fenced python code block and nothing else
-          - RIGHT: {"tool": "create_file", "args": {"filePath": "hello.py", "content": "print(\"Hello world!\")\n"}}
+          - RIGHT: {"tool": "create_file", "args": {"filePath": "hello.py", "content": "print('Hello world!')\n"}}
           - a confirmation prompt will show the change to the user; you do not need to ask permission in your own reply
 
         - If the user asks to run a command (tests, build, script) or describes a
