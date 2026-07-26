@@ -1,6 +1,9 @@
 /**
  * Boot splash — big purple EMOTION wordmark + "made by deepiri".
  * Runs before Ink mounts so the TUI doesn't fight the animation.
+ *
+ * Keep this simple: line reveal + typewriter, then a hard screen clear.
+ * In-place cursor rewrites leave garbage on many terminals / WSL.
  */
 import chalk from 'chalk';
 
@@ -51,11 +54,12 @@ export async function playSplash(opts = {}) {
 
   const durationMs = opts.durationMs ?? 1100;
   hideCursor();
+  clearScreen();
+ 
 
   try {
-    // Reveal logo line-by-line
     for (let i = 0; i < LOGO_LINES.length; i++) {
-      const paint = colorForLine(i, 0);
+      const paint = i % 2 === 0 ? DEEP : PURPLE;
       process.stdout.write(`${paint(LOGO_LINES[i])}\n`);
       await sleep(55);
     }
@@ -67,10 +71,11 @@ export async function playSplash(opts = {}) {
     for (const ch of TAGLINE) {
       built += ch;
       process.stdout.write(`\r  ${MUTED(built)}`);
-      await sleep(28);
+      await sleep(22);
     }
-    process.stdout.write('\n');
-
+    process.stdout.write(`\r  ${PURPLE(TAGLINE)}\n`);
+      await sleep(opts.durationMs ?? 450);
+    
     // Brief pulse on the logo region (rewrite in place)
     const pulses = 3;
     const pulseDelay = Math.max(40, Math.floor((durationMs - 500) / pulses));
