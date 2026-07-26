@@ -4,18 +4,37 @@ Interactive TUI (terminal UI) in the style of Claude CLI: event bus, state-drive
 
 ## Run
 
+One-shot install (deps if needed + `emotion` on PATH):
+
+```bash
+./install.sh
+```
+
+Then from any directory:
+
+```bash
+emotion
+emotion /path/to/project
+emotion --help
+emotion -p "summarize package.json"
+```
+
+Already have deps and only need the command:
+
+```bash
+npm run install:cli
+```
+
+Without installing globally:
+
 ```bash
 npm run cli
-# with a workspace (tools run in that directory)
 npm run cli -- /path/to/project
 # dev: auto-restart on file changes
 npm run cli:dev
-
-# or
-node cli/index.js [--help | --version] [--] [workspace-dir]
 ```
 
-**Must be run in an interactive terminal** (real TTY). Piping or running under CI will show “Raw mode is not supported” because Ink needs keyboard input.
+**Must be run in an interactive terminal** (real TTY). Piping or running under CI will show “Raw mode is not supported” because Ink needs keyboard input. Use `-p` / `--print` for headless/non-TTY runs.
 
 ## Architecture
 

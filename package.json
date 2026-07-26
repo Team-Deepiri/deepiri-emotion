@@ -4,6 +4,9 @@
   "description": "Deepiri Emotion — AI-powered desktop IDE with Cyrex AI and Helox pipelines",
   "main": "src/main.js",
   "type": "module",
+  "bin": {
+    "emotion": "./cli/index.js"
+  },
   "engines": {
     "node": ">=18.0.0"
   },
@@ -18,6 +21,8 @@
   "scripts": {
     "cli": "node cli/index.js",
     "cli:dev": "node --watch cli/index.js",
+    "install:cli": "bash scripts/install-cli.sh",
+    "uninstall:cli": "bash scripts/uninstall-cli.sh",
     "start": "electron .",
     "start:prod": "npm run build:renderer && electron .",
     "dev": "electron . --dev",
