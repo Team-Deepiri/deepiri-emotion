@@ -324,7 +324,7 @@ export default function App({
             state.activeProvider ? `  |  ${state.activeProvider}${state.activeModel ? ` / ${state.activeModel}` : ''}` : ''
           ),
           React.createElement(Text, { dimColor: true },
-            workspaceDir ? `Workspace: ${workspaceDir}` : 'Shift+Enter newline, Enter send. Ctrl+V attach image, Ctrl+L clear, Ctrl+C exit, Esc cancel.'
+            'Shift+Enter newline · Enter send · Ctrl+V image · Ctrl+L clear · Esc cancel'
           )
         ),
     ...(state.error ? [
@@ -352,20 +352,6 @@ export default function App({
     ...(state.activeTool
       ? [React.createElement(Text, { key: 'activeTool', dimColor: true }, state.activeTool.label)]
       : []),
-    React.createElement(StatusBar, {
-      agentStatus: state.agentStatus,
-      statusMessage: state.statusMessage,
-      spinnerFrame: state.spinnerFrame,
-      teachMode: state.teachMode,
-      supportMode: state.supportMode,
-      activeModes: state.activeModes,
-      autoMode: state.autoMode,
-      acceptEdits: state.acceptEdits,
-      allowedCount: state.allowedCount,
-      guardMode: state.guardMode,
-      activeProvider: state.activeProvider,
-      tokenUsage: state.tokenUsage
-    }),
     ...(pendingAttachments.length > 0 ? [
       React.createElement(Box, { key: 'attachments', marginTop: 0 },
         React.createElement(Text, { color: 'magenta' },
@@ -424,6 +410,23 @@ export default function App({
       React.createElement(Box, { key: 'queued' },
         React.createElement(Text, { color: 'yellow', bold: true }, `⏳ queued: ${state.queuedMessage}`)
       )
-    ] : [])
+    ] : []),
+    React.createElement(StatusBar, {
+      key: 'footer',
+      agentStatus: state.agentStatus,
+      statusMessage: state.statusMessage,
+      spinnerFrame: state.spinnerFrame,
+      teachMode: state.teachMode,
+      supportMode: state.supportMode,
+      activeModes: state.activeModes,
+      autoMode: state.autoMode,
+      acceptEdits: state.acceptEdits,
+      allowedCount: state.allowedCount,
+      guardMode: state.guardMode,
+      activeProvider: state.activeProvider,
+      activeModel: state.activeModel,
+      tokenUsage: state.tokenUsage,
+      workspaceDir: workspaceDir || process.cwd()
+    })
   );
 }
