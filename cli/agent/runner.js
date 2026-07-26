@@ -111,6 +111,9 @@ export function attachAgentRunner(bus, config = {}) {
     if (recording) turnBuffer += token;
   });
 
+  // Seed the footer context meter on startup (0 used / configured limit).
+  recomputeTokenUsage();
+
   bus.on(EVENTS.CANCEL_REQUESTED, () => {
     currentWorker?.cancel();
   });

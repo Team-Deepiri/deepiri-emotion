@@ -195,6 +195,8 @@ if (resolvedProvider?.provider) {
 
 await playSplash();
 
+await playSplash();
+
 render(React.createElement(App, {
   eventBus,
   workspaceDir,

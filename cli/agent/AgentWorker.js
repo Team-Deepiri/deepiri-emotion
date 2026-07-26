@@ -321,6 +321,11 @@ export class AgentWorker {
 
         Your final answer must match the user's intent.
 
+        The prompt below may include a "[Planning guidance]" JSON block. That
+        block is internal routing metadata for you to read, not something to
+        show the user. Never output it, quote it, or describe its fields —
+        just use it to decide which tools to call, then answer normally.
+
         INTENT RULES:
         - If the user asks to read, show, or open a file:
           - use read_file
@@ -872,6 +877,20 @@ ${this.config.projectSnapshot}`;
           finalizePlanItems();
           wbus.emit(EVENTS.LLM_DONE, {});
           break;
+        }
+
+        // Model returned a JSON object that isn't a recognized tool call and
+        // wasn't prefixed FINAL_ANSWER: (e.g. it echoed the internal planning
+        // metadata). Never surface raw JSON to the user — force another pass.
+        if (!loopToolIntent && looksLikeToolJson(strippedResponse)) {
+          agentContext = `${agentContext}
+
+        [System note]
+        Your last response was a raw JSON object, not a valid tool call or a
+        FINAL_ANSWER. Do not output JSON unless it is one of the documented
+        tool calls. Respond to the user in plain text starting with FINAL_ANSWER:.`;
+          noProgressStreak++;
+          continue;
         }
 
         if (lastResponse.trim()) {
