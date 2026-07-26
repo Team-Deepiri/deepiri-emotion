@@ -119,13 +119,8 @@ export class OllamaProvider extends Provider {
 
   async stream(bus, prompt, opts = {}) {
     // Prefer an already-resolved model from resolveOptions; otherwise resolve now.
-    let model = this.model;
-    try {
-      model = await resolveOllamaModel(this.baseUrl, this.model);
-      this.model = model;
-    } catch (err) {
-      throw err;
-    }
+    const model = await resolveOllamaModel(this.baseUrl, this.model);
+    this.model = model;
 
     // Ollama vision: include base64 images in the `images` field of the user message.
     // Requires a vision-capable model (e.g. llava, bakllava). Text models ignore images.
