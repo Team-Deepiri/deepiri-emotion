@@ -11,6 +11,10 @@ export const COMMANDS = [
   { name: '/guard', description: 'toggle voice-of-reason supervisor review' },
   { name: '/scan', description: 'scan workspace for guidance docs' },
   { name: '/resume', description: 'resume a previous session' },
+  { name: '/clear', description: 'reset the conversation' },
+  { name: '/compact', description: 'summarize conversation history to free up context' },
+  { name: '/rewind', description: 'list or restore a recent checkpoint (undoes a turn and its file edits)' },
+  { name: '/init', description: 'scan workspace and write starter EMOTION.md' },
   { name: '/help', description: 'show this list' },
 ];
 
