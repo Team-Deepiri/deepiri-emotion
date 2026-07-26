@@ -1,6 +1,7 @@
 # Deepiri Emotion
 
 **AI-powered desktop IDE** free to download, install, and use. Workspace, Monaco editor, AI chat, terminal, and optional Cyrex/Helox backends.
+<img width="958" height="344" alt="image" src="https://github.com/user-attachments/assets/b184734c-08be-4050-b465-44173d9a921e" />
 
 ---
 
