@@ -15,14 +15,18 @@ export async function streamLLM(bus, prompt, opts = {}) {
     await streamWithFallback(bus, prompt, opts, opts.config || {});
   } catch (err) {
     if (err?.name === 'AbortError') throw err;
-    if (!opts.silent) {
-      // Only surface the error banner for visible (non-reasoning) calls.
-      bus.emit(EVENTS.AGENT_ERROR, { message: err.message, hint: getErrorHint(err.message) });
-    } else if (typeof opts.onToken === 'function') {
-      // Silent callers (reasoning loop, supervisor) get the error via onToken
-      // so the loop can incorporate it — but nothing reaches the UI stream.
-      opts.onToken(`(${err.message})`);
+    const message = err?.message || String(err);
+    bus.emit(EVENTS.LLM_PROGRESS, {
+      phase: 'error',
+      message,
+    });
+    // Always surface real failures in the UI — previously silent agent-loop
+    // errors were stuffed into onToken and shown as a fake assistant reply.
+    bus.emit(EVENTS.AGENT_ERROR, { message, hint: getErrorHint(message) });
+    if (typeof opts.onError === 'function') {
+      opts.onError(err);
     }
+    // Do NOT call onToken with the error string (that became the chat answer).
   }
   bus.emit(EVENTS.LLM_DONE, { silent: !!opts.silent });
 }

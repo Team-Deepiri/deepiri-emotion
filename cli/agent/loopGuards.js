@@ -19,6 +19,7 @@ export const KNOWN_TOOLS = new Set([
   'memory_set',
   'memory_get',
   'memory_list',
+  'delegate',
 ]);
 
 /** Required arg keys per tool (presence check only). */
@@ -37,6 +38,7 @@ const REQUIRED_ARGS = {
   memory_set:   ['key', 'value'],
   memory_get:   ['key'],
   memory_list:  [],
+  delegate:     ['tasks'],
 };
 
 /**

@@ -98,6 +98,7 @@ export function MarkdownText({ content }) {
     i++;
   }
 
-  const outerWidth = Math.max(20, (process.stdout.columns || 80) - 4);
-  return React.createElement(Box, { flexDirection: 'column', flexShrink: 1, width: outerWidth }, ...elements);
+  // Avoid a fixed outer width — it forces Ink to relayout the whole transcript
+  // on each render and contributes to flicker on WSL.
+  return React.createElement(Box, { flexDirection: 'column', flexShrink: 1 }, ...elements);
 }

@@ -69,6 +69,7 @@ export function StatusBar({
   activeModel,
   tokenUsage,
   workspaceDir,
+  llmProgress = null,
 }) {
   const isBusy = agentStatus !== 'idle';
   const cwd = shortPath(workspaceDir || process.cwd());
@@ -123,6 +124,14 @@ export function StatusBar({
         `${formatK(used)}/${formatK(limit)}`
       )
     ),
+    llmProgress?.message
+      ? React.createElement(
+          Box,
+          { flexDirection: 'row', gap: 1 },
+          React.createElement(Text, { color: 'cyan', dimColor: llmProgress.phase === 'done' }, 'llm'),
+          React.createElement(Text, { dimColor: true }, llmProgress.message)
+        )
+      : null,
     (isBusy || statusMessage)
       ? React.createElement(
           Box,

@@ -47,7 +47,20 @@ export const DEFAULT_CONFIG = {
   claudeCliModel: process.env.CLAUDE_CLI_MODEL || undefined,
   cursorPath: process.env.CURSOR_PATH || undefined,
   cursorModel: process.env.CURSOR_MODEL || undefined,
-  cursorApiKey: process.env.CURSOR_API_KEY || process.env.CURSOR_AUTH_TOKEN || ''
+  cursorApiKey: process.env.CURSOR_API_KEY || process.env.CURSOR_AUTH_TOKEN || '',
+  // Native API keys for delegation targets (parallel fan-out to other providers).
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
+  anthropicBaseUrl: process.env.ANTHROPIC_BASE_URL || '',
+  anthropicModel: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5',
+  geminiApiKey: process.env.GEMINI_API_KEY || '',
+  geminiBaseUrl: process.env.GEMINI_BASE_URL || '',
+  geminiModel: process.env.GEMINI_MODEL || 'gemini-3-flash',
+  openrouterApiKey: process.env.OPENROUTER_API_KEY || '',
+  openrouterBaseUrl: process.env.OPENROUTER_BASE_URL || '',
+  openrouterModel: process.env.OPENROUTER_MODEL || 'openrouter/auto',
+  // Providers a delegate task may target, checked against KNOWN_TOOLS' delegate
+  // arg validation before any sub-agent is spawned.
+  delegateProviders: ['ollama', 'anthropic', 'openai', 'gemini', 'openrouter', 'claude-cli', 'cursor', 'cyrex'],
 };
 
 /**

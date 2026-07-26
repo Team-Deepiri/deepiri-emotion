@@ -1,24 +1,56 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Box, Text } from 'ink';
 
-export function MessageList({ messages, streamingMessage }) {
+function UserTurn({ content }) {
   return (
-    <Box flexDirection="column" gap={0} paddingY={1}>
-      {messages.map((m, i) => (
-        <Box key={i} flexDirection="column">
-          <Text bold color={m.role === 'user' ? 'green' : 'blue'}>
-            {m.role === 'user' ? 'You' : 'Assistant'}:
-          </Text>
-          <Text>{m.content}</Text>
-        </Box>
-      ))}
+    <Box flexDirection="row" flexShrink={1}>
+      <Text backgroundColor="#3f3f46">
+        <Text color="green" bold>{'> '}</Text>
+        <Text wrap="wrap">{content}</Text>
+      </Text>
+    </Box>
+  );
+}
+
+function EmotionTurn({ children }) {
+  const body = React.Children.toArray(children).filter(Boolean);
+  return (
+    <Box flexDirection="column" flexShrink={1} paddingX={1}>
+      {body}
+    </Box>
+  );
+}
+
+function MessageListImpl({ messages, streamingMessage }) {
+  return (
+    <Box flexDirection="column" gap={1} paddingY={1} flexShrink={1}>
+      {messages.map((m, i) => {
+        if (m.role === 'system') {
+          return (
+            <Box key={i} marginLeft={2} flexShrink={1}>
+              <Text dimColor>{m.content}</Text>
+            </Box>
+          );
+        }
+        if (m.role === 'user') {
+          return <UserTurn key={i} content={m.content} />;
+        }
+        return (
+          <EmotionTurn key={i}>
+            <Text wrap="wrap">{m.content}</Text>
+          </EmotionTurn>
+        );
+      })}
       {streamingMessage ? (
-        <Box flexDirection="column">
-          <Text bold color="blue">Assistant:</Text>
-          <Text color="gray">{streamingMessage}</Text>
-          <Text color="cyan">▌</Text>
-        </Box>
+        <EmotionTurn>
+          <Text wrap="wrap">
+            {streamingMessage}
+            <Text color="magenta" dimColor>▌</Text>
+          </Text>
+        </EmotionTurn>
       ) : null}
     </Box>
   );
 }
+
+export const MessageList = memo(MessageListImpl);

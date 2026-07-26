@@ -29,7 +29,9 @@ export const INITIAL_STATE = {
   queuedMessage: null,
   allowedCount: 0,
   guardMode: true,
-  tokenUsage: { used: 0, limit: DEFAULT_CONTEXT_LIMIT }
+  tokenUsage: { used: 0, limit: DEFAULT_CONTEXT_LIMIT },
+  /** Live provider progress from LLM_PROGRESS (null when idle). */
+  llmProgress: null,
 };
 
 export const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
