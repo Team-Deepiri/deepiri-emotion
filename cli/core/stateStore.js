@@ -23,6 +23,8 @@ export const INITIAL_STATE = {
   autoMode: false,
   acceptEdits: false,
   pendingConfirmation: null,
+  pendingSelect: null,
+  pendingTextInput: null,
   activeTool: null,
   queuedMessage: null,
   allowedCount: 0,

@@ -11,6 +11,13 @@ import { AgentWorker } from './AgentWorker.js';
 import { listSessions, loadSession, latestSession } from './session.js';
 import { streamLLM } from './llmStream.js';
 import { estimateTokens, contextWindowFor } from '../core/tokens.js';
+import {
+  handleModelsCommand,
+  handleProviderCommand,
+  handleAccountCommand,
+  handleSkillsCommand,
+  handleStatusCommand,
+} from './modelsCommand.js';
 
 const AUTO_COMPACT_THRESHOLD = 0.8;
 
@@ -104,9 +111,6 @@ export function attachAgentRunner(bus, config = {}) {
     if (recording) turnBuffer += token;
   });
 
-  // Seed the footer context meter on startup (0 used / configured limit).
-  recomputeTokenUsage();
-
   bus.on(EVENTS.CANCEL_REQUESTED, () => {
     currentWorker?.cancel();
   });
@@ -143,6 +147,12 @@ export function attachAgentRunner(bus, config = {}) {
   });
 
   bus.on(EVENTS.USER_MESSAGE, async ({ text, attachments = [] }) => {
+    if (await handleModelsCommand(text || '', { bus, config })) return;
+    if (await handleProviderCommand(text || '', { bus, config })) return;
+    if (await handleAccountCommand(text || '', { bus, config })) return;
+    if (await handleSkillsCommand(text || '', { bus, config })) return;
+    if (await handleStatusCommand(text || '', { bus, config })) return;
+
     if (text?.trim() === '/teach') {
       teachMode = !teachMode;
       bus.emit(EVENTS.TEACH_MODE_CHANGED, { teachMode });

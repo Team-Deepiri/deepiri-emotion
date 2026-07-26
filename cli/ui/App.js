@@ -5,6 +5,7 @@ import { INITIAL_STATE, NUM_SPINNER_FRAMES } from '../core/stateStore.js';
 import { MessageList } from './MessageList.js';
 import { StatusBar } from './StatusBar.js';
 import { PromptInput } from './PromptInput.js';
+import { SelectMenu } from './SelectMenu.js';
 import { grabClipboardImage, resolveImagePath } from '../agent/attachments.js';
 import { Welcome } from './Welcome.js';
 
@@ -166,6 +167,33 @@ export default function App({
       setState((s) => ({ ...s, pendingConfirmation: null }));
     };
 
+    const onSelectRequest = (payload) => {
+      const items = payload?.items || [];
+      let index = 0;
+      while (items[index]?.disabled && index < items.length - 1) index += 1;
+      setState((s) => ({
+        ...s,
+        pendingSelect: { ...payload, items, index },
+        pendingTextInput: null,
+      }));
+    };
+
+    const onSelectResponse = () => {
+      setState((s) => ({ ...s, pendingSelect: null }));
+    };
+
+    const onTextInputRequest = (payload) => {
+      setState((s) => ({
+        ...s,
+        pendingTextInput: payload || {},
+        pendingSelect: null,
+      }));
+    };
+
+    const onTextInputResponse = () => {
+      setState((s) => ({ ...s, pendingTextInput: null }));
+    };
+
     const onAllowedToolsChanged = ({ count }) => {
       setState((s) => ({ ...s, allowedCount: count ?? 0 }));
     };
@@ -211,6 +239,10 @@ export default function App({
     eventBus.on(EVENTS.ACCEPT_EDITS_CHANGED, onAcceptEditsChanged);
     eventBus.on(EVENTS.CONFIRMATION_REQUEST, onConfirmationRequest);
     eventBus.on(EVENTS.CONFIRMATION_RESPONSE, onConfirmationResponse);
+    eventBus.on(EVENTS.SELECT_REQUEST, onSelectRequest);
+    eventBus.on(EVENTS.SELECT_RESPONSE, onSelectResponse);
+    eventBus.on(EVENTS.TEXT_INPUT_REQUEST, onTextInputRequest);
+    eventBus.on(EVENTS.TEXT_INPUT_RESPONSE, onTextInputResponse);
     eventBus.on(EVENTS.ALLOWED_TOOLS_CHANGED, onAllowedToolsChanged);
     eventBus.on(EVENTS.CLEAR, onClear);
     eventBus.on(EVENTS.GUARD_MODE_CHANGED, onGuardModeChanged);
@@ -243,6 +275,10 @@ export default function App({
       eventBus.off(EVENTS.ACCEPT_EDITS_CHANGED, onAcceptEditsChanged);
       eventBus.off(EVENTS.CONFIRMATION_REQUEST, onConfirmationRequest);
       eventBus.off(EVENTS.CONFIRMATION_RESPONSE, onConfirmationResponse);
+      eventBus.off(EVENTS.SELECT_REQUEST, onSelectRequest);
+      eventBus.off(EVENTS.SELECT_RESPONSE, onSelectResponse);
+      eventBus.off(EVENTS.TEXT_INPUT_REQUEST, onTextInputRequest);
+      eventBus.off(EVENTS.TEXT_INPUT_RESPONSE, onTextInputResponse);
       eventBus.off(EVENTS.ALLOWED_TOOLS_CHANGED, onAllowedToolsChanged);
       eventBus.off(EVENTS.CLEAR, onClear);
       eventBus.off(EVENTS.GUARD_MODE_CHANGED, onGuardModeChanged);
@@ -295,6 +331,38 @@ export default function App({
   const handleConfirm = useCallback(
     (choice) => {
       eventBus.emit(EVENTS.CONFIRMATION_RESPONSE, { choice });
+    },
+    [eventBus]
+  );
+
+  const handleSelectAction = useCallback(
+    (action, payload) => {
+      if (action === 'move') {
+        setState((s) =>
+          s.pendingSelect ? { ...s, pendingSelect: { ...s.pendingSelect, index: payload } } : s
+        );
+        return;
+      }
+      if (action === 'confirm') {
+        eventBus.emit(EVENTS.SELECT_RESPONSE, { id: payload });
+        return;
+      }
+      if (action === 'cancel') {
+        eventBus.emit(EVENTS.SELECT_RESPONSE, { id: null });
+      }
+    },
+    [eventBus]
+  );
+
+  const handleTextInputAction = useCallback(
+    (action, value) => {
+      if (action === 'submit') {
+        eventBus.emit(EVENTS.TEXT_INPUT_RESPONSE, { value: value ?? '' });
+        return;
+      }
+      if (action === 'cancel') {
+        eventBus.emit(EVENTS.TEXT_INPUT_RESPONSE, { value: null });
+      }
     },
     [eventBus]
   );
@@ -391,6 +459,18 @@ export default function App({
         React.createElement(Text, { color: 'cyan' }, '(y) approve once    (a) always allow    (n) deny')
       )
     ] : []),
+    ...(state.pendingSelect
+      ? [
+          React.createElement(SelectMenu, {
+            key: 'select',
+            title: state.pendingSelect.title,
+            subtitle: state.pendingSelect.subtitle,
+            items: state.pendingSelect.items,
+            activeIndex: state.pendingSelect.index ?? 0,
+            cancelHint: state.pendingSelect.cancelHint,
+          }),
+        ]
+      : []),
     React.createElement(Box, { marginTop: 1 },
       React.createElement(PromptInput, {
         value: inputValue,
@@ -398,9 +478,19 @@ export default function App({
         onSubmit: handleSubmit,
         onClear: handleClear,
         onPaste: handlePaste,
-        placeholder: state.pendingConfirmation ? 'Awaiting confirmation — press y, a, or n' : 'Type a message...',
+        placeholder: state.pendingConfirmation
+          ? 'Awaiting confirmation — press y, a, or n'
+          : state.pendingSelect
+            ? '↑↓ move · Enter select · Esc cancel'
+            : state.pendingTextInput
+              ? 'Type value · Enter confirm · Esc cancel'
+              : 'Type a message...',
         pendingConfirmation: state.pendingConfirmation,
         onConfirm: handleConfirm,
+        pendingSelect: state.pendingSelect,
+        onSelectAction: handleSelectAction,
+        pendingTextInput: state.pendingTextInput,
+        onTextInputAction: handleTextInputAction,
         agentStatus: state.agentStatus,
         onCancel: handleCancel,
         workspaceDir

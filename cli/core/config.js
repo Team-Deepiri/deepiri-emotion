@@ -2,15 +2,23 @@
  * CLI config: env vars + optional config file.
  * Precedence: env > config file > defaults.
  */
-import { readFile } from 'fs/promises';
+import { readFile, writeFile, mkdir } from 'fs/promises';
 import { homedir } from 'os';
-import { join } from 'path';
+import { join, dirname } from 'path';
 import { existsSync } from 'fs';
 
 const DEFAULT_AI_SERVICE = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 const DEFAULT_OLLAMA = 'http://localhost:11434';
 
 export const DEFAULT_PROVIDER_CHAIN = ['ollama', 'claude-cli', 'cursor', 'openai', 'cyrex'];
+
+export function userConfigPath() {
+  return join(homedir(), '.config', 'deepiri-emotion', 'cli.json');
+}
+
+export function projectConfigPath(cwd = process.cwd()) {
+  return join(cwd, '.emotion-cli.json');
+}
 
 export const DEFAULT_CONFIG = {
   // Legacy single-provider override. If set, translates to a one-entry chain.
@@ -23,6 +31,12 @@ export const DEFAULT_CONFIG = {
   aiServiceUrl: DEFAULT_AI_SERVICE,
   ollamaUrl: process.env.OLLAMA_HOST || DEFAULT_OLLAMA,
   ollamaModel: process.env.OLLAMA_MODEL || 'llama3.2', // preferred; Ollama auto-picks an installed model if missing
+  // Cloud plans — null means "not chosen yet" (first-run / /account will ask).
+  // Env still wins when set.
+  openaiPlan: process.env.OPENAI_PLAN || null,
+  anthropicPlan: process.env.ANTHROPIC_PLAN || process.env.CLAUDE_PLAN || null,
+  cursorPlan: process.env.CURSOR_PLAN || null,
+  onboardingComplete: false,
   // Agent loop budgets — override via env or .emotion-cli.json
   maxSteps: Number(process.env.AGENT_MAX_STEPS) || 5,
   maxToolCalls: Number(process.env.AGENT_MAX_TOOL_CALLS) || 8,
@@ -39,28 +53,99 @@ export const DEFAULT_CONFIG = {
 /**
  * Load config from optional file then merge with env/defaults.
  * Files checked: .emotion-cli.json (cwd), ~/.config/deepiri-emotion/cli.json
+ * Both are merged when present (project overrides user for overlapping keys).
  */
 export async function loadConfig() {
-  let fileConfig = {};
-  const candidates = [
-    join(process.cwd(), '.emotion-cli.json'),
-    join(homedir(), '.config', 'deepiri-emotion', 'cli.json')
-  ];
-  for (const p of candidates) {
-    if (existsSync(p)) {
-      try {
-        const raw = await readFile(p, 'utf-8');
-        fileConfig = { ...fileConfig, ...JSON.parse(raw) };
-      } catch {
-        // ignore invalid json
-      }
-      break;
+  let userConfig = {};
+  let projectConfig = {};
+  const userPath = userConfigPath();
+  const projectPath = projectConfigPath();
+
+  if (existsSync(userPath)) {
+    try {
+      userConfig = JSON.parse(await readFile(userPath, 'utf-8'));
+    } catch {
+      userConfig = {};
     }
   }
+  if (existsSync(projectPath)) {
+    try {
+      projectConfig = JSON.parse(await readFile(projectPath, 'utf-8'));
+    } catch {
+      projectConfig = {};
+    }
+  }
+
+  const fileConfig = { ...userConfig, ...projectConfig };
   const merged = { ...DEFAULT_CONFIG, ...fileConfig };
+
+  // Env always wins for secrets / explicit overrides when set.
+  if (process.env.OPENAI_API_KEY) merged.openaiApiKey = process.env.OPENAI_API_KEY;
+  if (process.env.OPENAI_PLAN) merged.openaiPlan = process.env.OPENAI_PLAN;
+  if (process.env.ANTHROPIC_PLAN || process.env.CLAUDE_PLAN) {
+    merged.anthropicPlan = process.env.ANTHROPIC_PLAN || process.env.CLAUDE_PLAN;
+  }
+  if (process.env.CURSOR_PLAN) merged.cursorPlan = process.env.CURSOR_PLAN;
+  if (process.env.OLLAMA_HOST) merged.ollamaUrl = process.env.OLLAMA_HOST;
+  if (process.env.OLLAMA_MODEL) merged.ollamaModel = process.env.OLLAMA_MODEL;
+
   // Legacy: if user set `provider` but not `providerChain`, honor it as a single-entry chain.
   if (merged.provider && !fileConfig.providerChain) {
     merged.providerChain = [merged.provider];
   }
+
+  merged._configSources = {
+    userPath: existsSync(userPath) ? userPath : null,
+    projectPath: existsSync(projectPath) ? projectPath : null,
+  };
   return merged;
+}
+
+/**
+ * Merge keys into ~/.config/deepiri-emotion/cli.json and update `config` in memory.
+ * @param {Record<string, unknown>} config
+ * @param {Record<string, unknown>} partial
+ */
+export async function saveUserConfig(config, partial) {
+  const path = userConfigPath();
+  let existing = {};
+  if (existsSync(path)) {
+    try {
+      existing = JSON.parse(await readFile(path, 'utf-8'));
+    } catch {
+      existing = {};
+    }
+  }
+  const next = { ...existing, ...partial };
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
+  Object.assign(config, partial);
+  return path;
+}
+
+/**
+ * Merge keys into cwd `.emotion-cli.json` (project-local prefs like model).
+ */
+export async function saveProjectConfig(config, partial, cwd = process.cwd()) {
+  const path = projectConfigPath(cwd);
+  let existing = {};
+  if (existsSync(path)) {
+    try {
+      existing = JSON.parse(await readFile(path, 'utf-8'));
+    } catch {
+      existing = {};
+    }
+  }
+  const next = { ...existing, ...partial };
+  await writeFile(path, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
+  Object.assign(config, partial);
+  return path;
+}
+
+/** True when we should run the first-run account/plan wizard. */
+export function needsOnboarding(config = {}) {
+  if (config.onboardingComplete) return false;
+  // Existing installs (any config file) — don't nag; use /account to link later.
+  if (config._configSources?.userPath || config._configSources?.projectPath) return false;
+  return true;
 }
