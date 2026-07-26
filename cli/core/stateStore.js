@@ -2,6 +2,8 @@
  * Initial state shape for the CLI TUI.
  * Actual state lives in React (App); this is the schema and defaults.
  */
+import { DEFAULT_CONTEXT_LIMIT } from './tokens.js';
+
 export const INITIAL_STATE = {
   messages: [],
   streamingMessage: '',
@@ -21,8 +23,11 @@ export const INITIAL_STATE = {
   autoMode: false,
   acceptEdits: false,
   pendingConfirmation: null,
+  activeTool: null,
+  queuedMessage: null,
+  allowedCount: 0,
   guardMode: true,
-  activeTool: null
+  tokenUsage: { used: 0, limit: DEFAULT_CONTEXT_LIMIT }
 };
 
 export const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
