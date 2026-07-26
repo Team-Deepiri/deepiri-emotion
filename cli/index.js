@@ -21,6 +21,7 @@ import { loadProjectMemory } from './agent/projectMemory.js';
 import { bootstrapProject, formatSnapshot } from './agent/bootstrap.js';
 import { attachSessionRecorder } from './agent/session.js';
 import App from './ui/App.js';
+import { playSplash } from './ui/splash.js';
 
 /** Reads all of stdin as a UTF-8 string (used by -p/--print when input is piped). */
 function readStdin() {
@@ -179,6 +180,8 @@ if (printMode) {
 // screen and header have something real to show at launch, not just after
 // the first turn resolves one.
 const resolvedProvider = await resolveActiveProvider(config).catch(() => null);
+
+await playSplash();
 
 render(React.createElement(App, {
   eventBus,

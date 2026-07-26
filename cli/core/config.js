@@ -22,7 +22,7 @@ export const DEFAULT_CONFIG = {
   openaiModel: process.env.OPENAI_MODEL || 'gpt-4o-mini',
   aiServiceUrl: DEFAULT_AI_SERVICE,
   ollamaUrl: process.env.OLLAMA_HOST || DEFAULT_OLLAMA,
-  ollamaModel: process.env.OLLAMA_MODEL || 'llama3.2',
+  ollamaModel: process.env.OLLAMA_MODEL || 'llama3.2', // preferred; Ollama auto-picks an installed model if missing
   // Agent loop budgets — override via env or .emotion-cli.json
   maxSteps: Number(process.env.AGENT_MAX_STEPS) || 5,
   maxToolCalls: Number(process.env.AGENT_MAX_TOOL_CALLS) || 8,

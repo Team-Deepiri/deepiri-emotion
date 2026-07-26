@@ -15,11 +15,12 @@ export function Welcome({ workspaceDir, activeProvider, activeModel }) {
 
   return React.createElement(
     Box,
-    { flexDirection: 'column', borderStyle: 'round', borderColor: 'cyan', paddingX: 2, paddingY: 1, marginBottom: 1 },
-    React.createElement(Text, { bold: true, color: 'cyan' }, 'Deepiri Emotion CLI'),
+    { flexDirection: 'column', borderStyle: 'round', borderColor: 'magenta', paddingX: 2, paddingY: 1, marginBottom: 1 },
+    React.createElement(Text, { bold: true, color: 'magenta' }, 'EMOTION'),
+    React.createElement(Text, { color: 'magenta', dimColor: true }, 'made by deepiri'),
     React.createElement(
       Box,
-      { flexDirection: 'row', gap: 1 },
+      { flexDirection: 'row', gap: 1, marginTop: 1 },
       React.createElement(Text, { color: connectionColor }, '●'),
       React.createElement(Text, { dimColor: true }, providerLabel)
     ),
@@ -36,7 +37,7 @@ export function Welcome({ workspaceDir, activeProvider, activeModel }) {
     React.createElement(
       Box,
       { flexDirection: 'column', marginTop: 1 },
-      React.createElement(Text, { bold: true }, 'Try:'),
+      React.createElement(Text, { bold: true, color: 'magenta' }, 'Try:'),
       ...EXAMPLE_PROMPTS.map((prompt, i) =>
         React.createElement(Text, { key: `example-${i}`, dimColor: true }, `  ${prompt}`)
       )
