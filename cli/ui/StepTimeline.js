@@ -17,10 +17,6 @@ const CATEGORY_LABELS = {
   best_practice: 'Best Practice'
 };
 
-// Cap the rendered trace so a pathological, many-step turn can't flood the
-// view; keep the most recent steps and note how many were elided.
-const MAX_VISIBLE_STEPS = 15;
-
 export function StepTimeline({ steps, activeModes }) {
   if (!steps.length) return null;
 
@@ -34,8 +30,11 @@ export function StepTimeline({ steps, activeModes }) {
 
   if (!visibleSteps.length) return null;
 
-  const hiddenCount = Math.max(0, visibleSteps.length - MAX_VISIBLE_STEPS);
-  const shownSteps = hiddenCount ? visibleSteps.slice(-MAX_VISIBLE_STEPS) : visibleSteps;
+  // Cap the rendered trace so a pathological, many-step turn can't flood the
+  // view; keep the most recent steps and note how many were elided.
+  const MAX_VISIBLE = 15;
+  const hiddenCount = Math.max(0, visibleSteps.length - MAX_VISIBLE);
+  const shownSteps = hiddenCount ? visibleSteps.slice(-MAX_VISIBLE) : visibleSteps;
 
   return React.createElement(
     Box,

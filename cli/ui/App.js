@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Box, Text } from 'ink';
 import { EVENTS } from '../core/eventBus.js';
 import { INITIAL_STATE, NUM_SPINNER_FRAMES } from '../core/stateStore.js';
@@ -25,28 +25,18 @@ export default function App({
   });
   const [inputValue, setInputValue] = useState('');
   const [pendingAttachments, setPendingAttachments] = useState([]);
-  const turnIdRef = useRef(null);
-
-  const handleClear = useCallback(() => {
-    setState({ ...INITIAL_STATE });
-    setInputValue('');
-  }, []);
 
   useEffect(() => {
     const onUserMessage = ({ text }) => {
-      // /clear resets via the CLEAR event (see onClear below) — it shouldn't
-      // also show up as a chat turn in the transcript it's about to wipe.
-      if (text?.trim() === '/clear') return;
       setState((s) => ({
         ...s,
-        messages: [...s.messages, { role: 'user', content: text, turnId: turnIdRef.current }],
+        messages: [...s.messages, { role: 'user', content: text }],
         streamingMessage: '',
         steps: [],
         plan: [],
         error: null,
         errorHint: null,
-        activeTool: null,
-        queuedMessage: null
+        activeTool: null
       }));
     };
 
@@ -67,7 +57,7 @@ export default function App({
         return {
           ...s,
           messages: full
-            ? [...s.messages, { role: 'assistant', content: full, steps: s.steps, plan: s.plan, turnId: turnIdRef.current }]
+            ? [...s.messages, { role: 'assistant', content: full, steps: s.steps, plan: s.plan }]
             : s.messages,
           streamingMessage: '',
           steps: [],
@@ -166,32 +156,6 @@ export default function App({
       setState((s) => ({ ...s, pendingConfirmation: null }));
     };
 
-    const onAllowedToolsChanged = ({ count }) => {
-      setState((s) => ({ ...s, allowedCount: count ?? 0 }));
-    };
-
-    const onClear = () => {
-      handleClear();
-    };
-
-    const onTokenUsage = ({ used, limit }) => {
-      setState((s) => ({ ...s, tokenUsage: { used: used ?? 0, limit: limit ?? s.tokenUsage.limit } }));
-    };
-
-    const onTurnStarted = ({ turnId }) => {
-      turnIdRef.current = turnId;
-    };
-
-    const onRewind = ({ turnId }) => {
-      setState((s) => ({
-        ...s,
-        messages: s.messages.filter((m) => m.turnId == null || m.turnId < turnId),
-        streamingMessage: '',
-        steps: [],
-        plan: []
-      }));
-    };
-
     eventBus.on(EVENTS.USER_MESSAGE, onUserMessage);
     eventBus.on(EVENTS.LLM_TOKEN, onLlmToken);
     eventBus.on(EVENTS.LLM_DONE, onLlmDone);
@@ -211,13 +175,8 @@ export default function App({
     eventBus.on(EVENTS.ACCEPT_EDITS_CHANGED, onAcceptEditsChanged);
     eventBus.on(EVENTS.CONFIRMATION_REQUEST, onConfirmationRequest);
     eventBus.on(EVENTS.CONFIRMATION_RESPONSE, onConfirmationResponse);
-    eventBus.on(EVENTS.ALLOWED_TOOLS_CHANGED, onAllowedToolsChanged);
-    eventBus.on(EVENTS.CLEAR, onClear);
     eventBus.on(EVENTS.GUARD_MODE_CHANGED, onGuardModeChanged);
     eventBus.on(EVENTS.PROVIDER_SELECTED, onProviderSelected);
-    eventBus.on(EVENTS.TOKEN_USAGE_CHANGED, onTokenUsage);
-    eventBus.on(EVENTS.TURN_STARTED, onTurnStarted);
-    eventBus.on(EVENTS.REWIND, onRewind);
 
     const spinnerTimer = setInterval(() => {
       eventBus.emit(EVENTS.SPINNER_TICK);
@@ -243,16 +202,11 @@ export default function App({
       eventBus.off(EVENTS.ACCEPT_EDITS_CHANGED, onAcceptEditsChanged);
       eventBus.off(EVENTS.CONFIRMATION_REQUEST, onConfirmationRequest);
       eventBus.off(EVENTS.CONFIRMATION_RESPONSE, onConfirmationResponse);
-      eventBus.off(EVENTS.ALLOWED_TOOLS_CHANGED, onAllowedToolsChanged);
-      eventBus.off(EVENTS.CLEAR, onClear);
       eventBus.off(EVENTS.GUARD_MODE_CHANGED, onGuardModeChanged);
       eventBus.off(EVENTS.PROVIDER_SELECTED, onProviderSelected);
-      eventBus.off(EVENTS.TOKEN_USAGE_CHANGED, onTokenUsage);
-      eventBus.off(EVENTS.TURN_STARTED, onTurnStarted);
-      eventBus.off(EVENTS.REWIND, onRewind);
       clearInterval(spinnerTimer);
     };
-  }, [eventBus, handleClear]);
+  }, [eventBus]);
 
   const handlePaste = useCallback(() => {
     grabClipboardImage()
@@ -269,7 +223,6 @@ export default function App({
       const t = (text || inputValue || '').trim();
       if (!t) return;
       setInputValue('');
-
       // Merge clipboard attachments with any image path detected in the text.
       const allAttachments = [...pendingAttachments];
       let finalText = t;
@@ -279,22 +232,19 @@ export default function App({
         finalText = pathResult.text || t;
       }
       setPendingAttachments([]);
-
-      if (state.agentStatus !== 'idle') {
-        // Agent is mid-turn — queue instead of firing a second concurrent
-        // AgentWorker. Single-slot: a later submit overwrites an earlier one.
-        setState((s) => ({ ...s, queuedMessage: finalText }));
-        eventBus.emit(EVENTS.MESSAGE_QUEUED, { text: finalText });
-        return;
-      }
       eventBus.emit(EVENTS.USER_MESSAGE, { text: finalText, attachments: allAttachments });
     },
-    [inputValue, pendingAttachments, eventBus, state.agentStatus]
+    [inputValue, pendingAttachments, eventBus]
   );
 
+  const handleClear = useCallback(() => {
+    setState({ ...INITIAL_STATE });
+    setInputValue('');
+  }, []);
+
   const handleConfirm = useCallback(
-    (choice) => {
-      eventBus.emit(EVENTS.CONFIRMATION_RESPONSE, { choice });
+    (approved) => {
+      eventBus.emit(EVENTS.CONFIRMATION_RESPONSE, { approved });
     },
     [eventBus]
   );
@@ -361,10 +311,8 @@ export default function App({
       activeModes: state.activeModes,
       autoMode: state.autoMode,
       acceptEdits: state.acceptEdits,
-      allowedCount: state.allowedCount,
       guardMode: state.guardMode,
       activeProvider: state.activeProvider,
-      tokenUsage: state.tokenUsage
     }),
     ...(pendingAttachments.length > 0 ? [
       React.createElement(Box, { key: 'attachments', marginTop: 0 },
@@ -383,9 +331,7 @@ export default function App({
         borderColor: 'yellow'
       },
         React.createElement(Text, { color: 'yellow', bold: true },
-          state.pendingConfirmation.tool === 'run_command'
-            ? 'Run this command?'
-            : `Apply ${state.pendingConfirmation.action} to ${state.pendingConfirmation.path}?`
+          `Apply ${state.pendingConfirmation.action} to ${state.pendingConfirmation.path}?`
         ),
         ...(state.pendingConfirmation.diffLines?.length
           ? state.pendingConfirmation.diffLines.map((line, i) =>
@@ -402,7 +348,7 @@ export default function App({
           : state.pendingConfirmation.preview
           ? [React.createElement(Text, { key: 'preview', dimColor: true }, state.pendingConfirmation.preview)]
           : []),
-        React.createElement(Text, { color: 'cyan' }, '(y) approve once    (a) always allow    (n) deny')
+        React.createElement(Text, { color: 'cyan' }, '(y) approve    (n) deny')
       )
     ] : []),
     React.createElement(Box, { marginTop: 1 },
@@ -412,18 +358,13 @@ export default function App({
         onSubmit: handleSubmit,
         onClear: handleClear,
         onPaste: handlePaste,
-        placeholder: state.pendingConfirmation ? 'Awaiting confirmation — press y, a, or n' : 'Type a message...',
+        placeholder: state.pendingConfirmation ? 'Awaiting confirmation — press y or n' : 'Type a message...',
         pendingConfirmation: state.pendingConfirmation,
         onConfirm: handleConfirm,
         agentStatus: state.agentStatus,
         onCancel: handleCancel,
         workspaceDir
       })
-    ),
-    ...(state.queuedMessage ? [
-      React.createElement(Box, { key: 'queued' },
-        React.createElement(Text, { color: 'yellow', bold: true }, `⏳ queued: ${state.queuedMessage}`)
-      )
-    ] : [])
+    )
   );
 }
