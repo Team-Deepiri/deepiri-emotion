@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Deepiri Emotion CLI - Interactive TUI (Claude-style).
- * Run: npm run cli   or   node cli/index.js [options] [--] [workspace-dir]
+ * Run: emotion   (after `npm run install:cli`)   or   npm run cli
  *
  * Env: OPENAI_API_KEY, AI_SERVICE_URL, OLLAMA_HOST, OLLAMA_MODEL.
  * Config file: .emotion-cli.json (cwd) or ~/.config/deepiri-emotion/cli.json
@@ -21,6 +21,7 @@ import { loadProjectMemory } from './agent/projectMemory.js';
 import { bootstrapProject, formatSnapshot } from './agent/bootstrap.js';
 import { attachSessionRecorder } from './agent/session.js';
 import App from './ui/App.js';
+import { playSplash } from './ui/splash.js';
 
 /** Reads all of stdin as a UTF-8 string (used by -p/--print when input is piped). */
 function readStdin() {
@@ -46,7 +47,7 @@ process.on('unhandledRejection', (reason) => {
 const argv = process.argv.slice(2);
 if (argv.includes('--help') || argv.includes('-h')) {
   console.log(`
-Usage: npm run cli   or   node cli/index.js [options] [--] [workspace-dir]
+Usage: emotion [options] [--] [workspace-dir]
 
 Options:
   -h, --help         Show this help
@@ -59,7 +60,11 @@ Options:
 
 Workspace:
   Pass a directory path (after -- or as first argument). Tools (read_file, search, run) run in that directory.
-  Example: npm run cli -- /path/to/project
+  Example: emotion /path/to/project
+
+Install (once, from the repo root):
+  ./install.sh
+  # or: npm run install:cli  (command only, if deps already installed)
 
 Environment:
   OPENAI_API_KEY   OpenAI API key (provider: openai)
@@ -179,6 +184,8 @@ if (printMode) {
 // screen and header have something real to show at launch, not just after
 // the first turn resolves one.
 const resolvedProvider = await resolveActiveProvider(config).catch(() => null);
+
+await playSplash();
 
 render(React.createElement(App, {
   eventBus,

@@ -7,9 +7,10 @@ A live demo guide for the Ink-based TUI. Run every command in a terminal from th
 ## Setup
 
 ```bash
-npm run cli                        # launch the TUI (cwd is the workspace)
-npm run cli -- /path/to/project    # or point it at a specific workspace
-npm run cli -- --teach             # start with Teach mode pre-enabled
+emotion                            # launch the TUI (after: npm run install:cli)
+emotion /path/to/project           # or point it at a specific workspace
+emotion --teach                    # start with Teach mode pre-enabled
+# without linking: npm run cli  /  npm run cli -- /path/to/project
 ```
 
 **Provider prerequisites (pick one):**

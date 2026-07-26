@@ -35,7 +35,7 @@ export async function streamWithFallback(bus, prompt, opts = {}, config = {}) {
       continue;
     }
 
-    const options = configFor(name, config);
+    let options = configFor(name, config);
 
     let available;
     try {
@@ -59,6 +59,19 @@ export async function streamWithFallback(bus, prompt, opts = {}, config = {}) {
     if (!authed) {
       emitProviderStep(bus, 'skip', `${name} (not authenticated)`);
       continue;
+    }
+
+    if (typeof ProviderClass.resolveOptions === 'function') {
+      try {
+        options = await ProviderClass.resolveOptions(options);
+      } catch (err) {
+        errors.push({ name, stage: 'resolveOptions', err });
+        if (isFallThroughError(err)) {
+          emitProviderStep(bus, 'skip', `${name} (${err.message})`);
+          continue;
+        }
+        throw err;
+      }
     }
 
     emitProviderStep(bus, 'using', name);
@@ -106,10 +119,13 @@ export async function resolveActiveProvider(config = {}) {
     const ProviderClass = getProviderClass(name);
     if (!ProviderClass) continue;
 
-    const options = configFor(name, config);
+    let options = configFor(name, config);
     try {
       if (!(await ProviderClass.isAvailable(options))) continue;
       if (!(await ProviderClass.isAuthenticated(options))) continue;
+      if (typeof ProviderClass.resolveOptions === 'function') {
+        options = await ProviderClass.resolveOptions(options);
+      }
     } catch {
       continue;
     }

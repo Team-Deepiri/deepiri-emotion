@@ -319,8 +319,8 @@ export default function App({
           { flexDirection: 'column' },
           React.createElement(
             Text,
-            { bold: true, color: 'cyan' },
-            'Deepiri Emotion CLI',
+            { bold: true, color: 'magenta' },
+            'EMOTION',
             state.activeProvider ? `  |  ${state.activeProvider}${state.activeModel ? ` / ${state.activeModel}` : ''}` : ''
           ),
           React.createElement(Text, { dimColor: true },
