@@ -23,11 +23,15 @@ export const INITIAL_STATE = {
   autoMode: false,
   acceptEdits: false,
   pendingConfirmation: null,
+  pendingSelect: null,
+  pendingTextInput: null,
   activeTool: null,
   queuedMessage: null,
   allowedCount: 0,
   guardMode: true,
-  tokenUsage: { used: 0, limit: DEFAULT_CONTEXT_LIMIT }
+  tokenUsage: { used: 0, limit: DEFAULT_CONTEXT_LIMIT },
+  /** Live provider progress from LLM_PROGRESS (null when idle). */
+  llmProgress: null,
 };
 
 export const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];

@@ -75,6 +75,28 @@ describe('parseToolIntent', () => {
     const json = JSON.stringify({ tool: 'search', args: null });
     expect(parseToolIntent(json)).toBeNull();
   });
+
+  it('extracts a create_file call embedded in prose despite nested args braces', () => {
+    // Regression: a non-greedy regex here used to stop at the FIRST closing
+    // brace (the inner args object's), truncating the JSON before the outer
+    // closing brace so it never parsed — the tool call silently became inert
+    // prose instead of executing.
+    const text = 'I will create a simple hello world file.\n'
+      + '{"tool": "create_file", "args": {"filePath": "hello-world.js", "content": "console.log(\'Hello, World!\');\\n"}}';
+    expect(parseToolIntent(text)).toEqual({
+      tool: 'create_file',
+      args: { filePath: 'hello-world.js', content: "console.log('Hello, World!');\n" },
+    });
+  });
+
+  it('extracts a delegate call embedded in prose despite deeply nested braces', () => {
+    const text = 'Delegating this out.\n'
+      + '{"tool": "delegate", "args": {"prompt": "p", "tasks": [{"provider": "ollama", "model": "m"}]}}';
+    expect(parseToolIntent(text)).toEqual({
+      tool: 'delegate',
+      args: { prompt: 'p', tasks: [{ provider: 'ollama', model: 'm' }] },
+    });
+  });
 });
 
 describe('readFileTool', () => {

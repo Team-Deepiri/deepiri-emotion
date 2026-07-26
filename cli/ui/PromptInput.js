@@ -37,17 +37,38 @@ export function detectTrigger(value, cursor) {
   return { type: null, query: '', tokenStart: cursor, tokenEnd: cursor };
 }
 
-export function PromptInput({ value, onChange, onSubmit, onClear, onPaste, placeholder, pendingConfirmation, onConfirm, agentStatus, onCancel, workspaceDir }) {
+export function PromptInput({
+  value,
+  onChange,
+  onSubmit,
+  onClear,
+  onPaste,
+  placeholder,
+  pendingConfirmation,
+  onConfirm,
+  pendingSelect,
+  onSelectAction,
+  pendingTextInput,
+  onTextInputAction,
+  agentStatus,
+  onCancel,
+  workspaceDir,
+}) {
   const [cursor, setCursor] = useState(value.length);
   const [menuIndex, setMenuIndex] = useState(0);
   const [menuDismissed, setMenuDismissed] = useState(false);
   const [fileMatches, setFileMatches] = useState([]);
+  const [textBuffer, setTextBuffer] = useState('');
 
   // value is controlled by the parent (submit/clear reset it externally) —
   // keep cursor in range whenever it changes out from under us.
   useEffect(() => {
     setCursor((c) => Math.min(c, value.length));
   }, [value]);
+
+  useEffect(() => {
+    if (pendingTextInput) setTextBuffer('');
+  }, [pendingTextInput]);
 
   const trigger = detectTrigger(value, cursor);
 
@@ -79,7 +100,7 @@ export function PromptInput({ value, onChange, onSubmit, onClear, onPaste, place
       ? fileMatches.map((f) => ({ label: f }))
       : [];
 
-  const menuOpen = !menuDismissed && menuItems.length > 0;
+  const menuOpen = !menuDismissed && menuItems.length > 0 && !pendingSelect && !pendingTextInput && !pendingConfirmation;
   const clampedMenuIndex = Math.min(menuIndex, menuItems.length - 1);
 
   const completeWithItem = (item) => {
@@ -93,6 +114,19 @@ export function PromptInput({ value, onChange, onSubmit, onClear, onPaste, place
       setCursor(trigger.tokenStart + item.label.length + 2);
     }
     setMenuDismissed(true);
+  };
+
+  const moveSelect = (delta) => {
+    if (!pendingSelect || typeof onSelectAction !== 'function') return;
+    const items = pendingSelect.items || [];
+    if (!items.length) return;
+    let idx = pendingSelect.index ?? 0;
+    let guard = items.length + 1;
+    do {
+      idx = (idx + delta + items.length) % items.length;
+      guard -= 1;
+    } while (items[idx]?.disabled && guard > 0);
+    onSelectAction('move', idx);
   };
 
   useInput((input, key) => {
@@ -111,6 +145,54 @@ export function PromptInput({ value, onChange, onSubmit, onClear, onPaste, place
       if (input === 'n' || input === 'N' || key.escape) {
         if (typeof onConfirm === 'function') onConfirm('deny');
         return;
+      }
+      return;
+    }
+
+    if (pendingSelect) {
+      if (key.ctrl && input === 'c') {
+        process.exit(0);
+      }
+      if (key.upArrow) {
+        moveSelect(-1);
+        return;
+      }
+      if (key.downArrow) {
+        moveSelect(1);
+        return;
+      }
+      if (key.return) {
+        const item = pendingSelect.items?.[pendingSelect.index ?? 0];
+        if (item && !item.disabled && typeof onSelectAction === 'function') {
+          onSelectAction('confirm', item.id);
+        }
+        return;
+      }
+      if (key.escape) {
+        if (typeof onSelectAction === 'function') onSelectAction('cancel');
+        return;
+      }
+      return;
+    }
+
+    if (pendingTextInput) {
+      if (key.ctrl && input === 'c') {
+        process.exit(0);
+      }
+      if (key.escape) {
+        if (typeof onTextInputAction === 'function') onTextInputAction('cancel');
+        return;
+      }
+      if (key.return) {
+        if (typeof onTextInputAction === 'function') onTextInputAction('submit', textBuffer);
+        return;
+      }
+      if (key.backspace || key.delete) {
+        setTextBuffer((t) => t.slice(0, -1));
+        return;
+      }
+      if (input && !key.ctrl && !key.meta) {
+        setTextBuffer((t) => t + input);
       }
       return;
     }
@@ -200,6 +282,41 @@ export function PromptInput({ value, onChange, onSubmit, onClear, onPaste, place
   const menuElement = menuOpen
     ? React.createElement(Autocomplete, { items: menuItems, activeIndex: clampedMenuIndex })
     : null;
+
+  if (pendingTextInput) {
+    const shown = pendingTextInput.secret ? '*'.repeat(textBuffer.length) : textBuffer;
+    return React.createElement(
+      Box,
+      { flexDirection: 'column' },
+      React.createElement(Text, { color: 'yellow', bold: true }, pendingTextInput.title || 'Enter value'),
+      React.createElement(
+        Box,
+        { flexDirection: 'row', gap: 1 },
+        React.createElement(Text, { color: 'green' }, '>'),
+        shown
+          ? React.createElement(Text, { color: 'white' }, shown, React.createElement(Text, { inverse: true }, ' '))
+          : React.createElement(
+              Text,
+              null,
+              React.createElement(Text, { inverse: true }, ' '),
+              React.createElement(Text, { color: 'gray' }, pendingTextInput.placeholder || 'type here · Enter confirm · Esc cancel')
+            )
+      )
+    );
+  }
+
+  if (pendingSelect) {
+    return React.createElement(
+      Box,
+      { flexDirection: 'column' },
+      React.createElement(
+        Box,
+        { flexDirection: 'row', gap: 1 },
+        React.createElement(Text, { color: 'green' }, '>'),
+        React.createElement(Text, { color: 'gray' }, placeholder || 'Use ↑↓ and Enter')
+      )
+    );
+  }
 
   if (!value) {
     return React.createElement(

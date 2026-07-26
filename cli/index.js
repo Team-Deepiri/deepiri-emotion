@@ -14,12 +14,14 @@ import { render } from 'ink';
 import { resolve } from 'path';
 import { existsSync, statSync } from 'fs';
 import { createEventBus, EVENTS } from './core/eventBus.js';
-import { loadConfig } from './core/config.js';
+import { loadConfig, needsOnboarding } from './core/config.js';
+import { contextWindowFor } from './core/tokens.js';
 import { resolveActiveProvider } from './agent/providers/router.js';
 import { attachAgentRunner } from './agent/runner.js';
 import { loadProjectMemory } from './agent/projectMemory.js';
 import { bootstrapProject, formatSnapshot } from './agent/bootstrap.js';
 import { attachSessionRecorder } from './agent/session.js';
+import { runOnboarding } from './agent/modelsCommand.js';
 import App from './ui/App.js';
 import { playSplash } from './ui/splash.js';
 
@@ -184,6 +186,13 @@ if (printMode) {
 // screen and header have something real to show at launch, not just after
 // the first turn resolves one.
 const resolvedProvider = await resolveActiveProvider(config).catch(() => null);
+if (resolvedProvider?.provider) {
+  config.activeProvider = resolvedProvider.provider;
+  if (resolvedProvider.model) {
+    // Keep session model aligned with what the router actually selected.
+    if (resolvedProvider.provider === 'ollama') config.ollamaModel = resolvedProvider.model;
+  }
+}
 
 await playSplash();
 
@@ -192,5 +201,15 @@ render(React.createElement(App, {
   workspaceDir,
   teachMode: config.teachMode ?? false,
   initialProvider: resolvedProvider?.provider ?? null,
-  initialModel: resolvedProvider?.model ?? null
+  initialModel: resolvedProvider?.model ?? null,
+  initialContextWindow: contextWindowFor(config)
 }));
+
+// First-run: interactive provider/account setup once the TUI is live.
+if (needsOnboarding(config)) {
+  setTimeout(() => {
+    runOnboarding(eventBus, config).catch((err) => {
+      eventBus.emit(EVENTS.AGENT_ERROR, { message: err?.message || String(err) });
+    });
+  }, 50);
+}
