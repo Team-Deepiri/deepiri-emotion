@@ -68,19 +68,3 @@ export const createSimplePlan = (userText) => {
     'concise'
   );
 };
-
-const CODEISH =
-  /\b(file|code|bug|fix|implement|refactor|search|read|edit|create|delete|test|commit|diff|function|class|module|import|export|api|endpoint|error|stack|lint)\b/i;
-
-/**
- * True for short conversational turns that should skip the multi-step
- * silent reasoning loop (critical for local Ollama on CPU).
- */
-export function isSimpleChatTurn(userText, plan) {
-  const t = (userText || '').trim();
-  if (!t || t.length > 240) return false;
-  if (!plan || plan.needsTools || (plan.requiredFiles && plan.requiredFiles.length > 0)) return false;
-  if (plan.intent && plan.intent !== 'direct_answer') return false;
-  if (CODEISH.test(t)) return false;
-  return true;
-}

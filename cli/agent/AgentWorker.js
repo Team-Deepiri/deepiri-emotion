@@ -15,7 +15,7 @@ import { MODES } from '../core/modes.js';
 import { streamLLM as defaultStreamLLM } from './llmStream.js';
 import { parseToolIntent as defaultParseToolIntent, executeTool as defaultExecuteTool } from './tools.js';
 import { maybeConfirmAndExecute as defaultMaybeConfirmAndExecute } from './confirm.js';
-import { createSimplePlan as defaultCreateSimplePlan, isSimpleChatTurn } from './planner.js';
+import { createSimplePlan as defaultCreateSimplePlan } from './planner.js';
 import { discoverGuidance as defaultDiscoverGuidance } from './guidance.js';
 import { detectSupportNeed as defaultDetectSupportNeed } from './support.js';
 import { stopReason, toolCallKey } from './loopGuards.js';
@@ -61,10 +61,22 @@ export function formatToolLabel(tool, args = {}) {
 }
 
 async function streamTokens(bus, text, event) {
-  for (let i = 0; i < text.length; i++) {
-    bus.emit(event, { token: text[i] });
-    if (i % 30 === 29) await new Promise((r) => setImmediate(r));
+  // Emit in coarse chunks — full char-by-char delay made local models feel
+  // twice as slow after inference already finished.
+  const chunk = 48;
+  for (let i = 0; i < text.length; i += chunk) {
+    bus.emit(event, { token: text.slice(i, i + chunk) });
+    if (i > 0 && i % (chunk * 4) === 0) await new Promise((r) => setImmediate(r));
   }
+}
+
+/** True when buffered model output looks like a tool-call JSON blob, not user prose. */
+function looksLikeToolJson(text) {
+  const t = (text || '').trim();
+  if (!t) return false;
+  if (t.startsWith('{') || t.startsWith('[')) return true;
+  if (/^```(?:json)?/i.test(t)) return true;
+  return false;
 }
 
 /**
@@ -532,39 +544,6 @@ ${this.config.projectSnapshot}`;
 
       const simplePlan = this._createSimplePlan(text);
 
-      // Fast path: short conversational turns skip the multi-step silent loop.
-      // Local Ollama on CPU can take minutes per full agent step — chat shouldn't.
-      if (isSimpleChatTurn(text, simplePlan)) {
-        const historyBlock = this.history.length
-          ? `\n\n[Conversation so far]\n${this.history.map(m => `${m.role}: ${m.content}`).join('\n\n')}\n`
-          : '';
-        const chatPrompt = `You are Emotion, a helpful coding assistant in a terminal.
-Keep replies short and conversational unless the user asks for detail.
-No tool calls. No JSON. Plain text only.
-
-${historyBlock}
-User: ${text}`;
-
-        wbus.emit(EVENTS.AGENT_STATUS, { status: 'responding', message: 'Responding...' });
-        wbus.emit(EVENTS.AGENT_STEP, {
-          id: this._nextStepId(),
-          type: 'response',
-          status: 'running',
-          message: 'Responding...',
-        });
-        await this._streamLLM(wbus, chatPrompt, {
-          config,
-          silent: false,
-          attachments,
-          signal: this.abortController.signal,
-          ollamaOptions: { num_predict: 256, temperature: 0.7 },
-        });
-        // streamLLM already emits LLM_DONE for non-silent calls.
-        this._emitDoneStep(wbus);
-        wbus.emit(EVENTS.AGENT_STATUS, { status: 'idle', message: '' });
-        return;
-      }
-
       // Only surface a checklist for genuinely multi-step turns (>1 planned file
       // read); single-file or tool-free turns stay noise-free.
       const planItems = simplePlan.needsTools && simplePlan.requiredFiles.length > 1
@@ -663,6 +642,10 @@ User: ${text}`;
         });
 
         let lastResponse = '';
+        // Live-stream prose to the UI as it generates (same full agent loop for
+        // every turn). Suppress if the model is emitting a tool-call JSON blob.
+        let liveUi = null; // null undecided | true streaming | false suppressed
+        let liveEmitted = '';
 
         await this._streamLLM(wbus, `${agentContext}
 
@@ -693,7 +676,48 @@ User: ${text}`;
           silent: true,
           attachments,
           signal: this.abortController.signal,
-          onToken: (token) => { lastResponse += token; },
+          onToken: (token) => {
+            lastResponse += token;
+            if (liveUi === false) {
+              wbus.emit(EVENTS.AGENT_STATUS, {
+                status: 'thinking',
+                message: `Thinking… (${lastResponse.length} chars)`,
+              });
+              return;
+            }
+            if (liveUi === null && lastResponse.trim().length >= 12) {
+              liveUi = !looksLikeToolJson(lastResponse);
+              if (liveUi) {
+                wbus.emit(EVENTS.AGENT_STATUS, { status: 'responding', message: 'Responding...' });
+                wbus.emit(EVENTS.AGENT_STEP, {
+                  id: this._nextStepId(),
+                  type: 'response',
+                  status: 'running',
+                  message: 'Responding...',
+                });
+                const starter = stripFinalAnswer(lastResponse.replace(/<think>[\s\S]*?<\/think>/gi, ''));
+                if (starter) {
+                  wbus.emit(EVENTS.LLM_TOKEN, { token: starter });
+                  liveEmitted = starter;
+                }
+              } else {
+                wbus.emit(EVENTS.AGENT_STATUS, {
+                  status: 'thinking',
+                  message: 'Planning next tool…',
+                });
+              }
+              return;
+            }
+            if (liveUi === true) {
+              wbus.emit(EVENTS.LLM_TOKEN, { token });
+              liveEmitted += token;
+            } else {
+              wbus.emit(EVENTS.AGENT_STATUS, {
+                status: 'thinking',
+                message: `Thinking… (${lastResponse.length} chars)`,
+              });
+            }
+          },
           ollamaOptions: { num_predict: 768 },
         });
 
@@ -840,8 +864,10 @@ User: ${text}`;
         if (isFinalAnswer) {
           noProgressStreak = 0;
           const cleanedResponse = stripFinalAnswer(strippedResponse);
-          wbus.emit(EVENTS.AGENT_STATUS, { status: 'responding', message: 'Responding...' });
-          await streamTokens(wbus, cleanedResponse, EVENTS.LLM_TOKEN);
+          if (!liveEmitted) {
+            wbus.emit(EVENTS.AGENT_STATUS, { status: 'responding', message: 'Responding...' });
+            await streamTokens(wbus, cleanedResponse, EVENTS.LLM_TOKEN);
+          }
           this._emitDoneStep(wbus);
           finalizePlanItems();
           wbus.emit(EVENTS.LLM_DONE, {});
@@ -850,8 +876,10 @@ User: ${text}`;
 
         if (lastResponse.trim()) {
           noProgressStreak = 0;
-          wbus.emit(EVENTS.AGENT_STATUS, { status: 'responding', message: 'Responding...' });
-          await streamTokens(wbus, lastResponse.trim(), EVENTS.LLM_TOKEN);
+          if (!liveEmitted) {
+            wbus.emit(EVENTS.AGENT_STATUS, { status: 'responding', message: 'Responding...' });
+            await streamTokens(wbus, lastResponse.trim(), EVENTS.LLM_TOKEN);
+          }
           this._emitDoneStep(wbus);
           finalizePlanItems();
           wbus.emit(EVENTS.LLM_DONE, {});
