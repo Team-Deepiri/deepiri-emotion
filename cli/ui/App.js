@@ -26,8 +26,16 @@ export default function App({
   const [inputValue, setInputValue] = useState('');
   const [pendingAttachments, setPendingAttachments] = useState([]);
 
+  const handleClear = useCallback(() => {
+    setState({ ...INITIAL_STATE });
+    setInputValue('');
+  }, []);
+
   useEffect(() => {
     const onUserMessage = ({ text }) => {
+      // /clear resets via the CLEAR event (see onClear below) — it shouldn't
+      // also show up as a chat turn in the transcript it's about to wipe.
+      if (text?.trim() === '/clear') return;
       setState((s) => ({
         ...s,
         messages: [...s.messages, { role: 'user', content: text }],
@@ -36,7 +44,8 @@ export default function App({
         plan: [],
         error: null,
         errorHint: null,
-        activeTool: null
+        activeTool: null,
+        queuedMessage: null
       }));
     };
 
@@ -156,6 +165,14 @@ export default function App({
       setState((s) => ({ ...s, pendingConfirmation: null }));
     };
 
+    const onAllowedToolsChanged = ({ count }) => {
+      setState((s) => ({ ...s, allowedCount: count ?? 0 }));
+    };
+
+    const onClear = () => {
+      handleClear();
+    };
+
     eventBus.on(EVENTS.USER_MESSAGE, onUserMessage);
     eventBus.on(EVENTS.LLM_TOKEN, onLlmToken);
     eventBus.on(EVENTS.LLM_DONE, onLlmDone);
@@ -175,6 +192,8 @@ export default function App({
     eventBus.on(EVENTS.ACCEPT_EDITS_CHANGED, onAcceptEditsChanged);
     eventBus.on(EVENTS.CONFIRMATION_REQUEST, onConfirmationRequest);
     eventBus.on(EVENTS.CONFIRMATION_RESPONSE, onConfirmationResponse);
+    eventBus.on(EVENTS.ALLOWED_TOOLS_CHANGED, onAllowedToolsChanged);
+    eventBus.on(EVENTS.CLEAR, onClear);
     eventBus.on(EVENTS.GUARD_MODE_CHANGED, onGuardModeChanged);
     eventBus.on(EVENTS.PROVIDER_SELECTED, onProviderSelected);
 
@@ -202,11 +221,13 @@ export default function App({
       eventBus.off(EVENTS.ACCEPT_EDITS_CHANGED, onAcceptEditsChanged);
       eventBus.off(EVENTS.CONFIRMATION_REQUEST, onConfirmationRequest);
       eventBus.off(EVENTS.CONFIRMATION_RESPONSE, onConfirmationResponse);
+      eventBus.off(EVENTS.ALLOWED_TOOLS_CHANGED, onAllowedToolsChanged);
+      eventBus.off(EVENTS.CLEAR, onClear);
       eventBus.off(EVENTS.GUARD_MODE_CHANGED, onGuardModeChanged);
       eventBus.off(EVENTS.PROVIDER_SELECTED, onProviderSelected);
       clearInterval(spinnerTimer);
     };
-  }, [eventBus]);
+  }, [eventBus, handleClear]);
 
   const handlePaste = useCallback(() => {
     grabClipboardImage()
@@ -223,6 +244,7 @@ export default function App({
       const t = (text || inputValue || '').trim();
       if (!t) return;
       setInputValue('');
+
       // Merge clipboard attachments with any image path detected in the text.
       const allAttachments = [...pendingAttachments];
       let finalText = t;
@@ -232,19 +254,22 @@ export default function App({
         finalText = pathResult.text || t;
       }
       setPendingAttachments([]);
+
+      if (state.agentStatus !== 'idle') {
+        // Agent is mid-turn — queue instead of firing a second concurrent
+        // AgentWorker. Single-slot: a later submit overwrites an earlier one.
+        setState((s) => ({ ...s, queuedMessage: finalText }));
+        eventBus.emit(EVENTS.MESSAGE_QUEUED, { text: finalText });
+        return;
+      }
       eventBus.emit(EVENTS.USER_MESSAGE, { text: finalText, attachments: allAttachments });
     },
-    [inputValue, pendingAttachments, eventBus]
+    [inputValue, pendingAttachments, eventBus, state.agentStatus]
   );
 
-  const handleClear = useCallback(() => {
-    setState({ ...INITIAL_STATE });
-    setInputValue('');
-  }, []);
-
   const handleConfirm = useCallback(
-    (approved) => {
-      eventBus.emit(EVENTS.CONFIRMATION_RESPONSE, { approved });
+    (choice) => {
+      eventBus.emit(EVENTS.CONFIRMATION_RESPONSE, { choice });
     },
     [eventBus]
   );
@@ -311,6 +336,7 @@ export default function App({
       activeModes: state.activeModes,
       autoMode: state.autoMode,
       acceptEdits: state.acceptEdits,
+      allowedCount: state.allowedCount,
       guardMode: state.guardMode,
       activeProvider: state.activeProvider,
     }),
@@ -331,7 +357,9 @@ export default function App({
         borderColor: 'yellow'
       },
         React.createElement(Text, { color: 'yellow', bold: true },
-          `Apply ${state.pendingConfirmation.action} to ${state.pendingConfirmation.path}?`
+          state.pendingConfirmation.tool === 'run_command'
+            ? 'Run this command?'
+            : `Apply ${state.pendingConfirmation.action} to ${state.pendingConfirmation.path}?`
         ),
         ...(state.pendingConfirmation.diffLines?.length
           ? state.pendingConfirmation.diffLines.map((line, i) =>
@@ -348,7 +376,7 @@ export default function App({
           : state.pendingConfirmation.preview
           ? [React.createElement(Text, { key: 'preview', dimColor: true }, state.pendingConfirmation.preview)]
           : []),
-        React.createElement(Text, { color: 'cyan' }, '(y) approve    (n) deny')
+        React.createElement(Text, { color: 'cyan' }, '(y) approve once    (a) always allow    (n) deny')
       )
     ] : []),
     React.createElement(Box, { marginTop: 1 },
@@ -358,13 +386,18 @@ export default function App({
         onSubmit: handleSubmit,
         onClear: handleClear,
         onPaste: handlePaste,
-        placeholder: state.pendingConfirmation ? 'Awaiting confirmation — press y or n' : 'Type a message...',
+        placeholder: state.pendingConfirmation ? 'Awaiting confirmation — press y, a, or n' : 'Type a message...',
         pendingConfirmation: state.pendingConfirmation,
         onConfirm: handleConfirm,
         agentStatus: state.agentStatus,
         onCancel: handleCancel,
         workspaceDir
       })
-    )
+    ),
+    ...(state.queuedMessage ? [
+      React.createElement(Box, { key: 'queued' },
+        React.createElement(Text, { color: 'yellow', bold: true }, `⏳ queued: ${state.queuedMessage}`)
+      )
+    ] : [])
   );
 }

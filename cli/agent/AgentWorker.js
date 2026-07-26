@@ -771,7 +771,7 @@ ${this.config.projectSnapshot}`;
           try {
             loopToolResult = await this._maybeConfirmAndExecute(
               wbus, loopToolIntent.tool, loopToolIntent.args, config.workspaceDir,
-              { autoApprove: autoMode || acceptEdits }
+              { autoApprove: autoMode || acceptEdits, allowSet: config.allowSet }
             );
           } catch (err) {
             loopToolResult = { error: err.message };

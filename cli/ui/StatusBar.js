@@ -3,7 +3,7 @@ import { Box, Text } from 'ink';
 import { Spinner } from './Spinner.js';
 import { MODE_BADGES } from '../core/modes.js';
 
-export function StatusBar({ agentStatus, statusMessage, spinnerFrame, teachMode, supportMode, activeModes, autoMode, acceptEdits, guardMode, activeProvider }) {
+export function StatusBar({ agentStatus, statusMessage, spinnerFrame, teachMode, supportMode, activeModes, autoMode, acceptEdits, allowedCount = 0, guardMode, activeProvider }) {
   const isBusy = agentStatus !== 'idle';
   const modeSet = activeModes instanceof Set ? activeModes : new Set();
   return React.createElement(
@@ -13,6 +13,7 @@ export function StatusBar({ agentStatus, statusMessage, spinnerFrame, teachMode,
     supportMode && React.createElement(Text, { color: 'yellow' }, '[SUPPORT]'),
     autoMode && React.createElement(Text, { color: 'red', bold: true }, '[AUTO]'),
     acceptEdits && React.createElement(Text, { color: 'green', bold: true }, '[ACCEPT-EDITS]'),
+    allowedCount > 0 && React.createElement(Text, { color: 'cyan', bold: true }, `[${allowedCount} allowed]`),
     guardMode && React.createElement(Text, { color: 'cyan', bold: true }, '[GUARD]'),
     ...[...modeSet].map((m) => MODE_BADGES[m]
       ? React.createElement(Text, { key: m, color: MODE_BADGES[m].color, bold: true }, MODE_BADGES[m].label)

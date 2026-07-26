@@ -21,8 +21,10 @@ export const INITIAL_STATE = {
   autoMode: false,
   acceptEdits: false,
   pendingConfirmation: null,
-  guardMode: true,
-  activeTool: null
+  activeTool: null,
+  queuedMessage: null,
+  allowedCount: 0,
+  guardMode: true
 };
 
 export const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
