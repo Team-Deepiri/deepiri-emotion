@@ -136,6 +136,11 @@ export class OllamaProvider extends Provider {
         model,
         messages: [userMessage],
         stream: true,
+        // Keep the model loaded between turns — cold loads of 9B+ on CPU feel hung.
+        keep_alive: opts.keepAlive ?? '30m',
+        ...(opts.ollamaOptions && typeof opts.ollamaOptions === 'object'
+          ? { options: opts.ollamaOptions }
+          : {}),
       }),
       signal: opts.signal,
     });

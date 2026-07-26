@@ -15,7 +15,7 @@ import { MODES } from '../core/modes.js';
 import { streamLLM as defaultStreamLLM } from './llmStream.js';
 import { parseToolIntent as defaultParseToolIntent, executeTool as defaultExecuteTool } from './tools.js';
 import { maybeConfirmAndExecute as defaultMaybeConfirmAndExecute } from './confirm.js';
-import { createSimplePlan as defaultCreateSimplePlan } from './planner.js';
+import { createSimplePlan as defaultCreateSimplePlan, isSimpleChatTurn } from './planner.js';
 import { discoverGuidance as defaultDiscoverGuidance } from './guidance.js';
 import { detectSupportNeed as defaultDetectSupportNeed } from './support.js';
 import { stopReason, toolCallKey } from './loopGuards.js';
@@ -208,14 +208,8 @@ export class AgentWorker {
 
       this._throwIfCancelled();
 
-      wbus.emit(EVENTS.AGENT_STATUS, { status: 'responding', message: 'Responding...' });
-      wbus.emit(EVENTS.AGENT_STEP, {
-        id: this._nextStepId(),
-        type: 'response',
-        status: 'running',
-        message: 'Responding...',
-      });
-
+      // Don't flip to "Responding..." until we actually stream visible tokens —
+      // otherwise local Ollama looks hung while silent reasoning burns CPU.
       const agentInstructions = `
         You are an autonomous coding agent helping the user understand and work on this codebase.
         You are running inside a terminal UI. Keep all output terminal-friendly:
@@ -538,6 +532,39 @@ ${this.config.projectSnapshot}`;
 
       const simplePlan = this._createSimplePlan(text);
 
+      // Fast path: short conversational turns skip the multi-step silent loop.
+      // Local Ollama on CPU can take minutes per full agent step — chat shouldn't.
+      if (isSimpleChatTurn(text, simplePlan)) {
+        const historyBlock = this.history.length
+          ? `\n\n[Conversation so far]\n${this.history.map(m => `${m.role}: ${m.content}`).join('\n\n')}\n`
+          : '';
+        const chatPrompt = `You are Emotion, a helpful coding assistant in a terminal.
+Keep replies short and conversational unless the user asks for detail.
+No tool calls. No JSON. Plain text only.
+
+${historyBlock}
+User: ${text}`;
+
+        wbus.emit(EVENTS.AGENT_STATUS, { status: 'responding', message: 'Responding...' });
+        wbus.emit(EVENTS.AGENT_STEP, {
+          id: this._nextStepId(),
+          type: 'response',
+          status: 'running',
+          message: 'Responding...',
+        });
+        await this._streamLLM(wbus, chatPrompt, {
+          config,
+          silent: false,
+          attachments,
+          signal: this.abortController.signal,
+          ollamaOptions: { num_predict: 256, temperature: 0.7 },
+        });
+        // streamLLM already emits LLM_DONE for non-silent calls.
+        this._emitDoneStep(wbus);
+        wbus.emit(EVENTS.AGENT_STATUS, { status: 'idle', message: '' });
+        return;
+      }
+
       // Only surface a checklist for genuinely multi-step turns (>1 planned file
       // read); single-file or tool-free turns stay noise-free.
       const planItems = simplePlan.needsTools && simplePlan.requiredFiles.length > 1
@@ -667,6 +694,7 @@ ${this.config.projectSnapshot}`;
           attachments,
           signal: this.abortController.signal,
           onToken: (token) => { lastResponse += token; },
+          ollamaOptions: { num_predict: 768 },
         });
 
         this._throwIfCancelled();
@@ -812,6 +840,7 @@ ${this.config.projectSnapshot}`;
         if (isFinalAnswer) {
           noProgressStreak = 0;
           const cleanedResponse = stripFinalAnswer(strippedResponse);
+          wbus.emit(EVENTS.AGENT_STATUS, { status: 'responding', message: 'Responding...' });
           await streamTokens(wbus, cleanedResponse, EVENTS.LLM_TOKEN);
           this._emitDoneStep(wbus);
           finalizePlanItems();
@@ -821,6 +850,7 @@ ${this.config.projectSnapshot}`;
 
         if (lastResponse.trim()) {
           noProgressStreak = 0;
+          wbus.emit(EVENTS.AGENT_STATUS, { status: 'responding', message: 'Responding...' });
           await streamTokens(wbus, lastResponse.trim(), EVENTS.LLM_TOKEN);
           this._emitDoneStep(wbus);
           finalizePlanItems();
@@ -849,6 +879,7 @@ ${this.config.projectSnapshot}`;
           attachments,
           signal: this.abortController.signal,
           onToken: (tok) => { finalResponse += tok; },
+          ollamaOptions: { num_predict: 512 },
         });
         const cleaned = stripFinalAnswer(finalResponse);
         await streamTokens(wbus, cleaned || '(Agent reached budget limit before completing a response.)', EVENTS.LLM_TOKEN);
