@@ -110,13 +110,12 @@ export class AgentWorker {
    *   }>,
    * }} opts
    */
-  constructor({ id = 'main', bus, config = {}, task, modes = {}, attachments = [], deps = {}, history = [] }) {
+  constructor({ id = 'main', bus, config = {}, task, modes = {}, attachments = [], deps = {} }) {
     this.id          = id;
     this.wbus        = new WorkerBus(bus, id);
     this.config      = config;
     this.task        = task;
     this.attachments = attachments;
-    this.history     = history;
     this.modes  = {
       teachMode:   modes.teachMode   ?? false,
       activeModes: modes.activeModes ?? new Set(),
@@ -580,12 +579,8 @@ ${this.config.projectSnapshot}`;
         }
       }
 
-      const historyBlock = this.history.length
-        ? `\n\n[Conversation so far]\n${this.history.map(m => `${m.role}: ${m.content}`).join('\n\n')}\n`
-        : '';
-
       const promptForLlm = `${fullInstructions}
-        ${historyBlock}
+
         [Planning guidance]
         ${JSON.stringify(simplePlan, null, 2)}
 
@@ -776,12 +771,7 @@ ${this.config.projectSnapshot}`;
           try {
             loopToolResult = await this._maybeConfirmAndExecute(
               wbus, loopToolIntent.tool, loopToolIntent.args, config.workspaceDir,
-              {
-                autoApprove: autoMode || acceptEdits,
-                allowSet: config.allowSet,
-                checkpoints: config.checkpoints,
-                turnId: config.currentTurnId,
-              }
+              { autoApprove: autoMode || acceptEdits }
             );
           } catch (err) {
             loopToolResult = { error: err.message };
