@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Box, Text } from 'ink';
 import { EVENTS } from '../core/eventBus.js';
 import { INITIAL_STATE, NUM_SPINNER_FRAMES } from '../core/stateStore.js';
@@ -25,6 +25,7 @@ export default function App({
   });
   const [inputValue, setInputValue] = useState('');
   const [pendingAttachments, setPendingAttachments] = useState([]);
+  const turnIdRef = useRef(null);
 
   const handleClear = useCallback(() => {
     setState({ ...INITIAL_STATE });
@@ -38,7 +39,7 @@ export default function App({
       if (text?.trim() === '/clear') return;
       setState((s) => ({
         ...s,
-        messages: [...s.messages, { role: 'user', content: text }],
+        messages: [...s.messages, { role: 'user', content: text, turnId: turnIdRef.current }],
         streamingMessage: '',
         steps: [],
         plan: [],
@@ -66,7 +67,7 @@ export default function App({
         return {
           ...s,
           messages: full
-            ? [...s.messages, { role: 'assistant', content: full, steps: s.steps, plan: s.plan }]
+            ? [...s.messages, { role: 'assistant', content: full, steps: s.steps, plan: s.plan, turnId: turnIdRef.current }]
             : s.messages,
           streamingMessage: '',
           steps: [],
@@ -173,6 +174,24 @@ export default function App({
       handleClear();
     };
 
+    const onTokenUsage = ({ used, limit }) => {
+      setState((s) => ({ ...s, tokenUsage: { used: used ?? 0, limit: limit ?? s.tokenUsage.limit } }));
+    };
+
+    const onTurnStarted = ({ turnId }) => {
+      turnIdRef.current = turnId;
+    };
+
+    const onRewind = ({ turnId }) => {
+      setState((s) => ({
+        ...s,
+        messages: s.messages.filter((m) => m.turnId == null || m.turnId < turnId),
+        streamingMessage: '',
+        steps: [],
+        plan: []
+      }));
+    };
+
     eventBus.on(EVENTS.USER_MESSAGE, onUserMessage);
     eventBus.on(EVENTS.LLM_TOKEN, onLlmToken);
     eventBus.on(EVENTS.LLM_DONE, onLlmDone);
@@ -196,6 +215,9 @@ export default function App({
     eventBus.on(EVENTS.CLEAR, onClear);
     eventBus.on(EVENTS.GUARD_MODE_CHANGED, onGuardModeChanged);
     eventBus.on(EVENTS.PROVIDER_SELECTED, onProviderSelected);
+    eventBus.on(EVENTS.TOKEN_USAGE_CHANGED, onTokenUsage);
+    eventBus.on(EVENTS.TURN_STARTED, onTurnStarted);
+    eventBus.on(EVENTS.REWIND, onRewind);
 
     const spinnerTimer = setInterval(() => {
       eventBus.emit(EVENTS.SPINNER_TICK);
@@ -225,6 +247,9 @@ export default function App({
       eventBus.off(EVENTS.CLEAR, onClear);
       eventBus.off(EVENTS.GUARD_MODE_CHANGED, onGuardModeChanged);
       eventBus.off(EVENTS.PROVIDER_SELECTED, onProviderSelected);
+      eventBus.off(EVENTS.TOKEN_USAGE_CHANGED, onTokenUsage);
+      eventBus.off(EVENTS.TURN_STARTED, onTurnStarted);
+      eventBus.off(EVENTS.REWIND, onRewind);
       clearInterval(spinnerTimer);
     };
   }, [eventBus, handleClear]);
@@ -339,6 +364,7 @@ export default function App({
       allowedCount: state.allowedCount,
       guardMode: state.guardMode,
       activeProvider: state.activeProvider,
+      tokenUsage: state.tokenUsage
     }),
     ...(pendingAttachments.length > 0 ? [
       React.createElement(Box, { key: 'attachments', marginTop: 0 },
