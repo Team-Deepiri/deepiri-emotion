@@ -270,7 +270,7 @@ export async function webSearchTool(query, limit = 8) {
  * Fetch a page and return its extracted text content, truncated the same
  * way readFileTool truncates file contents.
  */
-export async function webFetchTool(url) {
+export async function webFetchTool(url, options = {}) {
   if (!url || typeof url !== 'string') return { error: 'url is required' };
   let parsed;
   try {
@@ -282,14 +282,18 @@ export async function webFetchTool(url) {
     return { error: `Unsupported URL scheme: ${parsed.protocol}` };
   }
 
+  const maxContent = Number.isFinite(options.maxContentChars) && options.maxContentChars > 0
+    ? options.maxContentChars
+    : WEB_MAX_CONTENT;
+
   const fetched = await fetchWithLimit(parsed.toString());
   if (fetched.error) return { url: parsed.toString(), error: fetched.error };
 
   const content = stripHtml(fetched.text);
-  const truncated = content.length > WEB_MAX_CONTENT;
+  const truncated = content.length > maxContent;
   return {
     url: parsed.toString(),
-    content: content.slice(0, WEB_MAX_CONTENT),
+    content: content.slice(0, maxContent),
     truncated,
   };
 }
@@ -407,7 +411,7 @@ export function explainTool({ concept, explanation, example = null, category = '
 /**
  * Execute a tool by name.
  */
-export async function executeTool(tool, args = {}, cwd = DEFAULT_CWD) {
+export async function executeTool(tool, args = {}, cwd = DEFAULT_CWD, options = {}) {
   if (tool === 'read_file') {
     return readFileTool(args.filePath, cwd);
   }
@@ -469,7 +473,7 @@ export async function executeTool(tool, args = {}, cwd = DEFAULT_CWD) {
   }
 
   if (tool === 'web_fetch') {
-    return webFetchTool(args.url);
+    return webFetchTool(args.url, { maxContentChars: options.webFetchMaxContentChars });
   }
 
   return { error: `Unknown tool: ${tool}` };

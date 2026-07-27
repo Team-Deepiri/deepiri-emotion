@@ -45,6 +45,7 @@ export function configFor(name, config = {}) {
         model: config.ollamaModel,
         minNumCtx: config.ollamaMinNumCtx,
         temperature: config.ollamaTemperature,
+        maxPredictTokens: config.ollamaMaxPredictTokens,
       };
     case 'claude-cli':
       return { binPath: config.claudeCliPath, model: config.claudeCliModel };

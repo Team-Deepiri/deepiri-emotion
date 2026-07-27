@@ -155,12 +155,15 @@ function parseContextError(body) {
 export class OllamaProvider extends Provider {
   static providerName = 'ollama';
 
-  constructor({ baseUrl, model, minNumCtx, temperature } = {}) {
+  constructor({ baseUrl, model, minNumCtx, temperature, maxPredictTokens } = {}) {
     super();
     this.baseUrl = trimSlash(baseUrl);
     this.model = model || DEFAULT_MODEL;
     this.minNumCtx = Number.isFinite(minNumCtx) && minNumCtx > 0 ? minNumCtx : null;
     this.temperature = Number.isFinite(temperature) ? temperature : DEFAULT_TEMPERATURE;
+    this.maxPredictTokens = Number.isFinite(maxPredictTokens) && maxPredictTokens > 0
+      ? maxPredictTokens
+      : null;
   }
 
   /** Cheap probe: GET the root and see if Ollama answers within ~1s. */
@@ -210,6 +213,9 @@ export class OllamaProvider extends Provider {
     userOptions.num_ctx = numCtx;
     if (!Number.isFinite(userOptions.temperature)) {
       userOptions.temperature = this.temperature;
+    }
+    if (!Number.isFinite(userOptions.num_predict) && this.maxPredictTokens != null) {
+      userOptions.num_predict = this.maxPredictTokens;
     }
 
     const runtime = await getOllamaRuntimeInfo(this.baseUrl, model);

@@ -106,6 +106,17 @@ describe('delegateTasks', () => {
     expect(results).toHaveLength(5);
   });
 
+  it('honors config.delegateMaxTargets when capping parallel targets', async () => {
+    runMock.mockImplementation(makeRunImpl());
+    const targets = Array.from({ length: 8 }, (_, i) => ({ provider: 'ollama', model: `m${i}` }));
+    const results = await delegateTasks(
+      targets,
+      'p',
+      { delegateProviders: ['ollama'], delegateMaxTargets: 3 },
+    );
+    expect(results).toHaveLength(3);
+  });
+
   it('lets a per-target prompt override the shared default prompt', async () => {
     runMock.mockImplementation(makeRunImpl());
     await delegateTasks(

@@ -221,7 +221,13 @@ export class AgentWorker {
     const { config, modes, wbus } = this;
     const text = this.task;
     const { teachMode, activeModes, autoMode, acceptEdits, guardMode, readOnly } = modes;
-    const { maxSteps, maxToolCalls, agentTimeoutMs } = { ...DEFAULT_CONFIG, ...config };
+    const { maxSteps, maxToolCalls, agentTimeoutMs, ollamaMaxPredictTokens } = {
+      ...DEFAULT_CONFIG,
+      ...config,
+    };
+    const maxPredict = Number.isFinite(ollamaMaxPredictTokens) && ollamaMaxPredictTokens > 0
+      ? ollamaMaxPredictTokens
+      : 768;
     const attachments = this.attachments || [];
 
     try {
@@ -765,7 +771,7 @@ ${this.config.projectSnapshot}`;
               });
             }
           },
-          ollamaOptions: { num_predict: 768 },
+          ollamaOptions: { num_predict: maxPredict },
         });
 
         if (streamFailed) {
@@ -947,6 +953,7 @@ ${this.config.projectSnapshot}`;
                 allowSet: config.allowSet,
                 checkpoints: config.checkpoints,
                 turnId: config.currentTurnId,
+                webFetchMaxContentChars: config.webFetchMaxContentChars,
               }
             );
           } catch (err) {
@@ -1035,7 +1042,7 @@ ${this.config.projectSnapshot}`;
           attachments,
           signal: this.abortController.signal,
           onToken: (tok) => { finalResponse += tok; },
-          ollamaOptions: { num_predict: 512 },
+          ollamaOptions: { num_predict: Math.min(maxPredict, 512) },
         });
         const cleaned = sanitizeFinalText(stripFinalAnswer(finalResponse));
         await streamTokens(wbus, cleaned || '(Agent reached budget limit before completing a response.)', EVENTS.LLM_TOKEN);

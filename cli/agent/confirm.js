@@ -115,16 +115,17 @@ export function requestConfirmation(bus, payload = {}, { autoApprove = false } =
  * prompt. Other tools run directly. Returns the tool result, or
  * { denied: true, ... } if the user rejected the action.
  */
-export async function maybeConfirmAndExecute(bus, tool, args = {}, cwd, { autoApprove = false, allowSet = null, checkpoints = null, turnId = null } = {}) {
+export async function maybeConfirmAndExecute(bus, tool, args = {}, cwd, { autoApprove = false, allowSet = null, checkpoints = null, turnId = null, webFetchMaxContentChars = null } = {}) {
+  const toolOptions = { webFetchMaxContentChars };
   if (!isGatedTool(tool)) {
-    return executeTool(tool, args, cwd);
+    return executeTool(tool, args, cwd, toolOptions);
   }
 
   const snapshotAndExecute = async () => {
     if (isMutatingTool(tool)) {
       await recordCheckpoint(checkpoints, turnId, args.filePath, cwd);
     }
-    return executeTool(tool, args, cwd);
+    return executeTool(tool, args, cwd, toolOptions);
   };
 
   const key = allowKeyFor(tool, args);

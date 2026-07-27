@@ -34,6 +34,8 @@ export const DEFAULT_CONFIG = {
   // Floor for num_ctx regardless of prompt size — raise this on hardware that can
   // hold more than the smallest sufficient ladder rung (see chooseNumCtx in ollama.js).
   ollamaMinNumCtx: Number(process.env.OLLAMA_MIN_NUM_CTX) || null,
+  // Cap on Ollama output tokens (num_predict) for agent loop turns.
+  ollamaMaxPredictTokens: Number(process.env.OLLAMA_MAX_PREDICT) || 768,
   // Lower than Ollama's own 0.8 default — agentic tool-use turns need the model to
   // stick close to tool results and strict JSON, not get creative. See ollama.js.
   ollamaTemperature: process.env.OLLAMA_TEMPERATURE !== undefined ? Number(process.env.OLLAMA_TEMPERATURE) : null,
@@ -47,6 +49,10 @@ export const DEFAULT_CONFIG = {
   maxSteps: Number(process.env.AGENT_MAX_STEPS) || 5,
   maxToolCalls: Number(process.env.AGENT_MAX_TOOL_CALLS) || 8,
   agentTimeoutMs: Number(process.env.AGENT_TIMEOUT_MS) || 60_000,
+  // Max parallel providers a single delegate tool call may fan out to.
+  delegateMaxTargets: Number(process.env.DELEGATE_MAX_TARGETS) || 5,
+  // Cap on plain-text chars returned by web_fetch (mirrors readFileTool's 8k default).
+  webFetchMaxContentChars: Number(process.env.WEB_FETCH_MAX_CONTENT) || 8000,
   // Voice-of-reason supervisor — set SUPERVISOR_ENABLED=false or supervisorEnabled:false to disable
   supervisorEnabled: process.env.SUPERVISOR_ENABLED !== 'false',
   claudeCliPath: process.env.CLAUDE_CLI_PATH || undefined,

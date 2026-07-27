@@ -379,6 +379,14 @@ describe('webFetchTool', () => {
     expect(result.truncated).toBe(true);
   });
 
+  it('honors a custom maxContentChars override', async () => {
+    const longText = 'b'.repeat(500);
+    global.fetch = async () => ({ ok: true, status: 200, text: async () => `<p>${longText}</p>` });
+    const result = await webFetchTool('https://example.com', { maxContentChars: 100 });
+    expect(result.content.length).toBe(100);
+    expect(result.truncated).toBe(true);
+  });
+
   it('rejects a non-http(s) URL scheme without fetching', async () => {
     let called = false;
     global.fetch = async () => { called = true; return { ok: true, status: 200, text: async () => '' }; };
