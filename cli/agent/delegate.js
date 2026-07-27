@@ -17,7 +17,7 @@ import { AgentWorker } from './AgentWorker.js';
 import { EVENTS } from '../core/eventBus.js';
 import { PROVIDER_MODEL_CONFIG_KEY } from './providers/registry.js';
 
-const MAX_TARGETS = 5;
+const DEFAULT_MAX_TARGETS = 5;
 const DELEGATE_TIMEOUT_MS = 45_000;
 
 /**
@@ -110,7 +110,10 @@ export async function delegateTasks(targets, defaultPrompt, config = {}, opts = 
   }
 
   const allowed = new Set(config.delegateProviders || []);
-  const capped = targets.slice(0, MAX_TARGETS);
+  const maxTargets = Number(config.delegateMaxTargets) > 0
+    ? Number(config.delegateMaxTargets)
+    : DEFAULT_MAX_TARGETS;
+  const capped = targets.slice(0, maxTargets);
 
   return Promise.all(
     capped.map((target) => {

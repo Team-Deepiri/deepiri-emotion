@@ -18,6 +18,7 @@ import {
   handleSkillsCommand,
   handleStatusCommand,
 } from './modelsCommand.js';
+import { handleConnectCommand } from './connectCommand.js';
 
 const AUTO_COMPACT_THRESHOLD = 0.8;
 
@@ -153,6 +154,7 @@ export function attachAgentRunner(bus, config = {}) {
     if (await handleModelsCommand(text || '', { bus, config })) return;
     if (await handleProviderCommand(text || '', { bus, config })) return;
     if (await handleAccountCommand(text || '', { bus, config })) return;
+    if (await handleConnectCommand(text || '', { bus, config })) return;
     if (await handleSkillsCommand(text || '', { bus, config })) return;
     if (await handleStatusCommand(text || '', { bus, config })) return;
 

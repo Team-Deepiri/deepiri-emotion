@@ -1,9 +1,10 @@
 /**
- * Confirmation gate: pause mutating tools and run_command for user approval
- * before they execute. autoApprove (auto mode / accept-edits) bypasses the
- * prompt deliberately. allowSet lets the user grant "always allow" for a
- * specific tool (file mutations) or tool+command (run_command) for the rest
- * of the session, without granting blanket auto mode.
+ * Confirmation gate: pause mutating tools, run_command, and network tools
+ * (web_search, web_fetch) for user approval before they execute. autoApprove
+ * (auto mode / accept-edits) bypasses the prompt deliberately. allowSet lets
+ * the user grant "always allow" for a specific tool (file mutations, web
+ * tools) or tool+command (run_command) for the rest of the session, without
+ * granting blanket auto mode.
  */
 import { readFile } from 'fs/promises';
 import { existsSync } from 'fs';
@@ -13,7 +14,8 @@ import { previewMutation } from './fileEdit.js';
 import { safeWorkspacePath } from './pathSafety.js';
 
 const MUTATING_TOOLS = new Set(['create_file', 'write_file', 'edit_file']);
-const GATED_TOOLS = new Set([...MUTATING_TOOLS, 'run_command']);
+const NETWORK_TOOLS = new Set(['web_search', 'web_fetch']);
+const GATED_TOOLS = new Set([...MUTATING_TOOLS, 'run_command', ...NETWORK_TOOLS]);
 const MAX_CHECKPOINTS = 10;
 
 /**
@@ -113,16 +115,17 @@ export function requestConfirmation(bus, payload = {}, { autoApprove = false } =
  * prompt. Other tools run directly. Returns the tool result, or
  * { denied: true, ... } if the user rejected the action.
  */
-export async function maybeConfirmAndExecute(bus, tool, args = {}, cwd, { autoApprove = false, allowSet = null, checkpoints = null, turnId = null } = {}) {
+export async function maybeConfirmAndExecute(bus, tool, args = {}, cwd, { autoApprove = false, allowSet = null, checkpoints = null, turnId = null, webFetchMaxContentChars = null } = {}) {
+  const toolOptions = { webFetchMaxContentChars };
   if (!isGatedTool(tool)) {
-    return executeTool(tool, args, cwd);
+    return executeTool(tool, args, cwd, toolOptions);
   }
 
   const snapshotAndExecute = async () => {
     if (isMutatingTool(tool)) {
       await recordCheckpoint(checkpoints, turnId, args.filePath, cwd);
     }
-    return executeTool(tool, args, cwd);
+    return executeTool(tool, args, cwd, toolOptions);
   };
 
   const key = allowKeyFor(tool, args);
@@ -133,6 +136,10 @@ export async function maybeConfirmAndExecute(bus, tool, args = {}, cwd, { autoAp
   let preview;
   if (tool === 'run_command') {
     preview = { path: null, action: 'run_command', preview: `$ ${args.command}`, diffLines: null, overwrite: false };
+  } else if (tool === 'web_search') {
+    preview = { path: null, action: 'web_search', preview: `🔎 ${args.query}`, diffLines: null, overwrite: false };
+  } else if (tool === 'web_fetch') {
+    preview = { path: args.url || null, action: 'web_fetch', preview: `🌐 GET ${args.url}`, diffLines: null, overwrite: false };
   } else {
     preview = await previewMutation(tool, args, cwd);
     if (preview.error) return { error: preview.error };
@@ -159,7 +166,10 @@ export async function maybeConfirmAndExecute(bus, tool, args = {}, cwd, { autoAp
     return {
       denied: true,
       path: preview.path,
-      message: tool === 'run_command' ? 'User denied the command.' : 'User denied the file change.',
+      message:
+        tool === 'run_command' ? 'User denied the command.'
+        : NETWORK_TOOLS.has(tool) ? 'User denied the network request.'
+        : 'User denied the file change.',
     };
   }
 
