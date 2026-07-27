@@ -137,9 +137,15 @@ export class ClaudeCliProvider extends Provider {
       cwd: process.cwd(),
       stdio: ['pipe', 'pipe', 'pipe'],
       env: cleanClaudeEnv(),
+      signal: opts.signal,
     });
 
-    child.stdin.end(prompt);
+    // Append image file paths so the claude CLI can read them as local file context.
+    const attachments = Array.isArray(opts.attachments) ? opts.attachments : [];
+    const attachNote = attachments.length > 0
+      ? '\n\n' + attachments.map((a) => `[Attached image: ${a.path}]`).join('\n')
+      : '';
+    child.stdin.end(prompt + attachNote);
 
     return new Promise((resolve, reject) => {
       let settled = false;
@@ -168,6 +174,10 @@ export class ClaudeCliProvider extends Provider {
         clearTimeout(timer);
         if (settled) return;
         settled = true;
+        if (err.name === 'AbortError') {
+          reject(err);
+          return;
+        }
         reject(new ProviderUnavailableError(`Claude CLI spawn failed: ${err.message}`));
       });
 

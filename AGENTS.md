@@ -12,8 +12,10 @@ This document describes how AI assistants and coding agents should work with the
 
 ## Terminal CLI
 
-- **Interactive TUI:** `npm run cli` (must run in a real TTY). Use `npm run cli -- /path/to/project` to run tools in that directory; `npm run cli:dev` for watch mode.
-- **Help/version:** `node cli/index.js --help` or `--version`.
+- **Install:** From the repo root: `./install.sh` (installs npm deps only if missing/stale, then puts `emotion` on PATH).
+- **Global command:** After install, run `emotion` (or `emotion /path/to/project`) from any directory. CLI-only re-link: `npm run install:cli`.
+- **Without linking:** `npm run cli` (must run in a real TTY). Use `npm run cli -- /path/to/project`; `npm run cli:dev` for watch mode.
+- **Help/version:** `emotion --help` / `emotion --version`.
 - **Config:** Env vars `OPENAI_API_KEY`, `AI_SERVICE_URL`, `OLLAMA_HOST`; or config file `.emotion-cli.json` (cwd) or `~/.config/deepiri-emotion/cli.json`.
 - **Tools:** Say e.g. "read file package.json", "search for openFile", "run npm test". Shift+Enter for newline, Enter to send. See `cli/README.md` and `docs/cli-tui-plan.md`.
 

@@ -22,14 +22,26 @@ export class CyrexProvider extends Provider {
   }
 
   async stream(bus, prompt, opts = {}) {
+    const attachments = Array.isArray(opts.attachments) ? opts.attachments : [];
+    // Pass attachments as base64 strings; backend may or may not support vision.
+    const attachmentPayload = attachments.map((a) => ({ mime: a.mime, base64: a.base64 }));
+
     let res;
     try {
       res = await fetch(`${this.baseUrl}/agent/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, context: '', file_content: '', selection: null }),
+        body: JSON.stringify({
+          prompt,
+          context: '',
+          file_content: '',
+          selection: null,
+          ...(attachmentPayload.length > 0 ? { attachments: attachmentPayload } : {}),
+        }),
+        signal: opts.signal,
       });
     } catch (err) {
+      if (err?.name === 'AbortError') throw err;
       throw new ProviderUnavailableError(`Cyrex unreachable: ${err.message}`);
     }
 
@@ -44,9 +56,16 @@ export class CyrexProvider extends Provider {
       data?.reply ?? data?.content ?? data?.message ?? (typeof data === 'string' ? data : '');
 
     for (const char of String(reply)) {
+      if (opts.signal?.aborted) {
+        const err = new Error('Cancelled');
+        err.name = 'AbortError';
+        throw err;
+      }
       if (!opts.silent) bus.emit(EVENTS.LLM_TOKEN, { token: char });
       if (typeof opts.onToken === 'function') opts.onToken(char);
-      await new Promise((r) => setTimeout(r, SIMULATED_TOKEN_DELAY_MS));
+      // Skip the simulated typing delay for silent/reasoning calls — no UI benefit,
+      // only adds latency to the supervisor and agentic reasoning loop.
+      if (!opts.silent) await new Promise((r) => setTimeout(r, SIMULATED_TOKEN_DELAY_MS));
     }
   }
 }

@@ -1,6 +1,7 @@
 # Deepiri Emotion
 
 **AI-powered desktop IDE** free to download, install, and use. Workspace, Monaco editor, AI chat, terminal, and optional Cyrex/Helox backends.
+<img width="958" height="344" alt="image" src="https://github.com/user-attachments/assets/b184734c-08be-4050-b465-44173d9a921e" />
 
 ---
 
@@ -154,6 +155,7 @@ The app runs without `.env`; these are for custom endpoints and keys.
 | `npm run lint` | Lint `src` and `cli` with ESLint. |
 | `npm run lint:fix` | Lint and fix what can be auto-fixed. |
 | `npm run check` | Lint + test + build renderer (CI-style full check). |
+<img width="953" height="307" alt="image" src="https://github.com/user-attachments/assets/1a91e04f-74bf-4e57-973b-93780a3913a9" />
 
 ---
 

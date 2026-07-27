@@ -4,18 +4,55 @@ Interactive TUI (terminal UI) in the style of Claude CLI: event bus, state-drive
 
 ## Run
 
+One-shot install (deps if needed + `emotion` on PATH):
+
+```bash
+./install.sh
+```
+
+Then from any directory:
+
+```bash
+emotion
+emotion /path/to/project
+emotion --help
+emotion -p "summarize package.json"
+```
+
+Already have deps and only need the command:
+
+```bash
+npm run install:cli
+```
+
+Without installing globally:
+
 ```bash
 npm run cli
-# with a workspace (tools run in that directory)
 npm run cli -- /path/to/project
 # dev: auto-restart on file changes
 npm run cli:dev
-
-# or
-node cli/index.js [--help | --version] [--] [workspace-dir]
 ```
 
-**Must be run in an interactive terminal** (real TTY). Piping or running under CI will show “Raw mode is not supported” because Ink needs keyboard input.
+**Must be run in an interactive terminal** (real TTY). Piping or running under CI will show “Raw mode is not supported” because Ink needs keyboard input. Use `-p` / `--print` for headless/non-TTY runs.
+
+## Slash commands
+
+Type `/` in the prompt for autocomplete. Highlights:
+
+| Command | What it does |
+| --- | --- |
+| `/models` | **Interactive** model menu (↑↓ Enter). Use installed models, install from catalog, switch provider. |
+| `/account` | Link cloud accounts: opens provider website, paste API key, pick plan. Also runs on first launch. |
+| `/provider` | Interactive provider switch (or `/provider ollama`). |
+| `/connect` | BYOK: paste an API key for openai/anthropic/gemini/openrouter (or `/connect anthropic`). |
+| `/skills` | Interactive skill browser. |
+| `/status` | cwd + provider/model + saved plans. |
+| `/help` | Full command list. |
+
+Plans are stored in `~/.config/deepiri-emotion/cli.json` (not env-only). Env still overrides when set (`OPENAI_PLAN`, etc.).
+
+Power-user shortcuts still work: `/models use <name>`, `/models pull <name>`.
 
 ## Architecture
 

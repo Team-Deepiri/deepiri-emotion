@@ -2,10 +2,10 @@
  * CLI tools tests (Node env).
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdir, writeFile, rm, symlink } from 'fs/promises';
+import { mkdir, writeFile, rm, symlink, realpath } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { parseToolIntent, readFileTool, searchTool, listFilesTool, runCommandTool, explainTool } from '../tools.js';
+import { parseToolIntent, readFileTool, searchTool, listFilesTool, runCommandTool, explainTool, webSearchTool, webFetchTool } from '../tools.js';
 
 describe('parseToolIntent', () => {
   it('returns read_file for "read file path"', () => {
@@ -29,10 +29,10 @@ describe('parseToolIntent', () => {
     });
   });
 
-  it('returns search for "search X"', () => {
+  it('returns search for "search X" preserving original case', () => {
     expect(parseToolIntent('search openFile')).toEqual({
       tool: 'search',
-      args: { query: 'openfile' }
+      args: { query: 'openFile' }
     });
   });
 
@@ -75,6 +75,28 @@ describe('parseToolIntent', () => {
     const json = JSON.stringify({ tool: 'search', args: null });
     expect(parseToolIntent(json)).toBeNull();
   });
+
+  it('extracts a create_file call embedded in prose despite nested args braces', () => {
+    // Regression: a non-greedy regex here used to stop at the FIRST closing
+    // brace (the inner args object's), truncating the JSON before the outer
+    // closing brace so it never parsed — the tool call silently became inert
+    // prose instead of executing.
+    const text = 'I will create a simple hello world file.\n'
+      + '{"tool": "create_file", "args": {"filePath": "hello-world.js", "content": "console.log(\'Hello, World!\');\\n"}}';
+    expect(parseToolIntent(text)).toEqual({
+      tool: 'create_file',
+      args: { filePath: 'hello-world.js', content: "console.log('Hello, World!');\n" },
+    });
+  });
+
+  it('extracts a delegate call embedded in prose despite deeply nested braces', () => {
+    const text = 'Delegating this out.\n'
+      + '{"tool": "delegate", "args": {"prompt": "p", "tasks": [{"provider": "ollama", "model": "m"}]}}';
+    expect(parseToolIntent(text)).toEqual({
+      tool: 'delegate',
+      args: { prompt: 'p', tasks: [{ provider: 'ollama', model: 'm' }] },
+    });
+  });
 });
 
 describe('readFileTool', () => {
@@ -83,6 +105,9 @@ describe('readFileTool', () => {
   beforeEach(async () => {
     dir = join(tmpdir(), `cli-tools-test-${Date.now()}`);
     await mkdir(dir, { recursive: true });
+    // macOS routes tmpdir() through a /var -> /private/var symlink; resolve it
+    // so `dir` matches the canonicalized path readFileTool/pathSafety returns.
+    dir = await realpath(dir);
   });
 
   afterEach(async () => {
@@ -276,5 +301,108 @@ describe('explainTool', () => {
     expect(result).not.toBeNull();
     expect(result.tool).toBe('explain');
     expect(result.args.concept).toBe('Singleton');
+  });
+});
+
+describe('webSearchTool', () => {
+  const realFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = realFetch;
+  });
+
+  it('parses ranked results (title, url, snippet) from the DDG HTML response', async () => {
+    const html = `
+      <div class="result results_links results_links_deep web-result">
+        <h2 class="result__title">
+          <a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fpage&amp;rut=abc">Example &amp; Title</a>
+        </h2>
+        <a class="result__snippet" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fpage">A short snippet.</a>
+      </div>
+    `;
+    global.fetch = async () => ({
+      ok: true,
+      status: 200,
+      text: async () => html,
+    });
+
+    const result = await webSearchTool('example query');
+    expect(result.query).toBe('example query');
+    expect(result.count).toBe(1);
+    expect(result.results[0]).toEqual({
+      title: 'Example & Title',
+      url: 'https://example.com/page',
+      snippet: 'A short snippet.',
+    });
+  });
+
+  it('returns an error for an empty query without hitting the network', async () => {
+    let called = false;
+    global.fetch = async () => { called = true; return { ok: true, status: 200, text: async () => '' }; };
+    const result = await webSearchTool('   ');
+    expect(result.error).toBeTruthy();
+    expect(called).toBe(false);
+  });
+
+  it('surfaces a non-2xx response as an error', async () => {
+    global.fetch = async () => ({ ok: false, status: 503, text: async () => '' });
+    const result = await webSearchTool('anything');
+    expect(result.error).toMatch(/503/);
+  });
+});
+
+describe('webFetchTool', () => {
+  const realFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = realFetch;
+  });
+
+  it('strips scripts, styles, and tags, returning plain text', async () => {
+    global.fetch = async () => ({
+      ok: true,
+      status: 200,
+      text: async () => '<html><head><style>body{color:red}</style></head><body><script>evil()</script><h1>Hello &amp; welcome</h1><p>Body text.</p></body></html>',
+    });
+    const result = await webFetchTool('https://example.com');
+    expect(result.error).toBeUndefined();
+    expect(result.url).toBe('https://example.com/');
+    expect(result.content).toBe('Hello & welcome Body text.');
+    expect(result.truncated).toBe(false);
+  });
+
+  it('truncates content over the 8000-char cap and sets truncated: true', async () => {
+    const longText = 'a'.repeat(9000);
+    global.fetch = async () => ({ ok: true, status: 200, text: async () => `<p>${longText}</p>` });
+    const result = await webFetchTool('https://example.com');
+    expect(result.content.length).toBe(8000);
+    expect(result.truncated).toBe(true);
+  });
+
+  it('honors a custom maxContentChars override', async () => {
+    const longText = 'b'.repeat(500);
+    global.fetch = async () => ({ ok: true, status: 200, text: async () => `<p>${longText}</p>` });
+    const result = await webFetchTool('https://example.com', { maxContentChars: 100 });
+    expect(result.content.length).toBe(100);
+    expect(result.truncated).toBe(true);
+  });
+
+  it('rejects a non-http(s) URL scheme without fetching', async () => {
+    let called = false;
+    global.fetch = async () => { called = true; return { ok: true, status: 200, text: async () => '' }; };
+    const result = await webFetchTool('file:///etc/passwd');
+    expect(result.error).toMatch(/scheme/i);
+    expect(called).toBe(false);
+  });
+
+  it('rejects an invalid URL', async () => {
+    const result = await webFetchTool('not a url');
+    expect(result.error).toMatch(/Invalid URL/);
+  });
+
+  it('surfaces a non-2xx response as an error', async () => {
+    global.fetch = async () => ({ ok: false, status: 404, text: async () => '' });
+    const result = await webFetchTool('https://example.com/missing');
+    expect(result.error).toMatch(/404/);
   });
 });

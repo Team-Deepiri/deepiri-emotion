@@ -159,6 +159,8 @@ describe('validateToolCall', () => {
       'git_status', 'git_diff',
       'thoughts',
       'memory_set', 'memory_get', 'memory_list',
+      'delegate',
+      'web_search', 'web_fetch',
     ];
     expect([...KNOWN_TOOLS].sort()).toEqual(expected.sort());
   });

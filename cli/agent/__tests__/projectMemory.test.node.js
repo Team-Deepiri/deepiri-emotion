@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, symlinkSync } from 'fs';
+import { mkdtempSync, rmSync, writeFileSync, symlinkSync, realpathSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { loadProjectMemory } from '../projectMemory.js';
@@ -8,6 +8,9 @@ let dir;
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'project-memory-test-'));
+  // macOS routes tmpdir() through a /var -> /private/var symlink; resolve it
+  // so `dir` matches the canonicalized path loadProjectMemory/pathSafety return.
+  dir = realpathSync(dir);
 });
 
 afterEach(() => {
