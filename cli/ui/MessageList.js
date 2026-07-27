@@ -22,7 +22,7 @@ function UserTurn({ content }) {
       Text,
       { backgroundColor: '#3f3f46' },
       React.createElement(Text, { color: 'green', bold: true }, '> '),
-      React.createElement(Text, { wrap: 'wrap' }, content)
+      React.createElement(Text, { color: 'white', wrap: 'wrap' }, content)
     )
   );
 }

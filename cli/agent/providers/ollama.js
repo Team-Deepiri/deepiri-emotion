@@ -19,6 +19,10 @@ const AVAILABILITY_TIMEOUT_MS = 800;
 const TAGS_TIMEOUT_MS = 2500;
 const RESERVE_OUTPUT_TOKENS = 1024;
 const NUM_CTX_LADDER = [4096, 8192, 12288, 16384, 24576, 32768];
+// Ollama's own default (0.8) is tuned for free-form chat. Agentic tool-use turns need
+// the model to stay close to its tool results and emit strict JSON, not get creative —
+// small models especially drift into hallucination/format errors at higher temperatures.
+const DEFAULT_TEMPERATURE = 0.2;
 
 function trimSlash(url) {
   return (url || DEFAULT_BASE_URL).replace(/\/$/, '');
@@ -151,11 +155,12 @@ function parseContextError(body) {
 export class OllamaProvider extends Provider {
   static providerName = 'ollama';
 
-  constructor({ baseUrl, model, minNumCtx } = {}) {
+  constructor({ baseUrl, model, minNumCtx, temperature } = {}) {
     super();
     this.baseUrl = trimSlash(baseUrl);
     this.model = model || DEFAULT_MODEL;
     this.minNumCtx = Number.isFinite(minNumCtx) && minNumCtx > 0 ? minNumCtx : null;
+    this.temperature = Number.isFinite(temperature) ? temperature : DEFAULT_TEMPERATURE;
   }
 
   /** Cheap probe: GET the root and see if Ollama answers within ~1s. */
@@ -203,6 +208,9 @@ export class OllamaProvider extends Provider {
       : {};
     const numCtx = chooseNumCtx(promptTokens, userOptions.num_ctx, this.minNumCtx);
     userOptions.num_ctx = numCtx;
+    if (!Number.isFinite(userOptions.temperature)) {
+      userOptions.temperature = this.temperature;
+    }
 
     const runtime = await getOllamaRuntimeInfo(this.baseUrl, model);
     bus.emit(EVENTS.LLM_PROGRESS, {

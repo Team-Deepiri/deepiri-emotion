@@ -11,6 +11,8 @@ import { getCloudCatalog, listCloudPlanNames } from '../core/cloudModels.js';
 import { EVENTS } from '../core/eventBus.js';
 import { DEFAULT_PROVIDER_CHAIN, saveUserConfig } from '../core/config.js';
 import { requestSelect, requestTextInput, openBrowser } from '../core/select.js';
+import { PROVIDER_MODEL_CONFIG_KEY } from './providers/registry.js';
+import { BYOK_PROVIDERS } from './connectCommand.js';
 
 function trimSlash(url) {
   return String(url || 'http://localhost:11434').replace(/\/$/, '');
@@ -762,16 +764,11 @@ export async function handleSkillsCommand(text, { bus, config }) {
 export async function handleStatusCommand(text, { bus, config }) {
   if (text.trim() !== '/status') return false;
   const provider = config.activeProvider || config.provider || '(unset)';
-  const model =
-    provider === 'ollama'
-      ? config.ollamaModel
-      : provider === 'openai'
-        ? config.openaiModel
-        : provider === 'claude-cli'
-          ? config.claudeCliModel
-          : provider === 'cursor'
-            ? config.cursorModel
-            : '';
+  const modelKey = PROVIDER_MODEL_CONFIG_KEY[provider];
+  const model = modelKey ? config[modelKey] : '';
+  const byokStatus = Object.entries(BYOK_PROVIDERS)
+    .filter(([id]) => id !== 'openai')
+    .map(([id, meta]) => `${id} key: ${config[meta.keyField] ? 'saved' : '(not set)'}`);
   say(
     bus,
     [
@@ -780,6 +777,7 @@ export async function handleStatusCommand(text, { bus, config }) {
       `openai plan: ${config.openaiPlan || '(not set)'}`,
       `anthropic plan: ${config.anthropicPlan || '(not set)'}`,
       `cursor plan: ${config.cursorPlan || '(not set)'}`,
+      ...byokStatus,
       `ollama: ${config.ollamaUrl}`,
     ].join('\n')
   );

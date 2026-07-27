@@ -45,6 +45,7 @@ Type `/` in the prompt for autocomplete. Highlights:
 | `/models` | **Interactive** model menu (↑↓ Enter). Use installed models, install from catalog, switch provider. |
 | `/account` | Link cloud accounts: opens provider website, paste API key, pick plan. Also runs on first launch. |
 | `/provider` | Interactive provider switch (or `/provider ollama`). |
+| `/connect` | BYOK: paste an API key for openai/anthropic/gemini/openrouter (or `/connect anthropic`). |
 | `/skills` | Interactive skill browser. |
 | `/status` | cwd + provider/model + saved plans. |
 | `/help` | Full command list. |

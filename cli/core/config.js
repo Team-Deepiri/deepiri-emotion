@@ -34,6 +34,9 @@ export const DEFAULT_CONFIG = {
   // Floor for num_ctx regardless of prompt size — raise this on hardware that can
   // hold more than the smallest sufficient ladder rung (see chooseNumCtx in ollama.js).
   ollamaMinNumCtx: Number(process.env.OLLAMA_MIN_NUM_CTX) || null,
+  // Lower than Ollama's own 0.8 default — agentic tool-use turns need the model to
+  // stick close to tool results and strict JSON, not get creative. See ollama.js.
+  ollamaTemperature: process.env.OLLAMA_TEMPERATURE !== undefined ? Number(process.env.OLLAMA_TEMPERATURE) : null,
   // Cloud plans — null means "not chosen yet" (first-run / /account will ask).
   // Env still wins when set.
   openaiPlan: process.env.OPENAI_PLAN || null,
