@@ -6,7 +6,7 @@ function UserTurn({ content }) {
     <Box flexDirection="row" flexShrink={1}>
       <Text backgroundColor="#3f3f46">
         <Text color="green" bold>{'> '}</Text>
-        <Text wrap="wrap">{content}</Text>
+        <Text color="white" wrap="wrap">{content}</Text>
       </Text>
     </Box>
   );
