@@ -1,6 +1,7 @@
 /**
  * CLI tools: read_file, search, run_command, create_file, write_file, edit_file,
- * git_status, git_diff, thoughts, memory_set, memory_get, memory_list.
+ * git_status, git_diff, thoughts, memory_set, memory_get, memory_list, web_search,
+ * web_fetch.
  * Used by runner to emit TOOL_START/TOOL_END.
  */
 import { readFile, readdir, stat } from 'fs/promises';
@@ -155,6 +156,136 @@ export function runCommandTool(command, cwd = DEFAULT_CWD) {
       resolve({ error: e.message, stdout: out, stderr: err, exitCode: -1 });
     });
   });
+}
+
+const WEB_TIMEOUT_MS = 15_000;
+const WEB_FETCH_MAX_BYTES = 500_000; // raw bytes read off the wire before stripping tags
+const WEB_MAX_CONTENT = 8000; // matches readFileTool's cap, so timelines/context stay consistent
+const WEB_USER_AGENT = 'Mozilla/5.0 (compatible; EmotionCLI/1.0)';
+
+function decodeHtmlEntities(s) {
+  return s
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
+function stripHtml(html) {
+  const withoutTags = html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<[^>]+>/g, ' ');
+  return decodeHtmlEntities(withoutTags)
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n\s*\n+/g, '\n\n')
+    .trim();
+}
+
+/**
+ * Fetch a URL with a timeout and a hard cap on bytes read off the wire, so a
+ * huge or slow-streaming page can't hang the tool loop or blow up memory.
+ */
+async function fetchWithLimit(url, { timeoutMs = WEB_TIMEOUT_MS, maxBytes = WEB_FETCH_MAX_BYTES } = {}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { signal: controller.signal, headers: { 'User-Agent': WEB_USER_AGENT } });
+    if (!res.ok) return { error: `HTTP ${res.status}` };
+
+    const reader = res.body?.getReader();
+    if (!reader) {
+      const text = await res.text();
+      return { text: text.slice(0, maxBytes) };
+    }
+    const decoder = new TextDecoder();
+    let text = '';
+    let bytes = 0;
+    while (bytes < maxBytes) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.length;
+      text += decoder.decode(value, { stream: true });
+    }
+    reader.cancel().catch(() => {});
+    return { text: text.slice(0, maxBytes) };
+  } catch (err) {
+    if (err.name === 'AbortError') return { error: `Request timed out after ${timeoutMs / 1000}s` };
+    return { error: err.message };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function extractDdgUrl(href) {
+  try {
+    const u = new URL(href, 'https://duckduckgo.com');
+    const uddg = u.searchParams.get('uddg');
+    return uddg ? decodeURIComponent(uddg) : href;
+  } catch {
+    return href;
+  }
+}
+
+/**
+ * Web search via DuckDuckGo's HTML endpoint — no API key required, so the
+ * tool works out of the box the same way the rest of the CLI defaults to
+ * zero-config local/free options first.
+ */
+export async function webSearchTool(query, limit = 8) {
+  if (!query || !query.trim()) return { error: 'Empty query' };
+  const q = query.trim();
+  const endpoint = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`;
+
+  const fetched = await fetchWithLimit(endpoint);
+  if (fetched.error) return { query: q, error: fetched.error };
+
+  const blocks = fetched.text.split('<div class="result ').slice(1);
+  const results = [];
+  for (const block of blocks) {
+    if (results.length >= limit) break;
+    const titleMatch = /class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/.exec(block);
+    if (!titleMatch) continue;
+    const url = extractDdgUrl(titleMatch[1]);
+    const title = decodeHtmlEntities(titleMatch[2].replace(/<[^>]+>/g, '')).trim();
+    if (!url || !title) continue;
+    const snippetMatch = /class="result__snippet"[^>]*>([\s\S]*?)<\/a>/.exec(block);
+    const snippet = snippetMatch ? decodeHtmlEntities(snippetMatch[1].replace(/<[^>]+>/g, '')).trim() : '';
+    results.push({ title, url, snippet });
+  }
+
+  return { query: q, count: results.length, results };
+}
+
+/**
+ * Fetch a page and return its extracted text content, truncated the same
+ * way readFileTool truncates file contents.
+ */
+export async function webFetchTool(url) {
+  if (!url || typeof url !== 'string') return { error: 'url is required' };
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return { error: `Invalid URL: ${url}` };
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return { error: `Unsupported URL scheme: ${parsed.protocol}` };
+  }
+
+  const fetched = await fetchWithLimit(parsed.toString());
+  if (fetched.error) return { url: parsed.toString(), error: fetched.error };
+
+  const content = stripHtml(fetched.text);
+  const truncated = content.length > WEB_MAX_CONTENT;
+  return {
+    url: parsed.toString(),
+    content: content.slice(0, WEB_MAX_CONTENT),
+    truncated,
+  };
 }
 
 /**
@@ -325,6 +456,14 @@ export async function executeTool(tool, args = {}, cwd = DEFAULT_CWD) {
 
   if (tool === 'memory_list') {
     return memoryList(args, cwd);
+  }
+
+  if (tool === 'web_search') {
+    return webSearchTool(args.query, args.limit);
+  }
+
+  if (tool === 'web_fetch') {
+    return webFetchTool(args.url);
   }
 
   return { error: `Unknown tool: ${tool}` };

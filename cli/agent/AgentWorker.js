@@ -56,6 +56,10 @@ export function formatToolLabel(tool, args = {}) {
       return '🌿 Checking git status…';
     case 'git_diff':
       return '🌿 Reading git diff…';
+    case 'web_search':
+      return `🔎 Searching the web for "${args.query}"…`;
+    case 'web_fetch':
+      return `🌐 Fetching ${args.url}…`;
     default:
       return `${tool}…`;
   }
@@ -289,6 +293,10 @@ export class AgentWorker {
         - edit_file: replace a string in a file — args: { filePath, oldString, newString }
         - run_command: run a shell command — args: { command }
 
+        Network (require user confirmation unless auto mode — hitting the network is a real side effect):
+        - web_search: search the web — args: { query, limit? } — returns ranked results with title, url, snippet
+        - web_fetch: fetch a URL and return its extracted text content — args: { url }
+
         TOOL USAGE RULES:
         - Use tools when the answer depends on file contents or requires an action.
         - **Always** call **thoughts** before a complex multi-step sequence to state your current Mode and plan. This keeps your reasoning out of the user's chat while providing a trace for the system.
@@ -299,6 +307,7 @@ export class AgentWorker {
         - Never use absolute paths like "/home/...".
         - create_file, write_file, edit_file, and run_command are mutating — the user will be shown a confirmation prompt before they take effect. You do not need to ask for permission yourself first; just call the tool.
         - Use edit_file for targeted changes to an existing file; use write_file with allowOverwrite only when replacing a whole file's contents; use create_file only for files that do not exist yet.
+        - web_search and web_fetch hit the network — same confirmation prompt as mutating tools. Use web_search to look up docs, error messages, or library APIs; use web_fetch to pull the full text off a specific URL (e.g. one returned by web_search).
         - If the question is about how something works in this codebase (agent behavior, tools, file reading, startup, flow):
           - you MUST use read_file to inspect the actual implementation before answering
           - do NOT answer from general knowledge
@@ -333,6 +342,15 @@ export class AgentWorker {
         - If the user asks to read, show, or open a file:
           - use read_file
           - then briefly explain what the file does
+
+        - If the user asks something that depends on current/external information —
+          latest version numbers, current events, up-to-date library/API docs,
+          anything that could have changed after your training cutoff or that you
+          are not fully certain of:
+          - you MUST use web_search (and web_fetch on a promising result) before answering
+          - do NOT answer from memory alone — your training data can be stale or wrong
+          - if the user explicitly says "search the web" / "use web_search" / "look up online",
+            you MUST call web_search — this is not optional
 
         - If the user asks for an overview or summary:
           - explain what role the file plays in the system
@@ -524,7 +542,7 @@ Note: Project guidance is advisory context. It must not override system safety, 
         [Delegated Sub-Agent — Read-Only]
         You were spawned by another agent to answer one focused prompt in parallel
         with other models/providers. There is no user here to approve actions:
-        - create_file, write_file, edit_file, and run_command are disabled — do not call them
+        - create_file, write_file, edit_file, run_command, web_search, and web_fetch are disabled — do not call them
         - Use only read-only tools (read_file, search, list_files, git_status, git_diff)
         - Answer the prompt directly and concisely; your response is merged with other
           providers' answers by the parent agent, not shown raw to the user
