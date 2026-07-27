@@ -163,20 +163,26 @@ const WEB_FETCH_MAX_BYTES = 500_000; // raw bytes read off the wire before strip
 const WEB_MAX_CONTENT = 8000; // matches readFileTool's cap, so timelines/context stay consistent
 const WEB_USER_AGENT = 'Mozilla/5.0 (compatible; EmotionCLI/1.0)';
 
+const HTML_ENTITIES = {
+  '&nbsp;': ' ',
+  '&amp;': '&',
+  '&lt;': '<',
+  '&gt;': '>',
+  '&quot;': '"',
+  '&#39;': "'",
+};
+
 function decodeHtmlEntities(s) {
-  return s
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'");
+  // Single pass so a decoded '&' (from &amp;) can't be re-scanned and
+  // matched against &lt;/&gt;/etc — chained sequential replaces would
+  // double-decode e.g. "&amp;lt;" into "<" instead of the literal "&lt;".
+  return s.replace(/&nbsp;|&amp;|&lt;|&gt;|&quot;|&#39;/g, (m) => HTML_ENTITIES[m]);
 }
 
 function stripHtml(html) {
   const withoutTags = html
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script\b[\s\S]*?<\/script\b[^>]*>/gi, ' ')
+    .replace(/<style\b[\s\S]*?<\/style\b[^>]*>/gi, ' ')
     .replace(/<!--[\s\S]*?-->/g, ' ')
     .replace(/<[^>]+>/g, ' ');
   return decodeHtmlEntities(withoutTags)
