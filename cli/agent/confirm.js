@@ -12,11 +12,20 @@ import { EVENTS } from '../core/eventBus.js';
 import { executeTool } from './tools.js';
 import { previewMutation } from './fileEdit.js';
 import { safeWorkspacePath } from './pathSafety.js';
+import { MCP_TOOL_PREFIX } from './toolRegistry.js';
 
 const MUTATING_TOOLS = new Set(['create_file', 'write_file', 'edit_file']);
 const NETWORK_TOOLS = new Set(['web_search', 'web_fetch']);
 const GATED_TOOLS = new Set([...MUTATING_TOOLS, 'run_command', ...NETWORK_TOOLS]);
 const MAX_CHECKPOINTS = 10;
+
+// MCP tool side effects are unknown ahead of time (could be a GitHub write, a
+// Postgres query, anything an external server implements) — so unlike the
+// built-in set above, every MCP tool is gated, with no case-by-case judgment
+// call about whether a given one is "safe".
+function isMcpTool(tool) {
+  return typeof tool === 'string' && tool.startsWith(MCP_TOOL_PREFIX);
+}
 
 /**
  * Snapshot a file's pre-write state into `checkpoints` (Task 2), grouped by
@@ -87,7 +96,7 @@ export function isMutatingTool(tool) {
 }
 
 export function isGatedTool(tool) {
-  return GATED_TOOLS.has(tool);
+  return GATED_TOOLS.has(tool) || isMcpTool(tool);
 }
 
 /** Session allow-key for a tool call: run_command remembers per-command, others per-tool. */
@@ -115,8 +124,8 @@ export function requestConfirmation(bus, payload = {}, { autoApprove = false } =
  * prompt. Other tools run directly. Returns the tool result, or
  * { denied: true, ... } if the user rejected the action.
  */
-export async function maybeConfirmAndExecute(bus, tool, args = {}, cwd, { autoApprove = false, allowSet = null, checkpoints = null, turnId = null, webFetchMaxContentChars = null } = {}) {
-  const toolOptions = { webFetchMaxContentChars };
+export async function maybeConfirmAndExecute(bus, tool, args = {}, cwd, { autoApprove = false, allowSet = null, checkpoints = null, turnId = null, webFetchMaxContentChars = null, mcpHandlers = null } = {}) {
+  const toolOptions = { webFetchMaxContentChars, mcpHandlers };
   if (!isGatedTool(tool)) {
     return executeTool(tool, args, cwd, toolOptions);
   }
@@ -140,6 +149,11 @@ export async function maybeConfirmAndExecute(bus, tool, args = {}, cwd, { autoAp
     preview = { path: null, action: 'web_search', preview: `🔎 ${args.query}`, diffLines: null, overwrite: false };
   } else if (tool === 'web_fetch') {
     preview = { path: args.url || null, action: 'web_fetch', preview: `🌐 GET ${args.url}`, diffLines: null, overwrite: false };
+  } else if (isMcpTool(tool)) {
+    // Name/args are all we know about an MCP tool ahead of calling it — there's
+    // no fixed set of per-tool preview branches like the built-ins above since
+    // the tool itself is defined by whatever server the user configured.
+    preview = { path: null, action: 'mcp_call', preview: `⚙ ${tool} ${JSON.stringify(args)}`, diffLines: null, overwrite: false };
   } else {
     preview = await previewMutation(tool, args, cwd);
     if (preview.error) return { error: preview.error };
@@ -169,6 +183,7 @@ export async function maybeConfirmAndExecute(bus, tool, args = {}, cwd, { autoAp
       message:
         tool === 'run_command' ? 'User denied the command.'
         : NETWORK_TOOLS.has(tool) ? 'User denied the network request.'
+        : isMcpTool(tool) ? 'User denied the tool call.'
         : 'User denied the file change.',
     };
   }

@@ -23,6 +23,27 @@ import { stopReason, toolCallKey } from './loopGuards.js';
 import { DEFAULT_CONFIG } from '../core/config.js';
 import { getErrorHint } from '../core/errorHints.js';
 import { reviewAction } from './supervisor.js';
+import { MCP_TOOL_PREFIX } from './toolRegistry.js';
+
+/**
+ * Renders connected MCP servers' tools into the same prose format as the
+ * built-in tool list above, so the model can actually discover and call
+ * them — a registry entry the model never hears about is dead weight.
+ * Empty string (no extra section) when no MCP servers are connected, so the
+ * common case (mcpServers: []) doesn't grow every prompt for nothing.
+ */
+function formatMcpToolsForPrompt(mcpRegistry) {
+  const mcpEntries = (mcpRegistry?.metadata || []).filter((t) => t.server);
+  if (mcpEntries.length === 0) return '';
+  const lines = mcpEntries.map((t) => {
+    const args = t.requiredArgs.length ? `{ ${t.requiredArgs.join(', ')} }` : '{}';
+    return `        - ${t.name}: ${t.description || `(from MCP server "${t.server}")`} — args: ${args}`;
+  });
+  return `
+        MCP tools (from connected external servers — require user confirmation, same as run_command):
+${lines.join('\n')}
+`;
+}
 
 /**
  * Strip FINAL_ANSWER: prefix from a string.
@@ -61,7 +82,7 @@ export function formatToolLabel(tool, args = {}) {
     case 'web_fetch':
       return `🌐 Fetching ${args.url}…`;
     default:
-      return `${tool}…`;
+      return tool.startsWith(MCP_TOOL_PREFIX) ? `⚙ ${tool.slice(MCP_TOOL_PREFIX.length)}…` : `${tool}…`;
   }
 }
 
@@ -302,7 +323,7 @@ export class AgentWorker {
         Network (require user confirmation unless auto mode — hitting the network is a real side effect):
         - web_search: search the web — args: { query, limit? } — returns ranked results with title, url, snippet
         - web_fetch: fetch a URL and return its extracted text content — args: { url }
-
+${formatMcpToolsForPrompt(config.mcpRegistry)}
         TOOL USAGE RULES:
         - Use tools when the answer depends on file contents or requires an action.
         - **Always** call **thoughts** before a complex multi-step sequence to state your current Mode and plan. This keeps your reasoning out of the user's chat while providing a trace for the system.
@@ -791,7 +812,7 @@ ${this.config.projectSnapshot}`;
 
         // Strip reasoning blocks before intent detection and final-answer check.
         const strippedResponse = lastResponse.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-        const loopToolIntent = this._parseToolIntent(lastResponse);
+        const loopToolIntent = this._parseToolIntent(lastResponse, config.mcpRegistry);
         const lastToolCallKey = loopToolIntent ? toolCallKey(loopToolIntent) : null;
 
         // Duplicate call guard: LLM asked for a result it already has.
@@ -954,6 +975,7 @@ ${this.config.projectSnapshot}`;
                 checkpoints: config.checkpoints,
                 turnId: config.currentTurnId,
                 webFetchMaxContentChars: config.webFetchMaxContentChars,
+                mcpHandlers: config.mcpRegistry?.mcpHandlers,
               }
             );
           } catch (err) {

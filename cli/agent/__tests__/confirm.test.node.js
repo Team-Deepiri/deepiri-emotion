@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createEventBus, EVENTS } from '../../core/eventBus.js';
-import { requestConfirmation, isMutatingTool, isGatedTool, allowKeyFor } from '../confirm.js';
+import { requestConfirmation, isMutatingTool, isGatedTool, allowKeyFor, maybeConfirmAndExecute } from '../confirm.js';
+import { createToolRegistry } from '../toolRegistry.js';
 
 describe('isMutatingTool', () => {
   it('flags only the three mutating tools', () => {
@@ -19,6 +20,12 @@ describe('isGatedTool', () => {
     expect(isGatedTool('run_command')).toBe(true);
     expect(isGatedTool('read_file')).toBe(false);
     expect(isGatedTool('search')).toBe(false);
+  });
+
+  it('flags every mcp__-prefixed tool, regardless of what it does', () => {
+    expect(isGatedTool('mcp__github__search_issues')).toBe(true);
+    expect(isGatedTool('mcp__github__list_repos')).toBe(true);
+    expect(isGatedTool('mcp__filesystem__read_file')).toBe(true);
   });
 });
 
@@ -77,5 +84,74 @@ describe('requestConfirmation', () => {
     });
     const result = await requestConfirmation(bus, { tool: 'write_file' });
     expect(result).toBe('deny');
+  });
+});
+
+describe('maybeConfirmAndExecute with an MCP tool', () => {
+  function mcpRegistryWithGithub(callTool) {
+    return createToolRegistry({
+      mcpResults: [
+        {
+          name: 'github',
+          ok: true,
+          handle: { client: { callTool } },
+          tools: [{ name: 'search_issues', description: 'search', inputSchema: { required: ['query'] } }],
+        },
+      ],
+    });
+  }
+
+  it('prompts for confirmation before calling an MCP tool, even with no autoApprove passed for built-ins', async () => {
+    const callTool = vi.fn(async () => ({ content: [{ type: 'text', text: 'ok' }] }));
+    const registry = mcpRegistryWithGithub(callTool);
+    const bus = createEventBus();
+    let seenPayload = null;
+    bus.on(EVENTS.CONFIRMATION_REQUEST, (payload) => {
+      seenPayload = payload;
+      bus.emit(EVENTS.CONFIRMATION_RESPONSE, { choice: 'once' });
+    });
+
+    const result = await maybeConfirmAndExecute(
+      bus, 'mcp__github__search_issues', { query: 'bug' }, '/cwd',
+      { mcpHandlers: registry.mcpHandlers }
+    );
+
+    expect(seenPayload.action).toBe('mcp_call');
+    expect(seenPayload.preview).toContain('mcp__github__search_issues');
+    expect(callTool).toHaveBeenCalledWith({ name: 'search_issues', arguments: { query: 'bug' } });
+    expect(result).toEqual({ text: 'ok' });
+  });
+
+  it('never calls the MCP tool when the user denies', async () => {
+    const callTool = vi.fn(async () => ({ content: [] }));
+    const registry = mcpRegistryWithGithub(callTool);
+    const bus = createEventBus();
+    bus.on(EVENTS.CONFIRMATION_REQUEST, () => {
+      bus.emit(EVENTS.CONFIRMATION_RESPONSE, { choice: 'deny' });
+    });
+
+    const result = await maybeConfirmAndExecute(
+      bus, 'mcp__github__search_issues', { query: 'bug' }, '/cwd',
+      { mcpHandlers: registry.mcpHandlers }
+    );
+
+    expect(callTool).not.toHaveBeenCalled();
+    expect(result).toEqual({ denied: true, path: null, message: 'User denied the tool call.' });
+  });
+
+  it('autoApprove still calls the tool without a prompt (matches existing gated-tool behavior)', async () => {
+    const callTool = vi.fn(async () => ({ content: [{ type: 'text', text: 'ok' }] }));
+    const registry = mcpRegistryWithGithub(callTool);
+    const bus = createEventBus();
+    let requested = false;
+    bus.on(EVENTS.CONFIRMATION_REQUEST, () => { requested = true; });
+
+    await maybeConfirmAndExecute(
+      bus, 'mcp__github__search_issues', { query: 'bug' }, '/cwd',
+      { autoApprove: true, mcpHandlers: registry.mcpHandlers }
+    );
+
+    expect(requested).toBe(false);
+    expect(callTool).toHaveBeenCalledTimes(1);
   });
 });
