@@ -15,15 +15,22 @@ const REQUIRED_ARGS = Object.fromEntries(
 /**
  * Validate a JSON-parsed tool call object.
  * Returns normalized { tool, args } or null (falls back to regex parsing).
+ * `registry` (optional) is a toolRegistry.js createToolRegistry() result —
+ * when given, its knownToolNames/requiredArgs (built-ins + connected MCP
+ * tools) are checked instead of the built-in-only defaults, so MCP tool
+ * calls validate the same way read_file/run_command always have.
  * @param {unknown} parsed
+ * @param {{knownToolNames: Set<string>, requiredArgs: Record<string,string[]>} | null} [registry]
  * @returns {{ tool: string, args: Record<string,unknown> } | null}
  */
-export function validateToolCall(parsed) {
+export function validateToolCall(parsed, registry = null) {
   if (!parsed || typeof parsed !== 'object') return null;
   const { tool, args } = parsed;
-  if (typeof tool !== 'string' || !KNOWN_TOOLS.has(tool)) return null;
+  const knownTools = registry?.knownToolNames ?? KNOWN_TOOLS;
+  const requiredArgsMap = registry?.requiredArgs ?? REQUIRED_ARGS;
+  if (typeof tool !== 'string' || !knownTools.has(tool)) return null;
   if (!args || typeof args !== 'object' || Array.isArray(args)) return null;
-  const required = REQUIRED_ARGS[tool] ?? [];
+  const required = requiredArgsMap[tool] ?? [];
   for (const key of required) {
     if (!(key in args)) return null;
   }

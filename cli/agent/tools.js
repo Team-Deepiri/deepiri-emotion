@@ -14,6 +14,7 @@ import { thoughtsTool } from './thoughtsTool.js';
 import { memorySet, memoryGet, memoryList } from './memoryTools.js';
 import { validateToolCall } from './loopGuards.js';
 import { safeWorkspacePath, isBlockedDir, isBlockedName } from './pathSafety.js';
+import { callMcpTool } from './mcp/client.js';
 
 const DEFAULT_CWD = process.cwd();
 const RUN_TIMEOUT_MS = 30_000;
@@ -303,10 +304,10 @@ export async function webFetchTool(url, options = {}) {
  * JSON path: validates tool name and required args via loopGuards.validateToolCall.
  * Regex path: unchanged fallback for natural-language commands.
  */
-function tryValidateJson(str) {
+function tryValidateJson(str, registry) {
   try {
     const parsed = JSON.parse(str.trim());
-    return validateToolCall(parsed) || null;
+    return validateToolCall(parsed, registry) || null;
   } catch {
     return null;
   }
@@ -351,25 +352,32 @@ function extractEmbeddedToolJson(raw) {
   return null;
 }
 
-export function parseToolIntent(text) {
+/**
+ * @param {string} text
+ * @param {{knownToolNames: Set<string>, requiredArgs: Record<string,string[]>} | null} [registry]
+ *   Optional merged registry (toolRegistry.js's createToolRegistry()) — when
+ *   given, JSON tool calls are validated against built-ins + connected MCP
+ *   tools instead of just the built-in set. Omitted, behavior is unchanged.
+ */
+export function parseToolIntent(text, registry = null) {
   // Strip thinking/reasoning blocks emitted by Qwen3, DeepSeek-R1, etc.
   let raw = (text || '').trim().replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 
   // 1. Direct JSON parse (clean output)
-  const direct = tryValidateJson(raw);
+  const direct = tryValidateJson(raw, registry);
   if (direct) return direct;
 
   // 2. JSON inside markdown code fences: ```json ... ``` or ``` ... ```
   const fenceMatch = /```(?:json)?\s*([\s\S]*?)```/i.exec(raw);
   if (fenceMatch) {
-    const fenced = tryValidateJson(fenceMatch[1]);
+    const fenced = tryValidateJson(fenceMatch[1], registry);
     if (fenced) return fenced;
   }
 
   // 3. Bare JSON object containing a "tool" key embedded in prose
   const embeddedRaw = extractEmbeddedToolJson(raw);
   if (embeddedRaw) {
-    const embedded = tryValidateJson(embeddedRaw);
+    const embedded = tryValidateJson(embeddedRaw, registry);
     if (embedded) return embedded;
   }
 
@@ -434,10 +442,17 @@ const TOOL_HANDLERS = {
 };
 
 /**
- * Execute a tool by name.
+ * Execute a tool by name. `options.mcpHandlers` (a toolRegistry.js
+ * createToolRegistry() result's `mcpHandlers` map), when provided, is
+ * checked for any tool name not found in the built-in TOOL_HANDLERS above,
+ * routing the call to the owning MCP server via callMcpTool.
  */
 export async function executeTool(tool, args = {}, cwd = DEFAULT_CWD, options = {}) {
   const handler = TOOL_HANDLERS[tool];
-  if (!handler) return { error: `Unknown tool: ${tool}` };
-  return handler(args, cwd, options);
+  if (handler) return handler(args, cwd, options);
+
+  const mcpEntry = options.mcpHandlers?.get(tool);
+  if (mcpEntry) return callMcpTool(mcpEntry.handle, mcpEntry.toolName, args);
+
+  return { error: `Unknown tool: ${tool}` };
 }
