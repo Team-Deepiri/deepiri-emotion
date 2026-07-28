@@ -1,49 +1,16 @@
 /**
  * Pure loop-guard utilities for the agent runner.
- * No side effects, no imports — safe to unit-test without mocking.
+ * No side effects — the only import is the shared tool metadata list.
  */
+import { BUILTIN_TOOL_METADATA } from './toolRegistry.js';
 
 /** Tools the agent is allowed to call. */
-export const KNOWN_TOOLS = new Set([
-  'read_file',
-  'search',
-  'list_files',
-  'run_command',
-  'explain',
-  'create_file',
-  'write_file',
-  'edit_file',
-  'git_status',
-  'git_diff',
-  'thoughts',
-  'memory_set',
-  'memory_get',
-  'memory_list',
-  'delegate',
-  'web_search',
-  'web_fetch',
-]);
+export const KNOWN_TOOLS = new Set(BUILTIN_TOOL_METADATA.map((t) => t.name));
 
 /** Required arg keys per tool (presence check only). */
-const REQUIRED_ARGS = {
-  read_file:    ['filePath'],
-  search:       ['query'],
-  list_files:   [],
-  run_command:  ['command'],
-  explain:      ['concept', 'explanation'],
-  create_file:  ['filePath', 'content'],
-  write_file:   ['filePath', 'content'],
-  edit_file:    ['filePath', 'oldString', 'newString'],
-  git_status:   [],
-  git_diff:     [],
-  thoughts:     ['thought'],
-  memory_set:   ['key', 'value'],
-  memory_get:   ['key'],
-  memory_list:  [],
-  delegate:     ['tasks'],
-  web_search:   ['query'],
-  web_fetch:    ['url'],
-};
+const REQUIRED_ARGS = Object.fromEntries(
+  BUILTIN_TOOL_METADATA.map((t) => [t.name, t.requiredArgs])
+);
 
 /**
  * Validate a JSON-parsed tool call object.

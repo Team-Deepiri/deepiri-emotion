@@ -409,72 +409,35 @@ export function explainTool({ concept, explanation, example = null, category = '
 }
 
 /**
+ * Dispatch table for built-in tools, keyed by name (matches toolRegistry.js's
+ * BUILTIN_TOOL_METADATA). Kept as a plain object rather than the previous
+ * if/else chain so external tool sources (MCP servers) can be merged in
+ * alongside these handlers instead of requiring another branch per tool.
+ */
+const TOOL_HANDLERS = {
+  read_file: (args, cwd) => readFileTool(args.filePath, cwd),
+  search: (args, cwd) => searchTool(args.query, cwd),
+  list_files: (args, cwd) => listFilesTool(args.dirPath || '.', cwd),
+  run_command: (args, cwd) => runCommandTool(args.command, cwd),
+  explain: (args) => explainTool(args),
+  create_file: (args, cwd) => createFileTool(args.filePath, args.content, cwd),
+  write_file: (args, cwd) => writeFileTool(args.filePath, args.content, cwd, args.allowOverwrite === true),
+  edit_file: (args, cwd) => editFileTool(args.filePath, args.oldString, args.newString, cwd),
+  git_status: (_args, cwd) => gitStatus(cwd),
+  git_diff: (args, cwd) => gitDiff(cwd, { staged: args.staged === true, path: args.path ?? null }),
+  thoughts: (args) => thoughtsTool(args),
+  memory_set: (args, cwd) => memorySet(args, cwd),
+  memory_get: (args, cwd) => memoryGet(args, cwd),
+  memory_list: (args, cwd) => memoryList(args, cwd),
+  web_search: (args) => webSearchTool(args.query, args.limit),
+  web_fetch: (args, _cwd, options) => webFetchTool(args.url, { maxContentChars: options.webFetchMaxContentChars }),
+};
+
+/**
  * Execute a tool by name.
  */
 export async function executeTool(tool, args = {}, cwd = DEFAULT_CWD, options = {}) {
-  if (tool === 'read_file') {
-    return readFileTool(args.filePath, cwd);
-  }
-
-  if (tool === 'search') {
-    return searchTool(args.query, cwd);
-  }
-
-  if (tool === 'list_files') {
-    return listFilesTool(args.dirPath || '.', cwd);
-  }
-
-  if (tool === 'run_command') {
-    return runCommandTool(args.command, cwd);
-  }
-
-  if (tool === 'explain') {
-    return explainTool(args);
-  }
-
-  if (tool === 'create_file') {
-    return createFileTool(args.filePath, args.content, cwd);
-  }
-
-  if (tool === 'write_file') {
-    return writeFileTool(args.filePath, args.content, cwd, args.allowOverwrite === true);
-  }
-
-  if (tool === 'edit_file') {
-    return editFileTool(args.filePath, args.oldString, args.newString, cwd);
-  }
-
-  if (tool === 'git_status') {
-    return gitStatus(cwd);
-  }
-
-  if (tool === 'git_diff') {
-    return gitDiff(cwd, { staged: args.staged === true, path: args.path ?? null });
-  }
-
-  if (tool === 'thoughts') {
-    return thoughtsTool(args);
-  }
-
-  if (tool === 'memory_set') {
-    return memorySet(args, cwd);
-  }
-
-  if (tool === 'memory_get') {
-    return memoryGet(args, cwd);
-  }
-
-  if (tool === 'memory_list') {
-    return memoryList(args, cwd);
-  }
-
-  if (tool === 'web_search') {
-    return webSearchTool(args.query, args.limit);
-  }
-
-  if (tool === 'web_fetch') {
-    return webFetchTool(args.url, { maxContentChars: options.webFetchMaxContentChars });
-  }
-
-  return { error: `Unknown tool: ${tool}` };
+  const handler = TOOL_HANDLERS[tool];
+  if (!handler) return { error: `Unknown tool: ${tool}` };
+  return handler(args, cwd, options);
 }
