@@ -53,6 +53,20 @@ export const createSimplePlan = (userText) => {
     );
   }
 
+  if (
+    lowerText.includes('web_search') ||
+    lowerText.includes('search the web') ||
+    lowerText.includes('look up online') ||
+    lowerText.includes('search online')
+  ) {
+    return {
+      intent: 'web_lookup',
+      needsTools: false,
+      requiredFiles: [],
+      answerStyle: 'web_lookup'
+    };
+  }
+
   if (lowerText.includes('find') || lowerText.includes('where')) {
     return {
       intent: 'find_specific',

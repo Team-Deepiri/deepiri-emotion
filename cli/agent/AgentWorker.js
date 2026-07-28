@@ -457,6 +457,10 @@ ${formatMcpToolsForPrompt(config.mcpRegistry)}
               file, not a guess; prefer insight over completeness
           - If intent is "find_specific":
             - answer directly in 1-3 sentences
+          - If intent is "web_lookup":
+            - this OVERRIDES "answer directly" — you MUST call the web_search tool
+              before writing any answer text; do not skip straight to FINAL_ANSWER
+            - only after you have a tool result may you write FINAL_ANSWER
 
         CODEBASE GUIDANCE:
         - For startup or entrypoint questions, inspect package.json and the target entry file.
