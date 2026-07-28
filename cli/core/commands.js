@@ -7,6 +7,7 @@ export const COMMANDS = [
   { name: '/account', description: 'link cloud accounts, pick plans, open provider sites' },
   { name: '/provider', description: 'show or switch LLM provider' },
   { name: '/connect', description: 'BYOK: paste an API key for openai/anthropic/gemini/openrouter' },
+  { name: '/mcp', description: 'show connected MCP servers and the tools they offer' },
   { name: '/skills', description: 'browse local Cursor-style skills' },
   { name: '/status', description: 'show cwd, provider, model, and plans' },
   { name: '/teach', description: 'explain reasoning as it works' },

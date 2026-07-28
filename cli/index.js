@@ -148,6 +148,9 @@ config.projectSnapshot = formatSnapshot(snapshotData);
 // for anyone not using /mcp.
 const mcpResults = await connectAllMcpServers(config.mcpServers || []);
 config.mcpRegistry = createToolRegistry({ mcpResults });
+// Per-server ok/error, so /mcp can report a failed server by name instead of
+// it just silently contributing no tools to mcpRegistry.
+config.mcpServerStatus = mcpResults.map(({ name, ok, error }) => ({ name, ok, error: error || null }));
 
 let mcpShutdownStarted = false;
 async function shutdownMcpServers() {
