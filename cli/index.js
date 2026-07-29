@@ -18,6 +18,8 @@ import { loadConfig, needsOnboarding } from './core/config.js';
 import { contextWindowFor } from './core/tokens.js';
 import { resolveActiveProvider } from './agent/providers/router.js';
 import { attachAgentRunner } from './agent/runner.js';
+import { connectAllMcpServers, disconnectAllMcpServers } from './agent/mcp/client.js';
+import { createToolRegistry } from './agent/toolRegistry.js';
 import { loadProjectMemory } from './agent/projectMemory.js';
 import { bootstrapProject, formatSnapshot } from './agent/bootstrap.js';
 import { attachSessionRecorder } from './agent/session.js';
@@ -140,6 +142,31 @@ config.projectMemory = await loadProjectMemory(memoryCwd);
 const snapshotData = await bootstrapProject(memoryCwd);
 config.projectSnapshot = formatSnapshot(snapshotData);
 
+// Spin up any configured MCP servers and merge their tools into a registry
+// alongside the built-ins (read_file, run_command, etc.) — see toolRegistry.js.
+// Empty by default (config.mcpServers === []), so this resolves immediately
+// for anyone not using /mcp.
+const mcpResults = await connectAllMcpServers(config.mcpServers || []);
+config.mcpRegistry = createToolRegistry({ mcpResults });
+// Per-server ok/error, so /mcp can report a failed server by name instead of
+// it just silently contributing no tools to mcpRegistry.
+config.mcpServerStatus = mcpResults.map(({ name, ok, error }) => ({ name, ok, error: error || null }));
+
+let mcpShutdownStarted = false;
+async function shutdownMcpServers() {
+  if (mcpShutdownStarted) return;
+  mcpShutdownStarted = true;
+  await disconnectAllMcpServers(mcpResults).catch(() => {});
+}
+process.on('SIGINT', async () => {
+  await shutdownMcpServers();
+  process.exit(0);
+});
+process.on('SIGTERM', async () => {
+  await shutdownMcpServers();
+  process.exit(0);
+});
+
 const eventBus = createEventBus();
 attachAgentRunner(eventBus, config);
 attachSessionRecorder(eventBus, memoryCwd);
@@ -179,6 +206,7 @@ if (printMode) {
   });
 
   process.stdout.write('\n');
+  await shutdownMcpServers();
   process.exit(sawError || !output.trim() ? 1 : 0);
 }
 

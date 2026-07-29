@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Generate app icons: 256x256 PNG, .ico (Windows), .icns (macOS).
+ * Generate app icons: 512x512 PNG, .ico (Windows), .icns (macOS).
+ * macOS/electron-builder requires at least 512x512.
  * Run: node scripts/generate-icons.cjs
  */
 const fs = require('fs');
@@ -10,9 +11,9 @@ const ASSETS = path.join(__dirname, '..', 'assets');
 if (!fs.existsSync(ASSETS)) fs.mkdirSync(ASSETS, { recursive: true });
 
 async function main() {
-  // 1) Create 256x256 PNG with Jimp (solid color; replace with your logo later)
+  // 1) Create 512x512 PNG with Jimp (solid color; replace with your logo later)
   const { Jimp } = require('jimp');
-  const size = 256;
+  const size = 512;
   const img = new Jimp({ width: size, height: size, color: 0x0e639cff }); // #0e639c blue
   const pngPath = path.join(ASSETS, 'icon.png');
   await img.write(pngPath);

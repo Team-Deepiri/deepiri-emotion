@@ -487,3 +487,74 @@ describe('TOOL_START/TOOL_END events', () => {
     expect(end.payload.result.content).toBe('hello');
   });
 });
+
+// ---------------------------------------------------------------------------
+// MCP tool calls — config.mcpRegistry threaded through parseToolIntent and
+// into maybeConfirmAndExecute's options, same as any built-in tool call.
+// ---------------------------------------------------------------------------
+describe('MCP tool calls', () => {
+  const MCP_CALL = JSON.stringify({ tool: 'mcp__github__search_issues', args: { query: 'bug' } });
+  const mcpRegistry = { mcpHandlers: new Map([['mcp__github__search_issues', { toolName: 'search_issues' }]]) };
+
+  it('passes config.mcpRegistry as the second arg to parseToolIntent', async () => {
+    let receivedRegistry = null;
+    const parseToolIntent = (text, registry) => {
+      receivedRegistry = registry;
+      return parseJsonToolOnly(text);
+    };
+    const { worker } = makeWorker('search github for bug', {
+      streamLLM: makeStreamLLM([MCP_CALL, 'FINAL_ANSWER: done']),
+      parseToolIntent,
+      maybeConfirmAndExecute: async () => ({ text: 'found 1 issue' }),
+    }, { mcpRegistry });
+    await worker.run();
+    expect(receivedRegistry).toBe(mcpRegistry);
+  });
+
+  it('passes mcpHandlers through to maybeConfirmAndExecute so it can route the call', async () => {
+    let receivedOpts = null;
+    const { worker, evts } = makeWorker('search github for bug', {
+      streamLLM: makeStreamLLM([MCP_CALL, 'FINAL_ANSWER: done']),
+      parseToolIntent: parseJsonToolOnly,
+      maybeConfirmAndExecute: async (_bus, tool, args, _cwd, opts) => {
+        receivedOpts = opts;
+        return { text: 'found 1 issue' };
+      },
+    }, { mcpRegistry });
+    await worker.run();
+
+    expect(receivedOpts.mcpHandlers).toBe(mcpRegistry.mcpHandlers);
+    const start = evts.find(e => e.event === 'TOOL_START');
+    expect(start.payload.tool).toBe('mcp__github__search_issues');
+    expect(start.payload.label).toBe('⚙ github__search_issues…');
+  });
+
+  it('blocks an MCP tool call for read-only delegated sub-agents, same as run_command', async () => {
+    let confirmCalled = false;
+    const bus = new EventEmitter();
+    const evts = collectEvents(bus);
+    const worker = new AgentWorker({
+      id: 'sub',
+      bus,
+      config: { maxSteps: 2, maxToolCalls: 8, agentTimeoutMs: 60_000, mcpRegistry },
+      task: 'search github for bug',
+      modes: { readOnly: true },
+      deps: {
+        streamLLM: makeStreamLLM([MCP_CALL, 'FINAL_ANSWER: done']),
+        discoverGuidance: noGuidance,
+        detectSupportNeed: noSupport,
+        createSimplePlan: simplePlan,
+        parseToolIntent: parseJsonToolOnly,
+        executeTool: noopExecute,
+        maybeConfirmAndExecute: async () => {
+          confirmCalled = true;
+          return { text: 'should not be called' };
+        },
+      },
+    });
+    await worker.run();
+
+    expect(confirmCalled).toBe(false);
+    expect(evts.some(e => e.event === 'TOOL_START')).toBe(false);
+  });
+});
