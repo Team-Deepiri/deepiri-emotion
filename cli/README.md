@@ -46,6 +46,7 @@ Type `/` in the prompt for autocomplete. Highlights:
 | `/account` | Link cloud accounts: opens provider website, paste API key, pick plan. Also runs on first launch. |
 | `/provider` | Interactive provider switch (or `/provider ollama`). |
 | `/connect` | BYOK: paste an API key for openai/anthropic/gemini/openrouter (or `/connect anthropic`). |
+| `/mcp` | Show connected MCP servers and the tools they offer. Configure servers via `mcpServers` in `.emotion-cli.json` / `cli.json` — they connect once at launch. |
 | `/skills` | Interactive skill browser. |
 | `/status` | cwd + provider/model + saved plans. |
 | `/help` | Full command list. |

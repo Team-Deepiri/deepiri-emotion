@@ -73,6 +73,10 @@ export const DEFAULT_CONFIG = {
   // Providers a delegate task may target, checked against KNOWN_TOOLS' delegate
   // arg validation before any sub-agent is spawned.
   delegateProviders: ['ollama', 'anthropic', 'openai', 'gemini', 'openrouter', 'claude-cli', 'cursor', 'cyrex'],
+  // MCP servers to spawn over stdio on launch and merge into the tool registry.
+  // Each entry: { name, command, args: [], env: {} }. Configured via /mcp or
+  // hand-edited in ~/.config/deepiri-emotion/cli.json / .emotion-cli.json.
+  mcpServers: [],
 };
 
 /**
