@@ -1,6 +1,12 @@
 # Deepiri Emotion
 
-**AI-powered desktop IDE** free to download, install, and use. Workspace, Monaco editor, AI chat, terminal, and optional Cyrex/Helox backends.
+**A free AI coding environment, in two forms:**
+
+- **Desktop IDE** — Electron app with a workspace, Monaco editor, AI chat, and an integrated terminal.
+- **Terminal CLI (`emotion`)** — a standalone agentic coding assistant: multi-provider LLM streaming, a real tool-calling agent loop, MCP server support, checkpoints, and project memory. Runs anywhere, no IDE required.
+
+Both are free to download, install, and use. Optional Cyrex/Helox backends plug into either.
+
 <img width="958" height="344" alt="image" src="https://github.com/user-attachments/assets/b184734c-08be-4050-b465-44173d9a921e" />
 
 ---
@@ -17,9 +23,31 @@
 
 After install, open **Deepiri Emotion** like any other app. Open a folder to start coding; use **File → Settings** to change theme or API URLs. No backend is required for editing and terminal; AI and tasks use optional services (see [docs/install.md](docs/install.md)).
 
+### Terminal CLI
+
+Put the `emotion` command on your PATH:
+
+```bash
+npm install
+npm run install:cli
+```
+
+Then from any project directory:
+
+```bash
+emotion                          # interactive TUI in the current folder
+emotion /path/to/project         # open a specific workspace
+emotion -p "summarize the auth flow"   # headless, one-shot (no TTY needed)
+emotion --help
+```
+
+Prefer not to install globally? `npm run cli` does the same thing from the repo root. Full docs: **[cli/README.md](cli/README.md)**.
+
 ---
 
 ## Features
+
+### Desktop IDE
 
 - **Workspace** — Open a folder, browse and edit files with a real file tree; create, rename, delete files and folders.
 - **Monaco Editor** — Syntax highlighting, themes (dark/light/hc), multiple tabs, save (Ctrl+S), cursor/selection for AI context.
@@ -27,10 +55,25 @@ After install, open **Deepiri Emotion** like any other app. Open a folder to sta
 - **Quick Open & Command Palette** — Ctrl+P (go to file), Ctrl+Shift+P (commands).
 - **Welcome** — Recent folders, quick actions, getting started.
 - **Terminal** — Integrated panel with project-root cwd and streamed output.
-- **Terminal CLI** — Standalone TUI (`npm run cli`): AI chat with streaming (OpenAI/Ollama/Cyrex), tools (read file, search, run command), optional workspace dir. See [cli/README.md](cli/README.md).
 - **Cyrex & Helox** — Tabs for Cyrex UI (when running) and Helox pipeline runs; optional backend services.
 - **Tasks, Challenges, Gamification** — Platform API integration; mission cards and progress tracking.
 - **Local data** — Settings and chat history stored locally (userData + SQLite); no account required. See [docs/local-storage.md](docs/local-storage.md).
+
+### Terminal CLI (`emotion`)
+
+- **8 LLM providers** — Ollama (local), OpenAI, Anthropic, Gemini, OpenRouter, Claude CLI, Cursor, and Cyrex. Switch live with `/provider`, or fall back automatically down a provider chain.
+- **Bring your own key** — `/connect` pastes an API key for openai/anthropic/gemini/openrouter; `/account` links subscription-style providers and opens the right signup page. Runs automatically on first launch.
+- **Agentic tool loop** — 17 built-in tools: read/create/write/edit files, search, list, run commands, git status/diff, web search/fetch, memory get/set/list, delegation, and reasoning traces. The agent picks and chains them itself.
+- **MCP client** — Connect external [Model Context Protocol](https://modelcontextprotocol.io) servers over stdio; their tools merge in alongside the built-ins. `/mcp` shows what's connected. Configure via `mcpServers` in `.emotion-cli.json`.
+- **Confirmation gate** — Every file mutation, shell command, network call, and MCP tool pauses for approval before it runs. `/auto` and `/accept-edits` loosen it when you want speed.
+- **Checkpoints and rewind** — Each turn is checkpointed. `/rewind` lists recent checkpoints and restores one, undoing both the conversation and the file edits that turn made.
+- **Context management** — Live token meter in the status bar, `/compact` to summarize history on demand, and automatic compaction at 80% of the context window so long sessions don't fall over.
+- **Project memory** — `/init` scans the workspace and writes a starter `EMOTION.md`, loaded into context on every launch. `/scan` picks up other guidance docs (AGENTS.md, CLAUDE.md, etc.).
+- **Session history** — Every conversation is recorded under `.emotion-sessions/`; `/resume` brings one back.
+- **Voice-of-reason supervisor** — An optional second LLM pass reviews risky actions before they execute. Toggle with `/guard`.
+- **Parallel delegation** — The `delegate` tool fans one task out to several provider/model sub-agents at once and compares what comes back.
+- **Modes** — `/plan` (read-only planning), `/debug` (full step visibility), `/teach` (explains its reasoning as it works).
+- **Quality-of-life** — `@`-mention file autocomplete, clipboard image paste (macOS), slash-command autocomplete, streaming step timeline, Ctrl+L to clear.
 
 ---
 
@@ -94,7 +137,11 @@ deepiri-emotion-desktop/
 │   ├── preload.js            # Bridge (window.electronAPI)
 │   ├── shared/               # IPC channel names, constants
 │   └── renderer/             # React UI (components, features, context, hooks, services)
-├── cli/                      # Terminal TUI (npm run cli): event bus, agent, tools, Ink UI
+├── cli/                      # Terminal CLI (`emotion`)
+│   ├── index.js              # Entry: config, MCP connect, headless -p, Ink render
+│   ├── core/                 # Event bus, config, slash-command registry, tokens, modes
+│   ├── agent/                # Agent loop, tools, providers, MCP client, memory, sessions
+│   └── ui/                   # Ink components (messages, timeline, status bar, prompt)
 ├── extensions/               # Built-in extension manifests (cyrex, helox, github, notion)
 ├── scripts/
 ├── assets/
@@ -117,8 +164,11 @@ deepiri-emotion-desktop/
 | **[docs/install.md](docs/install.md)** | Installers, dev setup, optional backends, Terminal CLI (2.2b). |
 | **[docs/architecture.md](docs/architecture.md)** | Tech stack, main vs renderer, optional services, security, packaging. |
 | **[docs/local-storage.md](docs/local-storage.md)** | Where user data is stored (userData, localStorage, SQLite); when to add a DB. |
+| **[cli/README.md](cli/README.md)** | **Terminal CLI** — install, slash commands, tools, providers, MCP, config. |
 | **[docs/cli-tui-plan.md](docs/cli-tui-plan.md)** | CLI TUI architecture and implementation phases. |
-| **[docs/refactoring.md](docs/refactoring.md)** | Plan for merging Cyrex UI and Helox into the IDE. |
+| **[docs/cli-tui-v2-plan.md](docs/cli-tui-v2-plan.md)** | CLI v2 plan (agent loop, tools, providers). |
+| **[docs/RELEASE.md](docs/RELEASE.md)** | Release and versioning process. |
+| **[CHANGELOG.md](CHANGELOG.md)** | Release notes per version. |
 | **[AGENTS.md](AGENTS.md)** | Instructions for AI agents (run, structure, IPC, tests). |
 | **[CONTRIBUTING.md](CONTRIBUTING.md)** | How to contribute; SECURITY: [SECURITY.md](SECURITY.md). |
 
@@ -135,16 +185,44 @@ Copy [.env.example](.env.example) to `.env` to override defaults (optional):
 
 The app runs without `.env`; these are for custom endpoints and keys.
 
+### Terminal CLI
+
+The CLI keeps its own config, so you don't need `.env` for it. First file found wins:
+
+1. `.emotion-cli.json` in the current workspace (project-local)
+2. `~/.config/deepiri-emotion/cli.json` (user-global)
+
+`/connect` and `/account` write to the user-global file for you — hand-editing is only needed for MCP servers:
+
+```jsonc
+{
+  "provider": "anthropic",
+  "anthropicModel": "claude-sonnet-5",
+  "mcpServers": [
+    { "name": "filesystem", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "."] }
+  ]
+}
+```
+
+Environment variables still override config when set: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `OLLAMA_HOST`, `OLLAMA_MODEL`, `AI_SERVICE_URL`. See [cli/README.md](cli/README.md) for the full list.
+
 ---
 
 ## Scripts
 
 | Script | Purpose |
 |--------|---------|
+| `npm run setup` | Full setup: install deps, lint, test, build, produce installers. |
+| `npm run setup:install` | Setup, dependencies only (`--install-only`). |
 | `npm run dev` | Run Electron in dev mode (use with `npm run dev:renderer` in another terminal). |
 | `npm run dev:renderer` | Start Vite dev server (HMR) for the renderer. |
-| `npm run cli` | Run Terminal CLI TUI (interactive; requires TTY). `npm run cli -- /path` to set workspace. |
+| `npm run dev:app` | Start renderer + Electron together in one command. |
+| `npm start` | Run Electron against the last built renderer. |
+| `npm run start:prod` | Build the renderer, then run Electron. |
+| `npm run cli` | Run Terminal CLI (interactive; requires TTY). `npm run cli -- /path` to set workspace. |
 | `npm run cli:dev` | Run CLI with `--watch` (auto-restart on file changes). |
+| `npm run install:cli` | Install the `emotion` command onto your PATH. |
+| `npm run uninstall:cli` | Remove the `emotion` command from your PATH. |
 | `npm run build` | Icons + renderer + electron-builder for current OS. |
 | `npm run build:icons` | Regenerate `assets/icon.ico` and `assets/icon.icns` from `assets/icon.png`. |
 | `npm run build:renderer` | Vite production build → `dist-renderer/`. |
