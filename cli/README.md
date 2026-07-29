@@ -76,7 +76,23 @@ Type `/` in the prompt for autocomplete.
 
 Power-user shortcuts still work: `/models use <name>`, `/models pull <name>`.
 
-**Keys:** `@` for file autocomplete, `Ctrl+V` to paste a clipboard image (macOS), `Ctrl+L` to clear the screen.
+**Keys:** `@` for file autocomplete, `Ctrl+V` to attach a clipboard image, `Ctrl+L` to clear the screen.
+
+## Images and screenshots
+
+You can hand the agent a screenshot — paste an error dialog, a broken UI, a whiteboard photo — and ask about it directly. Two ways in:
+
+**Clipboard (macOS).** Take a screenshot (`Cmd+Shift+4`), then press `Ctrl+V` in the prompt. The image attaches to your next message. Uses [`pngpaste`](https://github.com/jcsalterego/pngpaste) if installed (`brew install pngpaste`) and falls back to `osascript`, so it works out of the box — pngpaste is just faster.
+
+**File path (any platform).** Type or paste an image path into the prompt and it's picked up automatically, with the path token stripped from the text the model sees:
+
+```
+what's wrong with this layout? ~/Desktop/screenshot.png
+```
+
+Attachments queue up before you send, so you can add several to one message, and they show as pending chips above the prompt. Supported formats: `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`.
+
+Images are passed through to whichever provider is active — use a vision-capable model (`claude-sonnet-5`, `gpt-4o`, `gemini-3-flash`, `llava` on Ollama) or the model will just ignore them.
 
 ## Tools
 

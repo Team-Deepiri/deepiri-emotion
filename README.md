@@ -73,7 +73,8 @@ Prefer not to install globally? `npm run cli` does the same thing from the repo 
 - **Voice-of-reason supervisor** — An optional second LLM pass reviews risky actions before they execute. Toggle with `/guard`.
 - **Parallel delegation** — The `delegate` tool fans one task out to several provider/model sub-agents at once and compares what comes back.
 - **Modes** — `/plan` (read-only planning), `/debug` (full step visibility), `/teach` (explains its reasoning as it works).
-- **Quality-of-life** — `@`-mention file autocomplete, clipboard image paste (macOS), slash-command autocomplete, streaming step timeline, Ctrl+L to clear.
+- **Screenshots and images** — Paste a screenshot straight into the prompt with `Ctrl+V` (macOS clipboard), or drop an image file path into your message on any platform. Attach several at once and ask the agent about a broken UI, an error dialog, or a design mock. PNG/JPEG/GIF/WebP.
+- **Quality-of-life** — `@`-mention file autocomplete, slash-command autocomplete, streaming step timeline, Ctrl+L to clear.
 
 ---
 
