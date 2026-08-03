@@ -223,7 +223,9 @@ ${material}
 
 Read EMOTION.md at the workspace root (if it exists). Find or create a "## Remembered" section (add it near the end of the file if it's missing — do not touch or reorder any other section). Append new bullet points there, one per line, each formatted EXACTLY as \`- YYYY-MM-DD: fact\` (today's date, a literal dash and space, then the fact) — this exact format is required so the fact can be parsed and aged out automatically later. Add facts worth keeping that AREN'T already present in that section. Do not rewrite, reword, or remove existing bullets. If nothing new is worth keeping, do not modify the file at all — just say so in your reply.
 
-Use edit_file for existing files (or create_file if EMOTION.md doesn't exist yet, writing just the "## Remembered" section). Do not ask clarifying questions — use your best judgment.`;
+Use edit_file for existing files (or create_file if EMOTION.md doesn't exist yet, writing just the "## Remembered" section). Do not ask clarifying questions — use your best judgment.
+
+Important: if you decide there's something worth saving, call edit_file or create_file yourself, immediately, in this turn. Do not describe the write in your response and wait to be told to proceed — the user already gets a confirmation prompt automatically the moment you call the tool, so asking first is redundant and means nothing gets saved. Only skip the tool call if there is genuinely nothing worth keeping.`;
 
     beginTurn();
     const rememberWorker = new AgentWorker({
