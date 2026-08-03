@@ -520,7 +520,9 @@ EMOTION.md should include, in this order:
 2. Key directories — the main source dirs and what lives in each.
 3. Conventions — coding conventions, testing approach, and anything a new contributor should know.
 
-Keep it concise (aim for well under 100 lines). When ready, write it with create_file to EMOTION.md at the workspace root. Do not ask clarifying questions — make reasonable inferences from what you find.`;
+Keep it concise (aim for well under 100 lines). When ready, write it with create_file to EMOTION.md at the workspace root. Do not ask clarifying questions — make reasonable inferences from what you find.
+
+Important: once you've gathered enough context, call create_file yourself, immediately, in this turn. Do not describe the file's contents in your response and wait to be told to proceed — the user already gets a confirmation prompt automatically the moment you call the tool, so asking first is redundant and means nothing gets saved.`;
 
       beginTurn();
       const initWorker = new AgentWorker({
