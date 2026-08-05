@@ -1,11 +1,11 @@
 /**
  * CLI tools: read_file, search, run_command, create_file, write_file, edit_file,
  * git_status, git_diff, thoughts, memory_set, memory_get, memory_list, web_search,
- * web_fetch.
+ * web_fetch, find_references, impact_analysis.
  * Used by runner to emit TOOL_START/TOOL_END.
  */
 import { readFile, readdir, stat } from 'fs/promises';
-import { join } from 'path';
+import { join, relative } from 'path';
 import { existsSync } from 'fs';
 import { spawn } from 'child_process';
 import { createFileTool, writeFileTool, editFileTool } from './fileEdit.js';
@@ -15,6 +15,7 @@ import { memorySet, memoryGet, memoryList } from './memoryTools.js';
 import { validateToolCall } from './loopGuards.js';
 import { safeWorkspacePath, isBlockedDir, isBlockedName } from './pathSafety.js';
 import { callMcpTool } from './mcp/client.js';
+import { findReferences, impactAnalysis, invalidateSymbolIndexFile } from './symbolIndex.js';
 
 const DEFAULT_CWD = process.cwd();
 const RUN_TIMEOUT_MS = 30_000;
@@ -417,6 +418,40 @@ export function explainTool({ concept, explanation, example = null, category = '
 }
 
 /**
+ * find_references: every actual reference to a symbol across the workspace,
+ * from the AST-backed symbol index (symbolIndex.js) — not a text grep.
+ */
+export async function findReferencesTool(symbol, cwd = DEFAULT_CWD) {
+  if (!symbol || !symbol.trim()) return { error: 'symbol is required' };
+  return findReferences(symbol.trim(), cwd);
+}
+
+/**
+ * impact_analysis: blast radius of changing a symbol — direct importers
+ * that reference it plus the transitive closure of importers beyond that,
+ * with test files flagged. Use before any rename/delete.
+ */
+export async function impactAnalysisTool(symbol, cwd = DEFAULT_CWD) {
+  if (!symbol || !symbol.trim()) return { error: 'symbol is required' };
+  return impactAnalysis(symbol.trim(), cwd);
+}
+
+/**
+ * Wraps a mutating file-tool handler so the symbol index is kept in sync
+ * with what's actually on disk after a successful write — invalidating just
+ * the touched file rather than forcing a full re-index.
+ */
+function withSymbolIndexInvalidation(handler) {
+  return async (args, cwd, options) => {
+    const result = await handler(args, cwd, options);
+    if (result && !result.error && result.path) {
+      await invalidateSymbolIndexFile(cwd, relative(cwd, result.path));
+    }
+    return result;
+  };
+}
+
+/**
  * Dispatch table for built-in tools, keyed by name (matches toolRegistry.js's
  * BUILTIN_TOOL_METADATA). Kept as a plain object rather than the previous
  * if/else chain so external tool sources (MCP servers) can be merged in
@@ -428,9 +463,9 @@ const TOOL_HANDLERS = {
   list_files: (args, cwd) => listFilesTool(args.dirPath || '.', cwd),
   run_command: (args, cwd) => runCommandTool(args.command, cwd),
   explain: (args) => explainTool(args),
-  create_file: (args, cwd) => createFileTool(args.filePath, args.content, cwd),
-  write_file: (args, cwd) => writeFileTool(args.filePath, args.content, cwd, args.allowOverwrite === true),
-  edit_file: (args, cwd) => editFileTool(args.filePath, args.oldString, args.newString, cwd),
+  create_file: withSymbolIndexInvalidation((args, cwd) => createFileTool(args.filePath, args.content, cwd)),
+  write_file: withSymbolIndexInvalidation((args, cwd) => writeFileTool(args.filePath, args.content, cwd, args.allowOverwrite === true)),
+  edit_file: withSymbolIndexInvalidation((args, cwd) => editFileTool(args.filePath, args.oldString, args.newString, cwd)),
   git_status: (_args, cwd) => gitStatus(cwd),
   git_diff: (args, cwd) => gitDiff(cwd, { staged: args.staged === true, path: args.path ?? null }),
   thoughts: (args) => thoughtsTool(args),
@@ -439,6 +474,8 @@ const TOOL_HANDLERS = {
   memory_list: (args, cwd) => memoryList(args, cwd),
   web_search: (args) => webSearchTool(args.query, args.limit),
   web_fetch: (args, _cwd, options) => webFetchTool(args.url, { maxContentChars: options.webFetchMaxContentChars }),
+  find_references: (args, cwd) => findReferencesTool(args.symbol, cwd),
+  impact_analysis: (args, cwd) => impactAnalysisTool(args.symbol, cwd),
 };
 
 /**
