@@ -27,6 +27,8 @@ export const BUILTIN_TOOL_METADATA = [
   { name: 'delegate', requiredArgs: ['tasks'] },
   { name: 'web_search', requiredArgs: ['query'] },
   { name: 'web_fetch', requiredArgs: ['url'] },
+  { name: 'find_references', requiredArgs: ['symbol'] },
+  { name: 'impact_analysis', requiredArgs: ['symbol'] },
 ];
 
 /**
