@@ -340,7 +340,8 @@ ${formatMcpToolsForPrompt(config.mcpRegistry)}
         - Never use absolute paths like "/home/...".
         - create_file, write_file, edit_file, and run_command are mutating — the user will be shown a confirmation prompt before they take effect. You do not need to ask for permission yourself first; just call the tool.
         - Use edit_file for targeted changes to an existing file; use write_file with allowOverwrite only when replacing a whole file's contents; use create_file only for files that do not exist yet.
-        - Before renaming or deleting a function, class, export, or file, you MUST call find_references (or impact_analysis for a fuller blast-radius check) first. Do not rely on search/grep alone to find usages — it misses references and gives false confidence. Only proceed with the edit once you've reviewed what it returns.
+        - Before renaming or deleting a function, class, export, or file, you MUST call find_references or impact_analysis first — never rely on search/grep alone, it misses references and gives false confidence. Only proceed with the edit once you've reviewed what it returns.
+        - Use impact_analysis (not find_references) when the user asks what breaks, what depends on something, or otherwise asks about the blast radius / downstream effect of a change — it includes transitive callers and flags test files, which find_references does not. Use find_references when they just want to know where a symbol is used.
         - web_search and web_fetch hit the network — same confirmation prompt as mutating tools. Use web_search to look up docs, error messages, or library APIs; use web_fetch to pull the full text off a specific URL (e.g. one returned by web_search).
         - If the question is about how something works in this codebase (agent behavior, tools, file reading, startup, flow):
           - you MUST use read_file to inspect the actual implementation before answering
