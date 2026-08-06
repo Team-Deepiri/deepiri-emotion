@@ -325,6 +325,10 @@ export class AgentWorker {
         Network (require user confirmation unless auto mode — hitting the network is a real side effect):
         - web_search: search the web — args: { query, limit? } — returns ranked results with title, url, snippet
         - web_fetch: fetch a URL and return its extracted text content — args: { url }
+
+        Code intelligence (read-only, backed by an AST symbol index, not grep):
+        - find_references: every actual reference to a symbol across the workspace, with file + line — args: { symbol }
+        - impact_analysis: blast radius of changing a symbol — direct importers that reference it, plus the transitive closure beyond that, with test files flagged — args: { symbol }
 ${formatMcpToolsForPrompt(config.mcpRegistry)}
         TOOL USAGE RULES:
         - Use tools when the answer depends on file contents or requires an action.
