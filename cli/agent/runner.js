@@ -2,7 +2,8 @@
  * Agent runner: dispatch layer. Handles slash-commands and mode state,
  * then delegates each user turn to an AgentWorker instance.
  */
-import { writeFile, unlink } from 'fs/promises';
+import { writeFile, unlink, readFile, stat } from 'fs/promises';
+import { existsSync } from 'fs';
 import { EVENTS } from '../core/eventBus.js';
 import { MODES } from '../core/modes.js';
 import { formatCommandList } from '../core/commands.js';
@@ -10,6 +11,8 @@ import { discoverGuidance } from './guidance.js';
 import { AgentWorker } from './AgentWorker.js';
 import { listSessions, loadSession, latestSession } from './session.js';
 import { streamLLM } from './llmStream.js';
+import { safeWorkspacePath } from './pathSafety.js';
+import { maybeConfirmAndExecute } from './confirm.js';
 import { estimateTokens, contextWindowFor } from '../core/tokens.js';
 import {
   handleModelsCommand,
@@ -22,6 +25,63 @@ import { handleConnectCommand } from './connectCommand.js';
 import { handleMcpCommand } from './mcpCommand.js';
 
 const AUTO_COMPACT_THRESHOLD = 0.8;
+
+// EMOTION.md's "## Remembered" section is capped the same way projectMemory.js
+// caps reads of the whole file (16KB) — half that budget, since it shares the
+// file with hand-written sections. Bullets must be `- YYYY-MM-DD: fact` so
+// they can be parsed and aged out oldest-first without an LLM call.
+export const MAX_REMEMBERED_BYTES = 8 * 1024;
+const REMEMBERED_BULLET_RE = /^-\s*(\d{4}-\d{2}-\d{2})\b/;
+
+/**
+ * Locate the "## Remembered" section within EMOTION.md's content, if present.
+ * Returns byte offsets so the caller can splice in a replacement body via
+ * edit_file's oldString/newString without touching anything else in the file.
+ */
+export function findRememberedSection(content) {
+  const headingRe = /^##\s*Remembered\b.*$/im;
+  const headingMatch = headingRe.exec(content);
+  if (!headingMatch) return null;
+  const bodyStart = headingMatch.index + headingMatch[0].length;
+  const rest = content.slice(bodyStart);
+  const nextHeadingMatch = /^##\s+/m.exec(rest);
+  const bodyEnd = nextHeadingMatch ? bodyStart + nextHeadingMatch.index : content.length;
+  return {
+    headingLine: headingMatch[0],
+    body: content.slice(bodyStart, bodyEnd),
+  };
+}
+
+/**
+ * Drops the oldest dated bullets from a Remembered section body until it fits
+ * within maxBytes. Non-bullet lines (headers, blank lines, freeform notes)
+ * are never touched. Returns the possibly-shortened body plus the text of
+ * whatever got dropped, so the caller can tell the user what aged out.
+ */
+export function pruneOldestBullets(body, maxBytes) {
+  if (Buffer.byteLength(body, 'utf-8') <= maxBytes) return { body, dropped: [] };
+
+  const lines = body.split('\n');
+  const bullets = [];
+  lines.forEach((line, index) => {
+    const match = REMEMBERED_BULLET_RE.exec(line.trim());
+    if (match) bullets.push({ index, date: match[1], text: line.trim() });
+  });
+
+  const oldestFirst = [...bullets].sort((a, b) => a.date.localeCompare(b.date));
+  const dropIndices = new Set();
+  const dropped = [];
+  let remainingLines = lines;
+
+  for (const bullet of oldestFirst) {
+    if (Buffer.byteLength(remainingLines.join('\n'), 'utf-8') <= maxBytes) break;
+    dropIndices.add(bullet.index);
+    dropped.push(bullet.text);
+    remainingLines = lines.filter((_, i) => !dropIndices.has(i));
+  }
+
+  return { body: remainingLines.join('\n'), dropped };
+}
 
 /**
  * @param {import('events').EventEmitter} bus
@@ -86,6 +146,7 @@ export function attachAgentRunner(bus, config = {}) {
     }
     compacting = true;
     bus.emit(EVENTS.AGENT_STATUS, { status: 'thinking', message: '🗜 Compacting conversation history...' });
+    let succeeded = false;
     try {
       const serialized = history.map(m => `${m.role}: ${m.content}`).join('\n\n');
       let summary = '';
@@ -101,12 +162,129 @@ export function attachAgentRunner(bus, config = {}) {
         : '🗜 Compacted conversation history into a summary.';
       bus.emit(EVENTS.LLM_TOKEN, { token: note });
       bus.emit(EVENTS.LLM_DONE, {});
+      succeeded = true;
     } catch (err) {
       bus.emit(EVENTS.AGENT_ERROR, { message: `Compact failed: ${err.message}` });
       bus.emit(EVENTS.LLM_DONE, {});
     } finally {
       compacting = false;
     }
+    // Compaction is a natural checkpoint — worth also checking whether
+    // anything from this stretch of conversation is worth keeping past this
+    // session, same as an explicit /remember would.
+    if (succeeded) await runRemember('compact');
+  };
+
+  // /remember (Task: persistent project memory) — reads back recent
+  // .emotion-sessions transcripts plus the current in-memory conversation,
+  // and asks the agent to extract durable, project-level facts (decisions,
+  // conventions, why a weird piece of code exists) worth keeping past this
+  // session. The proposed change is written via the agent's normal edit_file/
+  // create_file tools, so it goes through the exact same confirmation/diff
+  // gate as any other file write — never silent. The task prompt restricts
+  // the agent to a "## Remembered" section so hand-written EMOTION.md content
+  // is never touched.
+  const runRemember = async (reason) => {
+    const sessionsCwd = config.workspaceDir || process.cwd();
+    const recentSessions = await listSessions(sessionsCwd, 3);
+    const sessionTranscripts = (await Promise.all(
+      recentSessions.map(async (s) => {
+        const result = await loadSession(sessionsCwd, s.id);
+        if (result.error || !result.session) return null;
+        const turns = (result.session.messages || []).slice(-20);
+        if (turns.length === 0) return null;
+        return `Session ${s.id} (${s.startedAt}):\n${turns
+          .map((m) => `${m.role}: ${(m.content || '').slice(0, 500)}`)
+          .join('\n')}`;
+      })
+    )).filter(Boolean);
+
+    const currentTurns = history
+      .filter((m) => m.role !== 'system')
+      .slice(-20)
+      .map((m) => `${m.role}: ${(m.content || '').slice(0, 500)}`)
+      .join('\n');
+
+    const material = [...sessionTranscripts, currentTurns ? `Current conversation:\n${currentTurns}` : null]
+      .filter(Boolean)
+      .join('\n\n---\n\n');
+
+    if (!material.trim()) {
+      if (reason === 'manual') {
+        bus.emit(EVENTS.LLM_TOKEN, { token: '🧠 Nothing recent to remember yet.' });
+        bus.emit(EVENTS.LLM_DONE, {});
+      }
+      return;
+    }
+
+    const rememberTask = `Review the recent session transcripts and conversation below. Extract only durable, project-level facts worth keeping across sessions: architectural decisions, conventions you noticed, or why a specific piece of code exists. Skip anything trivial, one-off, or already obvious from reading the code.
+
+${material}
+
+Read EMOTION.md at the workspace root (if it exists). Find or create a "## Remembered" section (add it near the end of the file if it's missing — do not touch or reorder any other section). Append new bullet points there, one per line, each formatted EXACTLY as \`- YYYY-MM-DD: fact\` (today's date, a literal dash and space, then the fact) — this exact format is required so the fact can be parsed and aged out automatically later. Add facts worth keeping that AREN'T already present in that section. Do not rewrite, reword, or remove existing bullets. If nothing new is worth keeping, do not modify the file at all — just say so in your reply.
+
+Use edit_file for existing files (or create_file if EMOTION.md doesn't exist yet, writing just the "## Remembered" section). Do not ask clarifying questions — use your best judgment.
+
+Important: if you decide there's something worth saving, call edit_file or create_file yourself, immediately, in this turn. Do not describe the write in your response and wait to be told to proceed — the user already gets a confirmation prompt automatically the moment you call the tool, so asking first is redundant and means nothing gets saved. Only skip the tool call if there is genuinely nothing worth keeping.`;
+
+    beginTurn();
+    const rememberWorker = new AgentWorker({
+      id: 'main',
+      bus,
+      config,
+      task: rememberTask,
+      modes: { teachMode, activeModes: new Set(activeModes), autoMode, acceptEdits, guardMode },
+    });
+    currentWorker = rememberWorker;
+    try {
+      await rememberWorker.run();
+    } finally {
+      if (currentWorker === rememberWorker) currentWorker = null;
+    }
+
+    // Aging-out: deterministic, not left to the LLM's judgment. If the
+    // section is now over budget, drop the oldest dated bullets (parsed, not
+    // guessed) and propose that removal through the same confirm gate as any
+    // other file write — so pruning is visible and approvable, never silent.
+    await pruneRememberedIfOverCap(sessionsCwd);
+  };
+
+  const pruneRememberedIfOverCap = async (cwd) => {
+    try {
+      const safety = await safeWorkspacePath('EMOTION.md', cwd);
+      if (safety.error || !existsSync(safety.resolved)) return;
+      const content = await readFile(safety.resolved, 'utf-8');
+      const section = findRememberedSection(content);
+      if (!section) return;
+
+      const { body: prunedBody, dropped } = pruneOldestBullets(section.body, MAX_REMEMBERED_BYTES);
+      if (dropped.length === 0) return;
+
+      const oldString = section.headingLine + section.body;
+      const newString = section.headingLine + prunedBody;
+
+      beginTurn();
+      const turnId = config.currentTurnId;
+      const result = await maybeConfirmAndExecute(
+        bus,
+        'edit_file',
+        { filePath: 'EMOTION.md', oldString, newString },
+        cwd,
+        {
+          autoApprove: autoMode || acceptEdits,
+          allowSet: config.allowSet,
+          checkpoints: config.checkpoints,
+          turnId,
+        }
+      );
+
+      if (result?.denied) {
+        bus.emit(EVENTS.LLM_TOKEN, { token: `🧹 Remembered section is over the ${Math.round(MAX_REMEMBERED_BYTES / 1024)}KB cap, but you declined to prune it — it'll keep being offered until it's trimmed.` });
+      } else if (!result?.error) {
+        bus.emit(EVENTS.LLM_TOKEN, { token: `🧹 Remembered section was over the ${Math.round(MAX_REMEMBERED_BYTES / 1024)}KB cap — aged out ${dropped.length} oldest fact(s):\n${dropped.map((d) => `  ${d}`).join('\n')}` });
+      }
+      bus.emit(EVENTS.LLM_DONE, {});
+    } catch { /* pruning must never break /remember */ }
   };
 
   bus.on(EVENTS.LLM_TOKEN, ({ token }) => {
@@ -230,6 +408,35 @@ export function attachAgentRunner(bus, config = {}) {
       return;
     }
 
+    if (text?.trim() === '/remember') {
+      await runRemember('manual');
+      return;
+    }
+
+    if (text?.trim() === '/memory') {
+      const memCwd = config.workspaceDir || process.cwd();
+      const safety = await safeWorkspacePath('EMOTION.md', memCwd);
+      let msg;
+      if (safety.error || !existsSync(safety.resolved)) {
+        msg = '🧠 No EMOTION.md yet — run /init to create one, then /remember to start filling it in.';
+      } else {
+        const content = await readFile(safety.resolved, 'utf-8');
+        const stats = await stat(safety.resolved);
+        const section = findRememberedSection(content);
+        const body = section?.body?.trim() ?? '';
+        if (!body) {
+          msg = `🧠 EMOTION.md exists but has no "## Remembered" section yet (last changed ${stats.mtime.toLocaleString()}). Use /remember to start one.`;
+        } else {
+          const bytes = Buffer.byteLength(body, 'utf-8');
+          const capKb = Math.round(MAX_REMEMBERED_BYTES / 1024);
+          msg = `🧠 Remembered (last changed ${stats.mtime.toLocaleString()}, ${bytes}B / ${capKb}KB cap):\n${body}`;
+        }
+      }
+      bus.emit(EVENTS.LLM_TOKEN, { token: msg });
+      bus.emit(EVENTS.LLM_DONE, {});
+      return;
+    }
+
     const rewindMatch = text?.trim().match(/^\/rewind(?:\s+(\d+))?$/);
     if (rewindMatch) {
       const checkpoints = config.checkpoints || [];
@@ -313,7 +520,9 @@ EMOTION.md should include, in this order:
 2. Key directories — the main source dirs and what lives in each.
 3. Conventions — coding conventions, testing approach, and anything a new contributor should know.
 
-Keep it concise (aim for well under 100 lines). When ready, write it with create_file to EMOTION.md at the workspace root. Do not ask clarifying questions — make reasonable inferences from what you find.`;
+Keep it concise (aim for well under 100 lines). When ready, write it with create_file to EMOTION.md at the workspace root. Do not ask clarifying questions — make reasonable inferences from what you find.
+
+Important: once you've gathered enough context, call create_file yourself, immediately, in this turn. Do not describe the file's contents in your response and wait to be told to proceed — the user already gets a confirmation prompt automatically the moment you call the tool, so asking first is redundant and means nothing gets saved.`;
 
       beginTurn();
       const initWorker = new AgentWorker({
