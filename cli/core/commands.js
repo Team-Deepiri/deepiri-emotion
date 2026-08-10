@@ -22,6 +22,8 @@ export const COMMANDS = [
   { name: '/compact', description: 'summarize conversation history to free up context' },
   { name: '/rewind', description: 'list or restore a recent checkpoint (undoes a turn and its file edits)' },
   { name: '/init', description: 'scan workspace and write starter EMOTION.md' },
+  { name: '/remember', description: 'extract durable facts from recent sessions and propose adding them to EMOTION.md' },
+  { name: '/memory', description: 'show what EMOTION.md currently remembers and when it last changed' },
   { name: '/help', description: 'show this list' },
 ];
 
