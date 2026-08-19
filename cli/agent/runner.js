@@ -10,6 +10,13 @@ import { formatCommandList } from '../core/commands.js';
 import { discoverGuidance } from './guidance.js';
 import { AgentWorker } from './AgentWorker.js';
 import { listSessions, loadSession, latestSession } from './session.js';
+import {
+  startBackgroundTask,
+  listBackgroundTasks,
+  getBackgroundTask,
+  cancelBackgroundTask,
+  respondToBackgroundConfirmation,
+} from './backgroundTasks.js';
 import { streamLLM } from './llmStream.js';
 import { safeWorkspacePath } from './pathSafety.js';
 import { maybeConfirmAndExecute } from './confirm.js';
@@ -563,6 +570,88 @@ Important: once you've gathered enough context, call create_file yourself, immed
       const msg = guardMode
         ? '🛡 Guard mode ON — supervisor will review agent actions in real time.'
         : 'Guard mode OFF — supervisor disabled.';
+      bus.emit(EVENTS.LLM_TOKEN, { token: msg });
+      bus.emit(EVENTS.LLM_DONE, {});
+      return;
+    }
+
+    // /bg <prompt> — run a full agent turn detached, so long tasks ("write
+    // tests for this module") don't block the prompt. Reuses the same
+    // AgentWorker engine as a normal turn, just on its own isolated bus (see
+    // backgroundTasks.js) — this session's history/checkpoints are untouched.
+    const bgMatch = text?.trim().match(/^\/bg\s+(.+)$/s);
+    if (bgMatch) {
+      const { id } = startBackgroundTask({
+        bus,
+        config,
+        text: bgMatch[1].trim(),
+        attachments,
+        modes: { teachMode, activeModes: new Set(activeModes), guardMode },
+      });
+      bus.emit(EVENTS.LLM_TOKEN, { token: `🧵 Started background task ${id}.\nUse /tasks to check on it, /tasks ${id} for detail, /tasks cancel ${id} to stop it.` });
+      bus.emit(EVENTS.LLM_DONE, {});
+      return;
+    }
+
+    // /tasks              → list background tasks
+    // /tasks <id>         → show one task's recent steps + output
+    // /tasks cancel <id>  → cancel a running/waiting task
+    // /tasks approve <id> → answer a queued confirmation ('once')
+    // /tasks deny <id>    → answer a queued confirmation (deny)
+    const tasksMatch = text?.trim().match(/^\/tasks(?:\s+(.+))?$/s);
+    if (tasksMatch) {
+      const arg = (tasksMatch[1] || '').trim();
+
+      if (!arg) {
+        const all = listBackgroundTasks();
+        const msg = all.length === 0
+          ? '🧵 No background tasks this session. Start one with /bg <prompt>.'
+          : `🧵 Background tasks (${all.length}):\n${all
+              .map((t) => {
+                const flag = t.status === 'awaiting_confirmation' ? ' ⚠ needs your approval' : '';
+                return `  ${t.id} [${t.status}]${flag} — ${t.text.slice(0, 60)}${t.lastMessage ? ` — ${t.lastMessage}` : ''}`;
+              })
+              .join('\n')}`;
+        bus.emit(EVENTS.LLM_TOKEN, { token: msg });
+        bus.emit(EVENTS.LLM_DONE, {});
+        return;
+      }
+
+      const cancelMatch = arg.match(/^cancel\s+(\S+)$/);
+      const approveMatch = arg.match(/^approve\s+(\S+)$/);
+      const denyMatch = arg.match(/^deny\s+(\S+)$/);
+
+      if (cancelMatch) {
+        const ok = cancelBackgroundTask(cancelMatch[1]);
+        bus.emit(EVENTS.LLM_TOKEN, { token: ok ? `🧵 Cancelled ${cancelMatch[1]}.` : `🧵 Task ${cancelMatch[1]} not found or already finished.` });
+        bus.emit(EVENTS.LLM_DONE, {});
+        return;
+      }
+
+      if (approveMatch || denyMatch) {
+        const taskId = (approveMatch || denyMatch)[1];
+        const choice = approveMatch ? 'once' : 'deny';
+        const ok = respondToBackgroundConfirmation(taskId, choice);
+        bus.emit(EVENTS.LLM_TOKEN, {
+          token: ok
+            ? `🧵 ${choice === 'once' ? 'Approved' : 'Denied'} — ${taskId} is resuming.`
+            : `🧵 Task ${taskId} has nothing awaiting confirmation.`,
+        });
+        bus.emit(EVENTS.LLM_DONE, {});
+        return;
+      }
+
+      const task = getBackgroundTask(arg);
+      if (!task) {
+        bus.emit(EVENTS.LLM_TOKEN, { token: `🧵 No background task ${arg}. Use /tasks to list them.` });
+        bus.emit(EVENTS.LLM_DONE, {});
+        return;
+      }
+      const confirmNote = task.pendingConfirmation
+        ? `\n\n⚠ Awaiting your approval: ${task.pendingConfirmation.action || task.pendingConfirmation.tool} ${task.pendingConfirmation.path || ''}\n${task.pendingConfirmation.preview || ''}\nUse /tasks approve ${arg} or /tasks deny ${arg}.`
+        : '';
+      const recentSteps = task.steps.map((s) => `  ${s.message || s.type}`).join('\n');
+      const msg = `🧵 Task ${arg} [${task.status}] — ${task.text}\n\nRecent steps:\n${recentSteps || '  (none yet)'}\n\nOutput so far:\n${task.output || '(none yet)'}${confirmNote}`;
       bus.emit(EVENTS.LLM_TOKEN, { token: msg });
       bus.emit(EVENTS.LLM_DONE, {});
       return;
