@@ -63,6 +63,12 @@ describe('buildSymbolIndex', () => {
     expect(index.files.has('broken.js')).toBe(false);
     expect(index.files.has('fine.js')).toBe(true);
   });
+
+  it('records unparseable files in skippedFiles', async () => {
+    await writeSource('broken.js', `this is not valid js ((( `);
+    const index = await buildSymbolIndex(dir);
+    expect(index.skippedFiles.has('broken.js')).toBe(true);
+  });
 });
 
 describe('findReferences', () => {
@@ -88,6 +94,19 @@ describe('findReferences', () => {
     const result = await findReferences('nonexistent', dir);
     expect(result.count).toBe(0);
     expect(result.references).toEqual([]);
+  });
+
+  it('has no warning when every file indexed cleanly', async () => {
+    await writeSource('main.js', `const x = 1;\n`);
+    const result = await findReferences('x', dir);
+    expect(result.warning).toBeNull();
+  });
+
+  it('surfaces a warning when a file could not be parsed, so results are known-incomplete', async () => {
+    await writeSource('broken.js', `this is not valid js ((( `);
+    await writeSource('main.js', `const add = 1;\n`);
+    const result = await findReferences('add', dir);
+    expect(result.warning).toMatch(/1 file\(s\) could not be parsed/);
   });
 });
 
@@ -119,6 +138,13 @@ describe('impactAnalysis', () => {
     const result = await impactAnalysis('add', dir);
     const test = result.impacted.find((r) => r.file === '__tests__/math.test.js');
     expect(test.isTest).toBe(true);
+  });
+
+  it('surfaces a warning when a file could not be parsed, so the blast radius is known-incomplete', async () => {
+    await writeSource('math.js', `export function add(a, b) { return a + b; }\n`);
+    await writeSource('broken.js', `this is not valid js ((( `);
+    const result = await impactAnalysis('add', dir);
+    expect(result.warning).toMatch(/1 file\(s\) could not be parsed/);
   });
 });
 

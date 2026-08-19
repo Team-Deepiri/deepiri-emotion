@@ -25,7 +25,8 @@ const TEST_FILE_RE = /\.(test|spec)\.[cm]?jsx?$/;
 
 const JsxParser = Parser.extend(jsx());
 
-// { cwd, files: Map<relPath, FileEntry>, importedBy: Map<relPath, Set<relPath>> }
+// { cwd, files: Map<relPath, FileEntry>, importedBy: Map<relPath, Set<relPath>>,
+//   skippedFiles: Set<relPath>, fileLimitReached: boolean }
 // FileEntry = { exports: [{name, line}], imports: [{source, resolved, specifiers, line}], references: Map<name, number[]> }
 let cache = null;
 
@@ -194,11 +195,14 @@ export async function buildSymbolIndex(cwd) {
 
   const relPaths = [];
   await walk(cwd, cwd, relPaths);
+  const fileLimitReached = relPaths.length >= MAX_FILES;
 
   const files = new Map();
+  const skippedFiles = new Set();
   for (const relPath of relPaths) {
     const entry = await analyzeFile(relPath, cwd);
     if (entry) files.set(relPath, entry);
+    else skippedFiles.add(relPath);
   }
 
   const importedBy = new Map();
@@ -208,7 +212,7 @@ export async function buildSymbolIndex(cwd) {
     }
   }
 
-  cache = { cwd, files, importedBy };
+  cache = { cwd, files, importedBy, skippedFiles, fileLimitReached };
   return cache;
 }
 
@@ -227,8 +231,10 @@ export async function invalidateSymbolIndexFile(cwd, relPath) {
   const entry = await analyzeFile(relPath, cwd);
   if (!entry) {
     cache.files.delete(relPath);
+    cache.skippedFiles.add(relPath);
     return;
   }
+  cache.skippedFiles.delete(relPath);
   cache.files.set(relPath, entry);
   for (const imp of entry.imports) {
     if (imp.resolved) addToImportedBy(cache.importedBy, imp.resolved, relPath);
@@ -242,6 +248,23 @@ export function invalidateSymbolIndex() {
 
 function isTestFile(relPath) {
   return TEST_PATH_RE.test(relPath) || TEST_FILE_RE.test(relPath);
+}
+
+/**
+ * Human-readable note when the index is known to be incomplete — either
+ * some files failed to parse (syntax error, unsupported syntax) or the
+ * workspace has more source files than MAX_FILES. Surfaced on tool results
+ * so the agent can flag potential gaps instead of treating results as exhaustive.
+ */
+function buildIndexWarning(index) {
+  const parts = [];
+  if (index.skippedFiles.size > 0) {
+    parts.push(`${index.skippedFiles.size} file(s) could not be parsed and are excluded from this index`);
+  }
+  if (index.fileLimitReached) {
+    parts.push(`workspace has more than ${MAX_FILES} source files; only the first ${MAX_FILES} were indexed`);
+  }
+  return parts.length > 0 ? `Index may be incomplete: ${parts.join('; ')}.` : null;
 }
 
 /**
@@ -263,6 +286,7 @@ export async function findReferences(symbol, cwd, limit = 200) {
     count: results.length,
     references: results.slice(0, limit),
     truncated: results.length > limit,
+    warning: buildIndexWarning(index),
   };
 }
 
@@ -316,5 +340,6 @@ export async function impactAnalysis(symbol, cwd, { maxDepth = 6, limit = 200 } 
     count: results.length,
     impacted: results.slice(0, limit),
     truncated: results.length > limit,
+    warning: buildIndexWarning(index),
   };
 }
