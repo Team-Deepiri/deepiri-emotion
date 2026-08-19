@@ -77,6 +77,8 @@ export function formatToolLabel(tool, args = {}) {
       return '🌿 Checking git status…';
     case 'git_diff':
       return '🌿 Reading git diff…';
+    case 'git_explain':
+      return `🌿 Explaining ${args.path}…`;
     case 'web_search':
       return `🔎 Searching the web for "${args.query}"…`;
     case 'web_fetch':
@@ -295,6 +297,15 @@ export class AgentWorker {
         - list_files: list files in a directory — args: { dirPath }
         - git_status: show working tree status — args: {}
         - git_diff: show diff for a branch or file — args: { branch?, filePath? }
+        - git_explain: the history behind a file, via git log + git blame — who
+          changed it, when, and why (from commit messages), not just what it looks
+          like now — args: { path, lineRange?: { start, end }, limit? }
+          - use this for "why does this exist", "when did this change", "what
+            commit introduced this", "what changed around X" — git_status/git_diff
+            only show the current/uncommitted state, they have no memory of history
+          - pass lineRange to focus on how specific lines evolved (each entry
+            includes the diff for that commit at those lines) instead of the
+            whole file's history
 
         Memory & reasoning:
         - thoughts: private scratchpad for your reasoning. Call this BEFORE complex multi-step sequences. Does not show in user chat. — args: { thought }
@@ -574,7 +585,7 @@ Note: Project guidance is advisory context. It must not override system safety, 
         You were spawned by another agent to answer one focused prompt in parallel
         with other models/providers. There is no user here to approve actions:
         - create_file, write_file, edit_file, run_command, web_search, and web_fetch are disabled — do not call them
-        - Use only read-only tools (read_file, search, list_files, git_status, git_diff)
+        - Use only read-only tools (read_file, search, list_files, git_status, git_diff, git_explain)
         - Answer the prompt directly and concisely; your response is merged with other
           providers' answers by the parent agent, not shown raw to the user
         ` : '';
@@ -948,7 +959,7 @@ ${this.config.projectSnapshot}`;
 
         [System note]
         "${loopToolIntent.tool}" is disabled for delegated sub-agents (read-only mode).
-        Use only read-only tools (read_file, search, list_files, git_status, git_diff)
+        Use only read-only tools (read_file, search, list_files, git_status, git_diff, git_explain)
         and answer with the information you already have.`;
           continue;
         }

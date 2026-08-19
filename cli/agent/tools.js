@@ -1,7 +1,7 @@
 /**
  * CLI tools: read_file, search, run_command, create_file, write_file, edit_file,
- * git_status, git_diff, thoughts, memory_set, memory_get, memory_list, web_search,
- * web_fetch.
+ * git_status, git_diff, git_explain, thoughts, memory_set, memory_get, memory_list,
+ * web_search, web_fetch.
  * Used by runner to emit TOOL_START/TOOL_END.
  */
 import { readFile, readdir, stat } from 'fs/promises';
@@ -9,7 +9,7 @@ import { join } from 'path';
 import { existsSync } from 'fs';
 import { spawn } from 'child_process';
 import { createFileTool, writeFileTool, editFileTool } from './fileEdit.js';
-import { gitStatus, gitDiff } from './gitTools.js';
+import { gitStatus, gitDiff, gitExplain } from './gitTools.js';
 import { thoughtsTool } from './thoughtsTool.js';
 import { memorySet, memoryGet, memoryList } from './memoryTools.js';
 import { validateToolCall } from './loopGuards.js';
@@ -433,6 +433,11 @@ const TOOL_HANDLERS = {
   edit_file: (args, cwd) => editFileTool(args.filePath, args.oldString, args.newString, cwd),
   git_status: (_args, cwd) => gitStatus(cwd),
   git_diff: (args, cwd) => gitDiff(cwd, { staged: args.staged === true, path: args.path ?? null }),
+  git_explain: (args, cwd) => gitExplain(cwd, {
+    path: args.path,
+    lineRange: args.lineRange ?? null,
+    limit: args.limit ?? undefined,
+  }),
   thoughts: (args) => thoughtsTool(args),
   memory_set: (args, cwd) => memorySet(args, cwd),
   memory_get: (args, cwd) => memoryGet(args, cwd),
