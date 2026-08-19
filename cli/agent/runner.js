@@ -641,7 +641,7 @@ Important: once you've gathered enough context, call create_file yourself, immed
         return;
       }
 
-      const task = getBackgroundTask(arg);
+      const task = getBackgroundTask(arg, bus);
       if (!task) {
         bus.emit(EVENTS.LLM_TOKEN, { token: `🧵 No background task ${arg}. Use /tasks to list them.` });
         bus.emit(EVENTS.LLM_DONE, {});

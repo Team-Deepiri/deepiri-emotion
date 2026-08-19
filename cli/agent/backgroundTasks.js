@@ -35,6 +35,8 @@ const MAX_OUTPUT_BYTES = 64 * 1024;
 // for visibility/audit, not for resuming a task after the CLI restarts.
 const tasks = new Map();
 
+const FINISHED_STATUSES = new Set(['done', 'error', 'cancelled']);
+
 function summarize(record) {
   return {
     id: record.id,
@@ -46,6 +48,12 @@ function summarize(record) {
     pendingConfirmation: record.pendingConfirmation
       ? { tool: record.pendingConfirmation.tool, path: record.pendingConfirmation.path, preview: record.pendingConfirmation.preview }
       : null,
+    // True once the task has finished (done/error/cancelled) and nobody has
+    // looked at its detail yet — lets the footer show a "landed" indicator
+    // (see StatusBar.js) without touching the main LLM_TOKEN/LLM_DONE stream,
+    // which the foreground turn's own recording/dequeue logic also listens
+    // to and must not be disturbed by an unrelated background task finishing.
+    unseenCompletion: FINISHED_STATUSES.has(record.status) && !record.seen,
   };
 }
 
@@ -107,6 +115,7 @@ export function startBackgroundTask({ bus, config, text, attachments = [], modes
     output: '',
     error: null,
     pendingConfirmation: null,
+    seen: false,
     worker: null,
     subBus,
   };
@@ -188,10 +197,19 @@ export function listBackgroundTasks() {
   return [...tasks.values()].map(summarize);
 }
 
-/** Full detail for one task — recent steps, buffered output, pending confirmation. */
-export function getBackgroundTask(id) {
+/**
+ * Full detail for one task — recent steps, buffered output, pending
+ * confirmation. Marks a finished task as seen (clearing its footer "landed"
+ * indicator) — pass `bus` so that clears immediately rather than waiting for
+ * the next unrelated task event.
+ */
+export function getBackgroundTask(id, bus = null) {
   const record = tasks.get(id);
   if (!record) return null;
+  if (FINISHED_STATUSES.has(record.status) && !record.seen) {
+    record.seen = true;
+    if (bus) emitChanged(bus);
+  }
   return {
     ...summarize(record),
     output: record.output,

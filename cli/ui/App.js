@@ -259,6 +259,10 @@ export default function App({
       setState((s) => ({ ...s, allowedCount: count ?? 0 }));
     };
 
+    const onBackgroundTasksChanged = ({ tasks }) => {
+      setState((s) => ({ ...s, backgroundTasks: tasks || [] }));
+    };
+
     const onClear = () => {
       handleClear();
     };
@@ -341,6 +345,7 @@ export default function App({
     eventBus.on(EVENTS.TEXT_INPUT_REQUEST, onTextInputRequest);
     eventBus.on(EVENTS.TEXT_INPUT_RESPONSE, onTextInputResponse);
     eventBus.on(EVENTS.ALLOWED_TOOLS_CHANGED, onAllowedToolsChanged);
+    eventBus.on(EVENTS.BACKGROUND_TASKS_CHANGED, onBackgroundTasksChanged);
     eventBus.on(EVENTS.CLEAR, onClear);
     eventBus.on(EVENTS.GUARD_MODE_CHANGED, onGuardModeChanged);
     eventBus.on(EVENTS.PROVIDER_SELECTED, onProviderSelected);
@@ -378,6 +383,7 @@ export default function App({
       eventBus.off(EVENTS.TEXT_INPUT_REQUEST, onTextInputRequest);
       eventBus.off(EVENTS.TEXT_INPUT_RESPONSE, onTextInputResponse);
       eventBus.off(EVENTS.ALLOWED_TOOLS_CHANGED, onAllowedToolsChanged);
+      eventBus.off(EVENTS.BACKGROUND_TASKS_CHANGED, onBackgroundTasksChanged);
       eventBus.off(EVENTS.CLEAR, onClear);
       eventBus.off(EVENTS.GUARD_MODE_CHANGED, onGuardModeChanged);
       eventBus.off(EVENTS.PROVIDER_SELECTED, onProviderSelected);
@@ -623,6 +629,7 @@ export default function App({
       tokenUsage: state.tokenUsage,
       workspaceDir: workspaceDir || process.cwd(),
       llmProgress: state.llmProgress,
+      backgroundTasks: state.backgroundTasks,
     })
   );
 }
