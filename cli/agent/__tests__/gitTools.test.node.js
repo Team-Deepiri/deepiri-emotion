@@ -157,6 +157,29 @@ describe('gitDiff', () => {
     expect(result.diff.split('\n').length).toBeLessThanOrEqual(401);
   });
 
+  it('honours a caller-supplied maxLines above the default cap', async () => {
+    const bigContent = Array.from({ length: 600 }, (_, i) => `line ${i}`).join('\n') + '\n';
+    writeFileSync(join(repo, 'big.txt'), bigContent);
+    sh('git add big.txt', repo);
+    sh('git commit -m "add big"', repo);
+    const changedContent = Array.from({ length: 600 }, (_, i) => `changed ${i}`).join('\n') + '\n';
+    writeFileSync(join(repo, 'big.txt'), changedContent);
+
+    const result = await gitDiff(repo, { maxLines: 5000 });
+    expect(result.truncated).toBe(false);
+    expect(result.diff).not.toContain('truncated');
+    expect(result.diff).toContain('+changed 599');
+  });
+
+  it('truncates at a caller-supplied maxLines below the default cap', async () => {
+    writeFileSync(join(repo, 'README.md'), Array.from({ length: 50 }, (_, i) => `l${i}`).join('\n') + '\n');
+
+    const result = await gitDiff(repo, { maxLines: 10 });
+    expect(result.truncated).toBe(true);
+    expect(result.diff).toContain('showing 10 of');
+    expect(result.diff.split('\n').length).toBeLessThanOrEqual(11);
+  });
+
   it('returns a clear error when cwd is not a git repo', async () => {
     const nonRepo = mkdtempSync(join(tmpdir(), 'not-a-repo-'));
     try {

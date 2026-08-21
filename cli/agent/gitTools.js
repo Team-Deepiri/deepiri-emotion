@@ -9,6 +9,9 @@ const execFileAsync = promisify(execFile);
 const DEFAULT_CWD = process.cwd();
 const GIT_TIMEOUT_MS = 10_000;
 const GIT_MAX_BUFFER = 4 * 1024 * 1024;
+// Default cap for the git_diff tool — keeps a diff dumped into the agent's
+// context from eating the whole window. Callers that need more (e.g. /review,
+// which feeds a whole changeset to a reviewer pass) pass their own maxLines.
 const DIFF_MAX_LINES = 400;
 
 async function runGit(args, cwd) {
@@ -100,7 +103,7 @@ export async function gitStatus(cwd = DEFAULT_CWD) {
   return parseStatus(result.stdout || '');
 }
 
-export async function gitDiff(cwd = DEFAULT_CWD, { staged = false, path = null } = {}) {
+export async function gitDiff(cwd = DEFAULT_CWD, { staged = false, path = null, maxLines = DIFF_MAX_LINES } = {}) {
   const repoCheck = await ensureRepo(cwd);
   if (repoCheck.error) return { error: repoCheck.error };
 
@@ -120,10 +123,10 @@ export async function gitDiff(cwd = DEFAULT_CWD, { staged = false, path = null }
   const trailingNewline = rawLines[rawLines.length - 1] === '';
   const totalLines = trailingNewline ? rawLines.length - 1 : rawLines.length;
 
-  if (totalLines > DIFF_MAX_LINES) {
-    const shown = rawLines.slice(0, DIFF_MAX_LINES).join('\n');
+  if (totalLines > maxLines) {
+    const shown = rawLines.slice(0, maxLines).join('\n');
     return {
-      diff: `${shown}\n… (truncated, showing ${DIFF_MAX_LINES} of ${totalLines} lines)`,
+      diff: `${shown}\n… (truncated, showing ${maxLines} of ${totalLines} lines)`,
       truncated: true,
       lineCount: totalLines,
     };
