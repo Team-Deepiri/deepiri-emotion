@@ -607,7 +607,7 @@ export async function applyPatches(patches, { bus, cwd, config, modes = {}, exec
 
   for (const [i, patch] of patches.entries()) {
     const label = patch.note ? ` — ${patch.note}` : '';
-    say(bus, `⚙ Fix ${i + 1}/${patches.length}: ${patch.file}${label}`);
+    sayLine(bus, `⚙ Fix ${i + 1}/${patches.length}: ${patch.file}${label}`);
 
     const result = await executeFn(
       bus,
@@ -689,6 +689,15 @@ const REVIEW_MAX_DIFF_LINES = 2000;
 
 function say(bus, token) {
   bus.emit(EVENTS.LLM_TOKEN, { token });
+}
+
+/**
+ * Emit a line that must not run onto whatever was streamed before it. Tokens
+ * are concatenated into one message, so a bare say() after the review report
+ * renders as `…escapes).⚙ Fix 1/4:`.
+ */
+function sayLine(bus, token) {
+  bus.emit(EVENTS.LLM_TOKEN, { token: `\n${token}` });
 }
 
 function done(bus) {
@@ -823,7 +832,7 @@ export async function handleReviewCommand(text, {
   }));
 
   if (fix && result.findings.length > 0) {
-    say(bus, await runFixPass({
+    sayLine(bus, await runFixPass({
       findings: result.findings,
       bus,
       cwd,
@@ -834,7 +843,7 @@ export async function handleReviewCommand(text, {
       beginTurn,
     }));
   } else if (fix) {
-    say(bus, '🔧 Nothing to fix.');
+    sayLine(bus, '🔧 Nothing to fix.');
   }
 
   done(bus);

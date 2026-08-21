@@ -600,6 +600,15 @@ describe('applyPatches', () => {
     expect(tokens[0]).toContain('Fix 1/2: src/math.js — use +');
     expect(tokens[1]).toContain('Fix 2/2');
   });
+
+  it('starts each announcement on its own line', async () => {
+    // Tokens are concatenated into one message, so without a leading newline
+    // the first fix renders glued to the end of the review report.
+    await applyPatches([patch()], {
+      bus, cwd: '/repo', config: {}, modes: {}, executeFn: async () => ({ edited: true }),
+    });
+    expect(tokens[0].startsWith('\n')).toBe(true);
+  });
 });
 
 describe('/review --fix', () => {
