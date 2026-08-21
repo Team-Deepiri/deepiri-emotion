@@ -11,6 +11,8 @@ import {
   validateFindings,
   formatReview,
   handleReviewCommand,
+  parseFixResponse,
+  applyPatches,
 } from '../reviewCommand.js';
 
 const GIT_ENV = {
@@ -397,7 +399,7 @@ describe('/review', () => {
 
   it('rejects unrecognised options with usage', async () => {
     expect(await handleReviewCommand('/review --wat', { bus, config: { workspaceDir: repo } })).toBe(true);
-    expect(out()).toMatch(/Usage: \/review/);
+    expect(out()).toMatch(/Usage: \/review \[--fix\]/);
   });
 
   it('reports when there is nothing to review', async () => {
@@ -491,5 +493,237 @@ describe('/review', () => {
     bus.on(EVENTS.LLM_DONE, () => { doneCount += 1; });
     await handleReviewCommand('/review', { bus, config: { workspaceDir: repo }, streamFn: stubModel('{"findings":[]}') });
     expect(doneCount).toBeGreaterThan(0);
+  });
+});
+
+describe('parseFixResponse', () => {
+  const findings = [{ file: 'src/math.js' }, { file: 'src/util.js' }];
+
+  it('keeps well-formed patches for files a finding pointed at', () => {
+    const raw = JSON.stringify({ patches: [
+      { finding: 1, file: 'src/math.js', oldString: 'a - b', newString: 'a + b', note: 'use +' },
+    ] });
+    const { patches } = parseFixResponse(raw, findings);
+    expect(patches).toEqual([{ file: 'src/math.js', oldString: 'a - b', newString: 'a + b', note: 'use +' }]);
+  });
+
+  it('drops a patch for a file no finding mentioned', () => {
+    const raw = JSON.stringify({ patches: [
+      { file: 'src/elsewhere.js', oldString: 'x', newString: 'y' },
+    ] });
+    expect(parseFixResponse(raw, findings).patches).toEqual([]);
+  });
+
+  it('drops patches with an empty oldString or a missing newString', () => {
+    const raw = JSON.stringify({ patches: [
+      { file: 'src/math.js', oldString: '', newString: 'y' },
+      { file: 'src/math.js', oldString: 'x' },
+      { file: 'src/math.js', oldString: 'x', newString: 'x' },
+    ] });
+    expect(parseFixResponse(raw, findings).patches).toEqual([]);
+  });
+
+  it('allows an empty newString, which deletes the matched text', () => {
+    const raw = JSON.stringify({ patches: [{ file: 'src/math.js', oldString: 'debugger;\n', newString: '' }] });
+    expect(parseFixResponse(raw, findings).patches).toHaveLength(1);
+  });
+
+  it('errors when the response is not JSON', () => {
+    expect(parseFixResponse('no patches for you', findings).error).toMatch(/parse/i);
+  });
+});
+
+describe('applyPatches', () => {
+  let bus;
+  let tokens;
+
+  beforeEach(() => {
+    bus = createEventBus();
+    tokens = [];
+    bus.on(EVENTS.LLM_TOKEN, ({ token }) => tokens.push(token));
+  });
+
+  const patch = (over = {}) => ({ file: 'src/math.js', oldString: 'a - b', newString: 'a + b', note: 'use +', ...over });
+
+  it('routes every patch through the confirmation gate as an edit_file call', async () => {
+    const calls = [];
+    const executeFn = async (_bus, tool, args, cwd, opts) => {
+      calls.push({ tool, args, cwd, opts });
+      return { edited: true };
+    };
+
+    const result = await applyPatches([patch()], {
+      bus,
+      cwd: '/repo',
+      config: { allowSet: new Set(), checkpoints: [], currentTurnId: 7 },
+      modes: {},
+      executeFn,
+    });
+
+    expect(calls[0].tool).toBe('edit_file');
+    expect(calls[0].args).toEqual({ filePath: 'src/math.js', oldString: 'a - b', newString: 'a + b' });
+    expect(calls[0].opts.autoApprove).toBe(false);
+    expect(calls[0].opts.turnId).toBe(7);
+    expect(result.applied).toHaveLength(1);
+  });
+
+  it('auto-approves only when the session is in auto or accept-edits mode', async () => {
+    const seen = [];
+    const executeFn = async (_bus, _tool, _args, _cwd, opts) => { seen.push(opts.autoApprove); return { edited: true }; };
+
+    await applyPatches([patch()], { bus, cwd: '/repo', config: {}, modes: { acceptEdits: true }, executeFn });
+    await applyPatches([patch()], { bus, cwd: '/repo', config: {}, modes: { autoMode: true }, executeFn });
+    expect(seen).toEqual([true, true]);
+  });
+
+  it('separates denied and failed patches from applied ones', async () => {
+    const executeFn = async (_bus, _tool, args) => {
+      if (args.filePath === 'denied.js') return { denied: true };
+      if (args.filePath === 'broken.js') return { error: 'oldString not found' };
+      return { edited: true };
+    };
+
+    const result = await applyPatches(
+      [patch(), patch({ file: 'denied.js' }), patch({ file: 'broken.js' })],
+      { bus, cwd: '/repo', config: {}, modes: {}, executeFn }
+    );
+
+    expect(result.applied).toHaveLength(1);
+    expect(result.denied).toHaveLength(1);
+    expect(result.failed[0].error).toMatch(/not found/);
+  });
+
+  it('announces each patch before asking about it', async () => {
+    await applyPatches([patch(), patch({ note: 'second' })], {
+      bus, cwd: '/repo', config: {}, modes: {}, executeFn: async () => ({ edited: true }),
+    });
+    expect(tokens[0]).toContain('Fix 1/2: src/math.js — use +');
+    expect(tokens[1]).toContain('Fix 2/2');
+  });
+});
+
+describe('/review --fix', () => {
+  let repo;
+  let bus;
+  let tokens;
+
+  const sh = (cmd, cwd) => execSync(cmd, { cwd, stdio: 'pipe', env: { ...process.env, ...GIT_ENV } });
+
+  beforeEach(() => {
+    repo = mkdtempSync(join(tmpdir(), 'review-fix-test-'));
+    sh('git init -b main', repo);
+    sh('git config commit.gpgsign false', repo);
+    writeFileSync(join(repo, 'math.js'), 'export const sum = (a, b) => a + b;\n');
+    sh('git add math.js', repo);
+    sh('git commit -m init', repo);
+    writeFileSync(join(repo, 'math.js'), 'export const sum = (a, b) => a - b;\n');
+    sh('git add math.js', repo);
+
+    bus = createEventBus();
+    tokens = [];
+    bus.on(EVENTS.LLM_TOKEN, ({ token }) => tokens.push(token));
+  });
+
+  afterEach(() => {
+    if (repo) rmSync(repo, { recursive: true, force: true });
+  });
+
+  const out = () => tokens.join('\n');
+
+  // First call is the review pass, second is the fix pass.
+  const twoPassModel = (reviewReply, fixReply) => {
+    const prompts = [];
+    const fn = async (_bus, prompt, opts) => {
+      prompts.push(prompt);
+      opts.onToken(prompts.length === 1 ? reviewReply : fixReply);
+    };
+    fn.prompts = prompts;
+    return fn;
+  };
+
+  const REVIEW_REPLY = JSON.stringify({ findings: [
+    { severity: 'bug', file: 'math.js', line: 1, confidence: 'high', title: 'sum subtracts', detail: 'Returns a - b.', fix: 'Use +.' },
+  ] });
+
+  it('offers a patch through the confirmation gate and reports it applied', async () => {
+    const fixReply = JSON.stringify({ patches: [
+      { finding: 1, file: 'math.js', oldString: 'a - b', newString: 'a + b', note: 'restore addition' },
+    ] });
+    const gated = [];
+    const executeFn = async (_bus, tool, args) => { gated.push({ tool, args }); return { edited: true }; };
+
+    await handleReviewCommand('/review --fix', {
+      bus,
+      config: { workspaceDir: repo },
+      streamFn: twoPassModel(REVIEW_REPLY, fixReply),
+      executeFn,
+    });
+
+    expect(gated).toHaveLength(1);
+    expect(gated[0].tool).toBe('edit_file');
+    expect(out()).toContain('1 fix applied');
+    expect(out()).toContain('review them with git diff');
+  });
+
+  it('sends the current file contents to the fix pass so oldString can be copied exactly', async () => {
+    const model = twoPassModel(REVIEW_REPLY, '{"patches":[]}');
+    await handleReviewCommand('/review --fix', {
+      bus, config: { workspaceDir: repo }, streamFn: model, executeFn: async () => ({ edited: true }),
+    });
+
+    expect(model.prompts).toHaveLength(2);
+    expect(model.prompts[1]).toContain('export const sum = (a, b) => a - b;');
+    expect(model.prompts[1]).toContain('sum subtracts');
+  });
+
+  it('opens one turn for the batch so /rewind undoes the fixes together', async () => {
+    let turns = 0;
+    const fixReply = JSON.stringify({ patches: [
+      { file: 'math.js', oldString: 'a - b', newString: 'a + b' },
+      { file: 'math.js', oldString: 'sum', newString: 'total' },
+    ] });
+
+    await handleReviewCommand('/review --fix', {
+      bus,
+      config: { workspaceDir: repo },
+      streamFn: twoPassModel(REVIEW_REPLY, fixReply),
+      executeFn: async () => ({ edited: true }),
+      beginTurn: () => { turns += 1; },
+    });
+
+    expect(turns).toBe(1);
+  });
+
+  it('says plainly when no patch could be drafted', async () => {
+    await handleReviewCommand('/review --fix', {
+      bus,
+      config: { workspaceDir: repo },
+      streamFn: twoPassModel(REVIEW_REPLY, '{"patches":[]}'),
+      executeFn: async () => ({ edited: true }),
+    });
+    expect(out()).toContain('No patches offered');
+  });
+
+  it('does not run a fix pass when the review is clean', async () => {
+    const model = twoPassModel('{"findings":[]}', '{"patches":[]}');
+    await handleReviewCommand('/review --fix', {
+      bus, config: { workspaceDir: repo }, streamFn: model, executeFn: async () => ({ edited: true }),
+    });
+
+    expect(model.prompts).toHaveLength(1);
+    expect(out()).toContain('Nothing to fix');
+  });
+
+  it('reports a declined patch without claiming it was applied', async () => {
+    const fixReply = JSON.stringify({ patches: [{ file: 'math.js', oldString: 'a - b', newString: 'a + b' }] });
+    await handleReviewCommand('/review --fix', {
+      bus,
+      config: { workspaceDir: repo },
+      streamFn: twoPassModel(REVIEW_REPLY, fixReply),
+      executeFn: async () => ({ denied: true }),
+    });
+
+    expect(out()).toContain('0 fixes applied, 1 declined');
+    expect(out()).not.toContain('review them with git diff');
   });
 });

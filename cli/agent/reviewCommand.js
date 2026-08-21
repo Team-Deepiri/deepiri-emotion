@@ -12,9 +12,13 @@
  * and records which numbers are citable per file, so a finding's location can
  * be checked against the diff instead of trusted.
  */
+import { readFile } from 'fs/promises';
+import { existsSync } from 'fs';
 import { EVENTS } from '../core/eventBus.js';
 import { gitStatus, gitDiff } from './gitTools.js';
 import { streamLLM } from './llmStream.js';
+import { safeWorkspacePath } from './pathSafety.js';
+import { maybeConfirmAndExecute } from './confirm.js';
 
 /**
  * Strip git's `a/` / `b/` prefix (and any surrounding quotes) from a diff
@@ -410,8 +414,8 @@ function indentBlock(text, pad) {
     .join('\n');
 }
 
-function plural(n, word) {
-  return `${n} ${word}${n === 1 ? '' : 's'}`;
+function plural(n, word, pluralForm = `${word}s`) {
+  return `${n} ${n === 1 ? word : pluralForm}`;
 }
 
 /**
@@ -469,6 +473,212 @@ export function formatReview({ findings = [], dropped = [], fileCount = 0, mode 
   }
 
   return lines.join('\n');
+}
+
+// ─── --fix ────────────────────────────────────────────────────────────────────
+
+const MAX_FIX_FILES = 8;
+const MAX_FIX_FILE_CHARS = 30_000;
+
+const FIX_INSTRUCTIONS = `You are fixing findings from a code review you just produced.
+
+For each finding you can fix with a small, local edit, emit one patch. A patch
+replaces an exact string in a file with a new string.
+
+Rules:
+- "oldString" must be copied VERBATIM from the file content shown below,
+  including exact indentation and whitespace. Do not retype it from memory.
+- Include enough surrounding lines that "oldString" occurs exactly ONCE in that
+  file. A one-line oldString that appears twice is not usable.
+- "newString" is the complete replacement for "oldString".
+- OMIT any finding you cannot fix this way - one that needs a new file, a new
+  test, a design decision, or a change you are not confident about. Omitting is
+  correct and expected; a wrong patch is far worse than a missing one.
+- Never "fix" a finding by deleting the feature or weakening the check.
+
+Respond ONLY with valid JSON - no markdown fences, no prose:
+{"patches":[{"finding":1,"file":"path/to/file.js","oldString":"...","newString":"...","note":"one line describing the change"}]}`;
+
+/**
+ * Read the current on-disk content of the files a set of findings points at.
+ * Content is passed to the patch pass verbatim (no line numbers) because the
+ * model has to copy oldString out of it character for character.
+ */
+async function readCitedFiles(findings, cwd) {
+  const paths = [...new Set(findings.map((f) => f.file))].slice(0, MAX_FIX_FILES);
+  const files = [];
+
+  for (const path of paths) {
+    const safety = await safeWorkspacePath(path, cwd);
+    if (safety.error || !existsSync(safety.resolved)) continue;
+    let content;
+    try {
+      content = await readFile(safety.resolved, 'utf-8');
+    } catch {
+      continue;
+    }
+    files.push({
+      path,
+      content: content.length > MAX_FIX_FILE_CHARS ? content.slice(0, MAX_FIX_FILE_CHARS) : content,
+      clipped: content.length > MAX_FIX_FILE_CHARS,
+    });
+  }
+
+  return files;
+}
+
+export function buildFixPrompt(findings, files) {
+  const findingBlock = findings.map((f, i) => {
+    const lines = [`${i + 1}. [${f.severity}/${f.confidence}] ${f.file}:${f.line ?? '?'} - ${f.title}`];
+    if (f.detail) lines.push(`   ${f.detail}`);
+    if (f.fix) lines.push(`   Suggested fix: ${f.fix}`);
+    return lines.join('\n');
+  }).join('\n\n');
+
+  const fileBlock = files.map((f) => (
+    `### FILE: ${f.path}${f.clipped ? ' (truncated - do not patch past the end of what is shown)' : ''}\n${f.content}`
+  )).join('\n\n');
+
+  return `${FIX_INSTRUCTIONS}
+
+FINDINGS:
+${findingBlock}
+
+CURRENT FILE CONTENTS:
+${fileBlock}
+
+Respond ONLY with JSON.`;
+}
+
+/**
+ * Pull patches out of the fix pass's response, keeping only ones that name a
+ * file some finding actually pointed at and carry a usable oldString. A patch
+ * for an unrelated file is a hallucination, not a fix.
+ *
+ * @returns {{ patches: object[] } | { error: string }}
+ */
+export function parseFixResponse(raw, findings) {
+  const text = String(raw ?? '');
+  const candidates = [];
+
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenced) candidates.push(fenced[1]);
+  const objStart = text.indexOf('{');
+  const objEnd = text.lastIndexOf('}');
+  if (objStart !== -1 && objEnd > objStart) candidates.push(text.slice(objStart, objEnd + 1));
+
+  const allowedFiles = new Set((findings || []).map((f) => f.file));
+
+  for (const candidate of candidates) {
+    let parsed;
+    try {
+      parsed = JSON.parse(candidate.trim());
+    } catch {
+      continue;
+    }
+    const list = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.patches) ? parsed.patches : null;
+    if (!list) continue;
+
+    const patches = [];
+    for (const raw of list) {
+      if (!raw || typeof raw !== 'object') continue;
+      const file = canonicalizePath(raw.file);
+      const oldString = typeof raw.oldString === 'string' ? raw.oldString : '';
+      const newString = typeof raw.newString === 'string' ? raw.newString : null;
+      // newString may legitimately be '' (a deletion); oldString may not.
+      if (!allowedFiles.has(file) || !oldString || newString === null) continue;
+      if (oldString === newString) continue;
+      patches.push({ file, oldString, newString, note: String(raw.note ?? '').trim() });
+    }
+    return { patches };
+  }
+
+  return { error: 'Could not parse the fix response as JSON.' };
+}
+
+/**
+ * Apply patches one at a time through the normal confirmation gate, so each
+ * one shows its own diff preview and can be approved or denied individually —
+ * the same path any agent file edit takes, including checkpointing for
+ * /rewind. Nothing here writes to disk directly.
+ */
+export async function applyPatches(patches, { bus, cwd, config, modes = {}, executeFn = maybeConfirmAndExecute }) {
+  const results = { applied: [], denied: [], failed: [] };
+
+  for (const [i, patch] of patches.entries()) {
+    const label = patch.note ? ` — ${patch.note}` : '';
+    say(bus, `⚙ Fix ${i + 1}/${patches.length}: ${patch.file}${label}`);
+
+    const result = await executeFn(
+      bus,
+      'edit_file',
+      { filePath: patch.file, oldString: patch.oldString, newString: patch.newString },
+      cwd,
+      {
+        autoApprove: !!(modes.autoMode || modes.acceptEdits),
+        allowSet: config.allowSet,
+        checkpoints: config.checkpoints,
+        turnId: config.currentTurnId,
+      }
+    );
+
+    if (result?.denied) results.denied.push(patch);
+    else if (result?.error) results.failed.push({ patch, error: result.error });
+    else results.applied.push(patch);
+  }
+
+  return results;
+}
+
+/**
+ * Generate and apply patches for a set of findings.
+ * @returns {Promise<string>} a summary line for the user
+ */
+export async function runFixPass({ findings, bus, cwd, config, modes, streamFn, executeFn, beginTurn }) {
+  const files = await readCitedFiles(findings, cwd);
+  if (files.length === 0) {
+    return '🔧 No patchable files — the findings point at files that no longer exist on disk.';
+  }
+
+  bus.emit(EVENTS.AGENT_STATUS, { status: 'thinking', message: '🔧 Drafting fixes...' });
+
+  let raw = '';
+  await streamFn(bus, buildFixPrompt(findings, files), {
+    config,
+    silent: true,
+    onToken: (token) => { raw += token; },
+  });
+
+  const parsed = parseFixResponse(raw, findings);
+  if (parsed.error) return `🔧 Could not draft fixes: ${parsed.error}`;
+  if (parsed.patches.length === 0) {
+    return '🔧 No patches offered — none of these findings could be fixed with a safe local edit.';
+  }
+
+  // One turn for the whole batch, so /rewind undoes the fixes as a single unit.
+  if (typeof beginTurn === 'function') beginTurn();
+
+  // Approximate: the model may fold two findings into one patch, so clamp at 0
+  // rather than reporting a negative "unfixed" count.
+  const skipped = Math.max(0, findings.length - parsed.patches.length);
+  const { applied, denied, failed } = await applyPatches(parsed.patches, { bus, cwd, config, modes, executeFn });
+
+  const parts = [`🔧 ${plural(applied.length, 'fix', 'fixes')} applied`];
+  if (denied.length) parts.push(`${denied.length} declined`);
+  if (failed.length) parts.push(`${failed.length} failed to apply`);
+  const summary = [`${parts.join(', ')}.`];
+
+  if (failed.length) {
+    summary.push(...failed.map(({ patch, error }) => `  ✗ ${patch.file}: ${error}`));
+  }
+  if (skipped > 0) {
+    summary.push(`Findings without a patch are left for you — they needed more than a local edit.`);
+  }
+  if (applied.length) {
+    summary.push('Fixes are unstaged; review them with git diff before committing.');
+  }
+
+  return summary.join('\n');
 }
 
 // ─── Command ──────────────────────────────────────────────────────────────────
@@ -537,13 +747,21 @@ export async function runReviewPass({ index, mode, truncated, bus, config, strea
  *
  * @returns {Promise<boolean>} true if the text was this command
  */
-export async function handleReviewCommand(text, { bus, config = {}, streamFn = streamLLM } = {}) {
+export async function handleReviewCommand(text, {
+  bus,
+  config = {},
+  modes = {},
+  beginTurn = null,
+  streamFn = streamLLM,
+  executeFn = maybeConfirmAndExecute,
+} = {}) {
   const match = (text || '').trim().match(/^\/review\b(.*)$/i);
   if (!match) return false;
 
   const args = match[1].trim();
-  if (args) {
-    say(bus, `Unrecognised option "${args}". Usage: /review`);
+  const fix = /^--fix$/i.test(args);
+  if (args && !fix) {
+    say(bus, `Unrecognised option "${args}". Usage: /review [--fix]`);
     done(bus);
     return true;
   }
@@ -603,6 +821,22 @@ export async function handleReviewCommand(text, { bus, config = {}, streamFn = s
     mode: collected.mode,
     truncated: collected.truncated,
   }));
+
+  if (fix && result.findings.length > 0) {
+    say(bus, await runFixPass({
+      findings: result.findings,
+      bus,
+      cwd,
+      config,
+      modes,
+      streamFn,
+      executeFn,
+      beginTurn,
+    }));
+  } else if (fix) {
+    say(bus, '🔧 Nothing to fix.');
+  }
+
   done(bus);
   return true;
 }
