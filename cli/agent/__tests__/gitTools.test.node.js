@@ -20,6 +20,10 @@ function initRepo() {
   const dir = mkdtempSync(join(tmpdir(), 'git-tools-test-'));
   sh('git init -b main', dir);
   sh('git config commit.gpgsign false', dir);
+  // Background maintenance writes into .git after the command returns, which
+  // races the afterEach cleanup and fails it with ENOTEMPTY.
+  sh('git config gc.auto 0', dir);
+  sh('git config maintenance.auto false', dir);
   writeFileSync(join(dir, 'README.md'), 'initial\n');
   sh('git add README.md', dir);
   sh('git commit -m "initial"', dir);
@@ -33,7 +37,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  if (repo) rmSync(repo, { recursive: true, force: true });
+  // maxRetries covers anything git is still flushing to .git as we delete it.
+  if (repo) rmSync(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
 });
 
 // ─── gitStatus ────────────────────────────────────────────────────────────────

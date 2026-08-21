@@ -378,6 +378,8 @@ describe('/review', () => {
     repo = mkdtempSync(join(tmpdir(), 'review-cmd-test-'));
     sh('git init -b main', repo);
     sh('git config commit.gpgsign false', repo);
+    sh('git config gc.auto 0', repo);
+    sh('git config maintenance.auto false', repo);
     writeFileSync(join(repo, 'math.js'), 'export const sum = (a, b) => a + b;\n');
     sh('git add math.js', repo);
     sh('git commit -m init', repo);
@@ -388,7 +390,7 @@ describe('/review', () => {
   });
 
   afterEach(() => {
-    if (repo) rmSync(repo, { recursive: true, force: true });
+    if (repo) rmSync(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
   });
 
   const out = () => tokens.join('\n');
@@ -623,6 +625,8 @@ describe('/review --fix', () => {
     repo = mkdtempSync(join(tmpdir(), 'review-fix-test-'));
     sh('git init -b main', repo);
     sh('git config commit.gpgsign false', repo);
+    sh('git config gc.auto 0', repo);
+    sh('git config maintenance.auto false', repo);
     writeFileSync(join(repo, 'math.js'), 'export const sum = (a, b) => a + b;\n');
     sh('git add math.js', repo);
     sh('git commit -m init', repo);
@@ -635,7 +639,7 @@ describe('/review --fix', () => {
   });
 
   afterEach(() => {
-    if (repo) rmSync(repo, { recursive: true, force: true });
+    if (repo) rmSync(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
   });
 
   const out = () => tokens.join('\n');
@@ -749,6 +753,8 @@ describe('runFixPass staged/worktree divergence', () => {
     repo = mkdtempSync(join(tmpdir(), 'review-diverge-test-'));
     sh('git init -b main', repo);
     sh('git config commit.gpgsign false', repo);
+    sh('git config gc.auto 0', repo);
+    sh('git config maintenance.auto false', repo);
     writeFileSync(join(repo, 'math.js'), 'export const sum = (a, b) => a + b;\n');
     sh('git add math.js', repo);
     sh('git commit -m init', repo);
@@ -759,7 +765,7 @@ describe('runFixPass staged/worktree divergence', () => {
   });
 
   afterEach(() => {
-    if (repo) rmSync(repo, { recursive: true, force: true });
+    if (repo) rmSync(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
   });
 
   const findings = [{ severity: 'bug', file: 'math.js', line: 1, confidence: 'high', title: 't', detail: 'd', fix: '' }];
