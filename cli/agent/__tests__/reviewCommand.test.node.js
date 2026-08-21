@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { indexDiff } from '../reviewCommand.js';
+import {
+  indexDiff,
+  buildReviewPrompt,
+  parseReviewResponse,
+  validateFindings,
+} from '../reviewCommand.js';
 
 const MODIFIED_DIFF = [
   'diff --git a/src/math.js b/src/math.js',
@@ -130,5 +135,132 @@ describe('indexDiff', () => {
       '',
     ].join('\n');
     expect(indexDiff(binary).annotated).toContain('Binary files');
+  });
+});
+
+describe('buildReviewPrompt', () => {
+  it('lists the changed files and embeds the numbered diff', () => {
+    const prompt = buildReviewPrompt(indexDiff(MODIFIED_DIFF));
+    expect(prompt).toContain('FILES CHANGED:\n- src/math.js');
+    expect(prompt).toContain('### FILE: src/math.js');
+    expect(prompt).toContain('STAGED changes');
+    expect(prompt).toContain('empty findings array');
+  });
+
+  it('says so when reviewing unstaged work', () => {
+    const prompt = buildReviewPrompt(indexDiff(MODIFIED_DIFF), { mode: 'unstaged' });
+    expect(prompt).toContain('UNCOMMITTED working-tree changes');
+    expect(prompt).not.toContain('STAGED changes');
+  });
+
+  it('warns the reviewer not to speculate about a truncated diff', () => {
+    const prompt = buildReviewPrompt(indexDiff(MODIFIED_DIFF), { truncated: true });
+    expect(prompt).toContain('truncated');
+    expect(prompt).toContain('do not speculate');
+  });
+});
+
+describe('parseReviewResponse', () => {
+  const finding = { severity: 'bug', file: 'src/math.js', line: 11, confidence: 'high', title: 't', detail: 'd', fix: 'f' };
+
+  it('parses a clean JSON object', () => {
+    const result = parseReviewResponse(JSON.stringify({ findings: [finding] }));
+    expect(result.error).toBeUndefined();
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0]).toMatchObject({ severity: 'bug', file: 'src/math.js', line: 11, confidence: 'high' });
+  });
+
+  it('parses through markdown fences and surrounding prose', () => {
+    const raw = `Sure, here's the review:\n\`\`\`json\n${JSON.stringify({ findings: [finding] })}\n\`\`\`\nHope that helps!`;
+    expect(parseReviewResponse(raw).findings).toHaveLength(1);
+  });
+
+  it('accepts a bare array', () => {
+    expect(parseReviewResponse(JSON.stringify([finding])).findings).toHaveLength(1);
+  });
+
+  it('treats an empty findings list as a clean review, not an error', () => {
+    const result = parseReviewResponse('{"findings":[]}');
+    expect(result.error).toBeUndefined();
+    expect(result.findings).toEqual([]);
+  });
+
+  it('reports an error when there is no JSON at all', () => {
+    expect(parseReviewResponse('I could not review this.').error).toMatch(/parse/i);
+    expect(parseReviewResponse('').error).toMatch(/parse/i);
+  });
+
+  it('maps severity synonyms and defaults an unknown confidence to medium', () => {
+    const raw = JSON.stringify({ findings: [
+      { severity: 'correctness', file: 'a.js', line: 1, title: 'x', confidence: 'pretty sure' },
+      { severity: 'vulnerability', file: 'a.js', line: 1, title: 'y' },
+      { severity: 'wat', file: 'a.js', line: 1, title: 'z' },
+    ] });
+    const { findings } = parseReviewResponse(raw);
+    expect(findings.map((f) => f.severity)).toEqual(['bug', 'security', 'other']);
+    expect(findings[0].confidence).toBe('medium');
+  });
+
+  it('drops entries with no title and no detail', () => {
+    const raw = JSON.stringify({ findings: [{ severity: 'bug', file: 'a.js', line: 1 }, finding] });
+    expect(parseReviewResponse(raw).findings).toHaveLength(1);
+  });
+});
+
+describe('validateFindings', () => {
+  const { files } = indexDiff(MODIFIED_DIFF);
+  const base = { severity: 'bug', confidence: 'high', title: 't', detail: 'd', fix: '' };
+
+  it('keeps a finding that cites a real file and a line in the diff', () => {
+    const { findings, dropped } = validateFindings([{ ...base, file: 'src/math.js', line: 12 }], files);
+    expect(dropped).toEqual([]);
+    expect(findings[0]).toMatchObject({ file: 'src/math.js', line: 12, lineAdjusted: false });
+  });
+
+  it('drops a finding that cites a file not in the diff', () => {
+    const { findings, dropped } = validateFindings([{ ...base, file: 'src/invented.js', line: 12 }], files);
+    expect(findings).toEqual([]);
+    expect(dropped[0].reason).toMatch(/not in the diff/);
+  });
+
+  it('resolves a bare basename to the one matching changed file', () => {
+    const { findings } = validateFindings([{ ...base, file: 'math.js', line: 11 }], files);
+    expect(findings[0].file).toBe('src/math.js');
+  });
+
+  it('snaps an out-of-range line onto the nearest line in the diff and flags it', () => {
+    const { findings } = validateFindings([{ ...base, file: 'src/math.js', line: 400 }], files);
+    expect(findings[0].line).toBe(14);
+    expect(findings[0].lineAdjusted).toBe(true);
+  });
+
+  it('points a finding with no line at the first changed line', () => {
+    const { findings } = validateFindings([{ ...base, file: 'src/math.js', line: null }], files);
+    expect(findings[0].line).toBe(11);
+    expect(findings[0].lineAdjusted).toBe(true);
+  });
+
+  it('drops low-confidence findings that are not a real severity', () => {
+    const nitpick = { ...base, severity: 'other', confidence: 'low', file: 'src/math.js', line: 11 };
+    const { findings, dropped } = validateFindings([nitpick], files);
+    expect(findings).toEqual([]);
+    expect(dropped[0].reason).toMatch(/nitpick/);
+  });
+
+  it('keeps a low-confidence finding when it names a real severity', () => {
+    const hunch = { ...base, severity: 'security', confidence: 'low', file: 'src/math.js', line: 11 };
+    expect(validateFindings([hunch], files).findings).toHaveLength(1);
+  });
+
+  it('orders by severity, then by confidence within a severity', () => {
+    const input = [
+      { ...base, severity: 'tests', file: 'src/math.js', line: 11 },
+      { ...base, severity: 'bug', confidence: 'medium', file: 'src/math.js', line: 11 },
+      { ...base, severity: 'security', file: 'src/math.js', line: 11 },
+      { ...base, severity: 'bug', confidence: 'high', file: 'src/math.js', line: 11 },
+    ];
+    const { findings } = validateFindings(input, files);
+    expect(findings.map((f) => `${f.severity}/${f.confidence}`))
+      .toEqual(['bug/high', 'bug/medium', 'security/high', 'tests/high']);
   });
 });

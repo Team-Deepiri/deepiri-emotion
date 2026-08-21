@@ -148,3 +148,252 @@ export function indexDiff(diff) {
 
   return { annotated: out.join('\n'), files, fileCount: files.size };
 }
+
+// ─── Review pass ──────────────────────────────────────────────────────────────
+
+/** Severity buckets, in the order findings are reported. */
+export const SEVERITY_ORDER = ['bug', 'security', 'perf', 'tests', 'api', 'other'];
+
+export const SEVERITY_LABELS = {
+  bug:      'Likely bugs',
+  security: 'Security',
+  perf:     'Performance',
+  tests:    'Missing tests',
+  api:      'Breaking API changes',
+  other:    'Other',
+};
+
+// Models don't reliably return the exact enum they were given, so near-misses
+// are mapped rather than dumped into "other" where they'd be sorted last.
+const SEVERITY_ALIASES = new Map(Object.entries({
+  bug: 'bug', bugs: 'bug', correctness: 'bug', logic: 'bug', crash: 'bug', error: 'bug', defect: 'bug',
+  security: 'security', vulnerability: 'security', vuln: 'security', injection: 'security', secret: 'security', secrets: 'security',
+  perf: 'perf', performance: 'perf', efficiency: 'perf', memory: 'perf',
+  test: 'tests', tests: 'tests', testing: 'tests', coverage: 'tests', 'missing-tests': 'tests', 'missing_tests': 'tests', 'missing-test': 'tests',
+  api: 'api', breaking: 'api', 'breaking-change': 'api', 'breaking-api': 'api', compatibility: 'api', interface: 'api',
+}));
+
+const CONFIDENCE_LEVELS = new Set(['high', 'medium', 'low']);
+
+// Enough room for a substantial changeset without risking the context window.
+const MAX_ANNOTATED_CHARS = 60_000;
+
+const REVIEW_INSTRUCTIONS = `You are a senior engineer reviewing a change before it is committed.
+
+The diff below is line-numbered: on each line, the leading number is that line's
+real line number in the file AFTER this change, followed by a marker
+(+ added, - removed, blank = unchanged context).
+
+Report only problems you can point at in this diff. For each finding, classify:
+
+severity (pick exactly one):
+  bug      - it will produce wrong behaviour, a crash, or data loss
+  security - injection, auth/authz gap, leaked secret, unsafe deserialization, path traversal
+  perf     - a real efficiency problem at the scale this code runs at
+  tests    - behaviour introduced here that needs a test and doesn't have one
+  api      - a breaking change to a signature, export, schema, or CLI contract that callers depend on
+
+confidence (be honest, this is the most useful part of the review):
+  high     - you can name the concrete input or state that triggers it
+  medium   - likely wrong, but it depends on code you cannot see in this diff
+  low      - a suspicion worth a second look, nothing more
+
+Rules:
+- "file" must be exactly one of the paths listed under FILES CHANGED.
+- "line" must be one of the numbers shown in the diff for that file.
+- Do NOT report style, formatting, naming preferences, comment density, or
+  "consider extracting this" refactors. Those are not findings.
+- Do NOT pad the list to look thorough. An empty findings array is a correct,
+  respected answer for a clean change, and is far more useful than nitpicks.
+- Judge the code as it will exist after the change, not the diff in isolation.
+
+Respond ONLY with valid JSON - no markdown fences, no prose before or after:
+{"findings":[{"severity":"bug","file":"path/to/file.js","line":42,"confidence":"high","title":"one line, what is wrong","detail":"why it is wrong and what happens when it goes wrong","fix":"the concrete change that would fix it"}]}`;
+
+/**
+ * Build the reviewer prompt from an indexed diff.
+ *
+ * @param {{ annotated: string, files: Map<string, object> }} index - from indexDiff
+ * @param {{ mode?: 'staged'|'unstaged', truncated?: boolean }} [opts]
+ */
+export function buildReviewPrompt(index, { mode = 'staged', truncated = false } = {}) {
+  let body = index.annotated;
+  let clipped = false;
+  if (body.length > MAX_ANNOTATED_CHARS) {
+    body = body.slice(0, MAX_ANNOTATED_CHARS);
+    clipped = true;
+  }
+
+  const fileList = [...index.files.keys()].map((p) => `- ${p}`).join('\n');
+  const scope = mode === 'staged'
+    ? 'These are the STAGED changes, about to be committed.'
+    : 'Nothing is staged, so these are the UNCOMMITTED working-tree changes.';
+  const truncNote = (truncated || clipped)
+    ? '\n\nNOTE: this diff was truncated for length. Review what is shown; do not speculate about the omitted part.'
+    : '';
+
+  return `${REVIEW_INSTRUCTIONS}
+
+${scope}${truncNote}
+
+FILES CHANGED:
+${fileList}
+
+DIFF:
+${body}
+
+Respond ONLY with JSON.`;
+}
+
+function normalizeFinding(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+
+  const severityKey = String(raw.severity ?? '').trim().toLowerCase();
+  const confidence = String(raw.confidence ?? '').trim().toLowerCase();
+  const lineValue = Number.parseInt(raw.line, 10);
+  const title = String(raw.title ?? '').trim();
+  const detail = String(raw.detail ?? '').trim();
+
+  // A finding with nothing to say isn't a finding.
+  if (!title && !detail) return null;
+
+  return {
+    severity:   SEVERITY_ALIASES.get(severityKey) ?? 'other',
+    file:       String(raw.file ?? '').trim(),
+    line:       Number.isFinite(lineValue) ? lineValue : null,
+    confidence: CONFIDENCE_LEVELS.has(confidence) ? confidence : 'medium',
+    title:      title || detail.split('\n')[0].slice(0, 120),
+    detail,
+    fix:        String(raw.fix ?? '').trim(),
+  };
+}
+
+/**
+ * Pull the findings array out of a reviewer response. Tolerates markdown
+ * fences and stray prose around the JSON, and accepts either {"findings":[…]}
+ * or a bare array. An explicitly empty list parses as zero findings — that's a
+ * clean review, not a failure.
+ *
+ * @returns {{ findings: object[] } | { error: string }}
+ */
+export function parseReviewResponse(raw) {
+  const text = String(raw ?? '');
+  const candidates = [];
+
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenced) candidates.push(fenced[1]);
+
+  const objStart = text.indexOf('{');
+  const objEnd = text.lastIndexOf('}');
+  if (objStart !== -1 && objEnd > objStart) candidates.push(text.slice(objStart, objEnd + 1));
+
+  const arrStart = text.indexOf('[');
+  const arrEnd = text.lastIndexOf(']');
+  if (arrStart !== -1 && arrEnd > arrStart) candidates.push(text.slice(arrStart, arrEnd + 1));
+
+  for (const candidate of candidates) {
+    let parsed;
+    try {
+      parsed = JSON.parse(candidate.trim());
+    } catch {
+      continue;
+    }
+    const list = Array.isArray(parsed) ? parsed
+      : Array.isArray(parsed?.findings) ? parsed.findings
+      : null;
+    if (list) return { findings: list.map(normalizeFinding).filter(Boolean) };
+  }
+
+  return { error: 'Could not parse the reviewer response as JSON.' };
+}
+
+/** Normalize a model-supplied path the way a human would read it. */
+function canonicalizePath(raw) {
+  let path = String(raw ?? '').trim().replace(/^\.\//, '');
+  if (path.startsWith('a/') || path.startsWith('b/')) path = path.slice(2);
+  return path;
+}
+
+/**
+ * Match a cited path against the files actually in the diff. Exact first, then
+ * a unique suffix match, then a unique basename match — so `math.js` or
+ * `src/math.js` both resolve when only one such file changed, while an
+ * ambiguous or invented path resolves to nothing and the finding is dropped.
+ */
+function resolveFile(cited, files) {
+  const path = canonicalizePath(cited);
+  if (!path) return null;
+  if (files.has(path)) return path;
+
+  const known = [...files.keys()];
+  const suffixHits = known.filter((k) => k.endsWith(`/${path}`));
+  if (suffixHits.length === 1) return suffixHits[0];
+
+  const base = path.split('/').pop();
+  const baseHits = known.filter((k) => k.split('/').pop() === base);
+  if (baseHits.length === 1) return baseHits[0];
+
+  return null;
+}
+
+/**
+ * Snap a cited line onto a line that actually appears in the diff for that
+ * file, so the reported location is always somewhere you can jump to. Returns
+ * `adjusted: true` when the number moved, which the formatter surfaces rather
+ * than hiding.
+ */
+function snapLine(line, entry) {
+  const citable = [...entry.lines].sort((a, b) => a - b);
+  if (citable.length === 0) return { line: null, adjusted: false };
+  if (line != null && entry.lines.has(line)) return { line, adjusted: false };
+
+  // No usable number at all — point at the first changed line in the file.
+  if (line == null) {
+    const changed = [...entry.changed].sort((a, b) => a - b);
+    return { line: changed[0] ?? citable[0], adjusted: true };
+  }
+
+  let nearest = citable[0];
+  for (const candidate of citable) {
+    if (Math.abs(candidate - line) < Math.abs(nearest - line)) nearest = candidate;
+  }
+  return { line: nearest, adjusted: true };
+}
+
+/**
+ * Check every finding against the diff it claims to describe. A finding whose
+ * file isn't in the diff was invented and is dropped; a low-confidence finding
+ * that didn't land in a real severity bucket is the nitpick padding the prompt
+ * asked for less of, and is dropped too. Everything kept is guaranteed to
+ * carry a file and line you can open.
+ *
+ * @returns {{ findings: object[], dropped: object[] }}
+ */
+export function validateFindings(findings, files) {
+  const kept = [];
+  const dropped = [];
+
+  for (const finding of findings || []) {
+    const file = resolveFile(finding.file, files);
+    if (!file) {
+      dropped.push({ ...finding, reason: 'cited a file that is not in the diff' });
+      continue;
+    }
+    if (finding.severity === 'other' && finding.confidence === 'low') {
+      dropped.push({ ...finding, reason: 'low-confidence nitpick' });
+      continue;
+    }
+
+    const { line, adjusted } = snapLine(finding.line, files.get(file));
+    kept.push({ ...finding, file, line, lineAdjusted: adjusted });
+  }
+
+  kept.sort((a, b) => {
+    const bySeverity = SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity);
+    if (bySeverity !== 0) return bySeverity;
+    const order = { high: 0, medium: 1, low: 2 };
+    return order[a.confidence] - order[b.confidence];
+  });
+
+  return { findings: kept, dropped };
+}
