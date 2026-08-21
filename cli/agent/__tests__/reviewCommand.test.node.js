@@ -13,6 +13,7 @@ import {
   handleReviewCommand,
   parseFixResponse,
   applyPatches,
+  runFixPass,
 } from '../reviewCommand.js';
 
 const GIT_ENV = {
@@ -734,5 +735,70 @@ describe('/review --fix', () => {
 
     expect(out()).toContain('0 fixes applied, 1 declined');
     expect(out()).not.toContain('review them with git diff');
+  });
+});
+
+describe('runFixPass staged/worktree divergence', () => {
+  let repo;
+  let bus;
+  let tokens;
+
+  const sh = (cmd, cwd) => execSync(cmd, { cwd, stdio: 'pipe', env: { ...process.env, ...GIT_ENV } });
+
+  beforeEach(() => {
+    repo = mkdtempSync(join(tmpdir(), 'review-diverge-test-'));
+    sh('git init -b main', repo);
+    sh('git config commit.gpgsign false', repo);
+    writeFileSync(join(repo, 'math.js'), 'export const sum = (a, b) => a + b;\n');
+    sh('git add math.js', repo);
+    sh('git commit -m init', repo);
+
+    bus = createEventBus();
+    tokens = [];
+    bus.on(EVENTS.LLM_TOKEN, ({ token }) => tokens.push(token));
+  });
+
+  afterEach(() => {
+    if (repo) rmSync(repo, { recursive: true, force: true });
+  });
+
+  const findings = [{ severity: 'bug', file: 'math.js', line: 1, confidence: 'high', title: 't', detail: 'd', fix: '' }];
+  const noPatches = async (_bus, _prompt, opts) => { opts.onToken('{"patches":[]}'); };
+
+  it('warns before drafting when a cited file has unstaged changes', async () => {
+    await runFixPass({
+      findings, bus, cwd: repo, config: {}, modes: {},
+      streamFn: noPatches, executeFn: async () => ({ edited: true }),
+      divergedFiles: ['math.js'],
+    });
+    expect(tokens.join('')).toMatch(/math\.js has unstaged changes/);
+    expect(tokens.join('')).toMatch(/patches may not match/i);
+  });
+
+  it('explains an empty result by the divergence rather than calling findings unfixable', async () => {
+    const summary = await runFixPass({
+      findings, bus, cwd: repo, config: {}, modes: {},
+      streamFn: noPatches, executeFn: async () => ({ edited: true }),
+      divergedFiles: ['math.js'],
+    });
+    expect(summary).toMatch(/not in the working copy of math\.js/);
+    expect(summary).not.toMatch(/could not be fixed/);
+  });
+
+  it('does not warn about a diverged file no finding points at', async () => {
+    await runFixPass({
+      findings, bus, cwd: repo, config: {}, modes: {},
+      streamFn: noPatches, executeFn: async () => ({ edited: true }),
+      divergedFiles: ['unrelated.js'],
+    });
+    expect(tokens.join('')).not.toMatch(/unstaged changes/);
+  });
+
+  it('gives the plain empty-result message when nothing has diverged', async () => {
+    const summary = await runFixPass({
+      findings, bus, cwd: repo, config: {}, modes: {},
+      streamFn: noPatches, executeFn: async () => ({ edited: true }),
+    });
+    expect(summary).toMatch(/applies cleanly to the current file contents/);
   });
 });

@@ -634,10 +634,19 @@ export async function applyPatches(patches, { bus, cwd, config, modes = {}, exec
  * Generate and apply patches for a set of findings.
  * @returns {Promise<string>} a summary line for the user
  */
-export async function runFixPass({ findings, bus, cwd, config, modes, streamFn, executeFn, beginTurn }) {
+export async function runFixPass({ findings, bus, cwd, config, modes, streamFn, executeFn, beginTurn, divergedFiles = [] }) {
   const files = await readCitedFiles(findings, cwd);
   if (files.length === 0) {
     return '🔧 No patchable files — the findings point at files that no longer exist on disk.';
+  }
+
+  // The review read the staged snapshot, but patches are written to the file on
+  // disk. When those two have drifted apart, the code a finding describes may
+  // not be in the working tree at all — say so up front rather than letting the
+  // fix pass come back empty and look like it had no ideas.
+  const diverged = divergedFiles.filter((p) => findings.some((f) => f.file === p));
+  if (diverged.length > 0) {
+    sayLine(bus, `⚠ ${diverged.join(', ')} ${diverged.length === 1 ? 'has' : 'have'} unstaged changes. The review read the staged version, but fixes apply to what's on disk — patches may not match.`);
   }
 
   bus.emit(EVENTS.AGENT_STATUS, { status: 'thinking', message: '🔧 Drafting fixes...' });
@@ -652,7 +661,11 @@ export async function runFixPass({ findings, bus, cwd, config, modes, streamFn, 
   const parsed = parseFixResponse(raw, findings);
   if (parsed.error) return `🔧 Could not draft fixes: ${parsed.error}`;
   if (parsed.patches.length === 0) {
-    return '🔧 No patches offered — none of these findings could be fixed with a safe local edit.';
+    // Don't claim the findings are unfixable when the likelier explanation is
+    // that the reviewed code isn't in the working copy any more.
+    return diverged.length > 0
+      ? `🔧 No patches offered — the reviewed code is not in the working copy of ${diverged.join(', ')}. Stage your current changes (or reset the file) and run /review --fix again.`
+      : '🔧 No patches offered — nothing came back that applies cleanly to the current file contents.';
   }
 
   // One turn for the whole batch, so /rewind undoes the fixes as a single unit.
@@ -841,6 +854,9 @@ export async function handleReviewCommand(text, {
       streamFn,
       executeFn,
       beginTurn,
+      // Only meaningful for a staged review: in unstaged mode the diff and the
+      // working tree are the same thing, so nothing can have drifted.
+      divergedFiles: collected.mode === 'staged' ? (repo.unstaged || []).map((u) => u.path) : [],
     }));
   } else if (fix) {
     sayLine(bus, '🔧 Nothing to fix.');
