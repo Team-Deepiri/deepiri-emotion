@@ -1,11 +1,24 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { execSync } from 'child_process';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { createEventBus, EVENTS } from '../../core/eventBus.js';
 import {
   indexDiff,
   buildReviewPrompt,
   parseReviewResponse,
   validateFindings,
   formatReview,
+  handleReviewCommand,
 } from '../reviewCommand.js';
+
+const GIT_ENV = {
+  GIT_AUTHOR_NAME: 'Test',
+  GIT_AUTHOR_EMAIL: 'test@example.com',
+  GIT_COMMITTER_NAME: 'Test',
+  GIT_COMMITTER_EMAIL: 'test@example.com',
+};
 
 const MODIFIED_DIFF = [
   'diff --git a/src/math.js b/src/math.js',
@@ -338,5 +351,145 @@ describe('formatReview', () => {
   it('warns when the diff was truncated', () => {
     const out = formatReview({ fileCount: 1, findings: [finding()], truncated: true });
     expect(out).toContain('too large to review in full');
+  });
+});
+
+describe('/review', () => {
+  let repo;
+  let bus;
+  let tokens;
+
+  const sh = (cmd, cwd) => execSync(cmd, { cwd, stdio: 'pipe', env: { ...process.env, ...GIT_ENV } });
+
+  const stubModel = (reply) => {
+    const calls = [];
+    const fn = async (_bus, prompt, opts) => {
+      calls.push(prompt);
+      for (const chunk of String(reply).match(/[\s\S]{1,20}/g) ?? []) opts.onToken(chunk);
+    };
+    fn.calls = calls;
+    return fn;
+  };
+
+  beforeEach(() => {
+    repo = mkdtempSync(join(tmpdir(), 'review-cmd-test-'));
+    sh('git init -b main', repo);
+    sh('git config commit.gpgsign false', repo);
+    writeFileSync(join(repo, 'math.js'), 'export const sum = (a, b) => a + b;\n');
+    sh('git add math.js', repo);
+    sh('git commit -m init', repo);
+
+    bus = createEventBus();
+    tokens = [];
+    bus.on(EVENTS.LLM_TOKEN, ({ token }) => tokens.push(token));
+  });
+
+  afterEach(() => {
+    if (repo) rmSync(repo, { recursive: true, force: true });
+  });
+
+  const out = () => tokens.join('\n');
+
+  it('ignores text that is not the command', async () => {
+    expect(await handleReviewCommand('review my code', { bus, config: {} })).toBe(false);
+    expect(await handleReviewCommand('/reviewer', { bus, config: {} })).toBe(false);
+  });
+
+  it('rejects unrecognised options with usage', async () => {
+    expect(await handleReviewCommand('/review --wat', { bus, config: { workspaceDir: repo } })).toBe(true);
+    expect(out()).toMatch(/Usage: \/review/);
+  });
+
+  it('reports when there is nothing to review', async () => {
+    await handleReviewCommand('/review', { bus, config: { workspaceDir: repo }, streamFn: stubModel('{}') });
+    expect(out()).toMatch(/Nothing to review/);
+  });
+
+  it('reports a clear error outside a git repo', async () => {
+    const nonRepo = mkdtempSync(join(tmpdir(), 'review-non-repo-'));
+    try {
+      await handleReviewCommand('/review', { bus, config: { workspaceDir: nonRepo } });
+      expect(out()).toMatch(/Cannot review: Not a git repository/);
+    } finally {
+      rmSync(nonRepo, { recursive: true, force: true });
+    }
+  });
+
+  it('reviews staged changes and reports findings by severity', async () => {
+    writeFileSync(join(repo, 'math.js'), 'export const sum = (a, b) => a - b;\n');
+    sh('git add math.js', repo);
+
+    const model = stubModel(JSON.stringify({ findings: [
+      { severity: 'bug', file: 'math.js', line: 1, confidence: 'high', title: 'sum subtracts', detail: 'Returns a - b.', fix: 'Use +.' },
+    ] }));
+
+    await handleReviewCommand('/review', { bus, config: { workspaceDir: repo }, streamFn: model });
+
+    expect(model.calls[0]).toContain('STAGED changes');
+    expect(model.calls[0]).toContain('### FILE: math.js');
+    expect(out()).toContain('Likely bugs (1)');
+    expect(out()).toContain('math.js:1');
+    expect(out()).toContain('sum subtracts');
+  });
+
+  it('falls back to unstaged changes when nothing is staged, and says so', async () => {
+    writeFileSync(join(repo, 'math.js'), 'export const sum = (a, b) => a - b;\n');
+
+    const model = stubModel('{"findings":[]}');
+    await handleReviewCommand('/review', { bus, config: { workspaceDir: repo }, streamFn: model });
+
+    expect(model.calls[0]).toContain('UNCOMMITTED working-tree changes');
+    expect(out()).toContain('(unstaged)');
+    expect(out()).toContain('no findings');
+  });
+
+  it('prefers staged changes when both staged and unstaged exist', async () => {
+    writeFileSync(join(repo, 'staged.js'), 'export const a = 1;\n');
+    sh('git add staged.js', repo);
+    writeFileSync(join(repo, 'math.js'), 'export const sum = (a, b) => a - b;\n');
+
+    const model = stubModel('{"findings":[]}');
+    await handleReviewCommand('/review', { bus, config: { workspaceDir: repo }, streamFn: model });
+
+    expect(model.calls[0]).toContain('### FILE: staged.js');
+    expect(model.calls[0]).not.toContain('### FILE: math.js');
+  });
+
+  it('drops findings that cite files outside the diff and says it did', async () => {
+    writeFileSync(join(repo, 'math.js'), 'export const sum = (a, b) => a - b;\n');
+    sh('git add math.js', repo);
+
+    const model = stubModel(JSON.stringify({ findings: [
+      { severity: 'bug', file: 'math.js', line: 1, confidence: 'high', title: 'real', detail: 'd' },
+      { severity: 'bug', file: 'server/api.js', line: 90, confidence: 'high', title: 'invented', detail: 'd' },
+    ] }));
+    await handleReviewCommand('/review', { bus, config: { workspaceDir: repo }, streamFn: model });
+
+    expect(out()).toContain('real');
+    expect(out()).not.toContain('invented');
+    expect(out()).toContain('Discarded 1 finding');
+  });
+
+  it('reports a failure when the model returns prose instead of JSON', async () => {
+    writeFileSync(join(repo, 'math.js'), 'export const sum = (a, b) => a - b;\n');
+    sh('git add math.js', repo);
+
+    await handleReviewCommand('/review', { bus, config: { workspaceDir: repo }, streamFn: stubModel('Looks fine to me!') });
+    expect(out()).toMatch(/Review failed/);
+  });
+
+  it('reports a failure when the model returns nothing at all', async () => {
+    writeFileSync(join(repo, 'math.js'), 'export const sum = (a, b) => a - b;\n');
+    sh('git add math.js', repo);
+
+    await handleReviewCommand('/review', { bus, config: { workspaceDir: repo }, streamFn: stubModel('') });
+    expect(out()).toMatch(/Review failed: The reviewer returned nothing/);
+  });
+
+  it('always emits LLM_DONE so headless mode terminates', async () => {
+    let doneCount = 0;
+    bus.on(EVENTS.LLM_DONE, () => { doneCount += 1; });
+    await handleReviewCommand('/review', { bus, config: { workspaceDir: repo }, streamFn: stubModel('{"findings":[]}') });
+    expect(doneCount).toBeGreaterThan(0);
   });
 });

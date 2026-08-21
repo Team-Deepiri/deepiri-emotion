@@ -12,6 +12,9 @@
  * and records which numbers are citable per file, so a finding's location can
  * be checked against the diff instead of trusted.
  */
+import { EVENTS } from '../core/eventBus.js';
+import { gitStatus, gitDiff } from './gitTools.js';
+import { streamLLM } from './llmStream.js';
 
 /**
  * Strip git's `a/` / `b/` prefix (and any surrounding quotes) from a diff
@@ -466,4 +469,140 @@ export function formatReview({ findings = [], dropped = [], fileCount = 0, mode 
   }
 
   return lines.join('\n');
+}
+
+// ─── Command ──────────────────────────────────────────────────────────────────
+
+// Far above git_diff's default 400 — a review that silently ignores half the
+// changeset is worse than no review, so the cap is only a context-safety net.
+const REVIEW_MAX_DIFF_LINES = 2000;
+
+function say(bus, token) {
+  bus.emit(EVENTS.LLM_TOKEN, { token });
+}
+
+function done(bus) {
+  bus.emit(EVENTS.LLM_DONE, {});
+}
+
+/**
+ * Pick what to review: staged changes if anything is staged, otherwise the
+ * working tree. Reviewing nothing because you forgot to `git add` is a worse
+ * failure than reviewing slightly more than you'll commit, and the report
+ * always says which of the two it looked at.
+ */
+async function collectDiff(cwd) {
+  const staged = await gitDiff(cwd, { staged: true, maxLines: REVIEW_MAX_DIFF_LINES });
+  if (staged.error) return { error: staged.error };
+  if (staged.diff.trim()) return { ...staged, mode: 'staged' };
+
+  const unstaged = await gitDiff(cwd, { maxLines: REVIEW_MAX_DIFF_LINES });
+  if (unstaged.error) return { error: unstaged.error };
+  if (unstaged.diff.trim()) return { ...unstaged, mode: 'unstaged' };
+
+  return { empty: true };
+}
+
+/**
+ * Run the reviewer pass over an indexed diff. Separated from the command shell
+ * so the LLM round-trip is one testable step.
+ *
+ * @returns {{ findings: object[], dropped: object[] } | { error: string }}
+ */
+export async function runReviewPass({ index, mode, truncated, bus, config, streamFn }) {
+  const prompt = buildReviewPrompt(index, { mode, truncated });
+
+  let raw = '';
+  await streamFn(bus, prompt, {
+    config,
+    silent: true,
+    onToken: (token) => { raw += token; },
+  });
+
+  if (!raw.trim()) {
+    return { error: 'The reviewer returned nothing — the model call likely failed. Check /status and try again.' };
+  }
+
+  const parsed = parseReviewResponse(raw);
+  if (parsed.error) {
+    return { error: `${parsed.error} The model replied with prose instead of the requested JSON.` };
+  }
+
+  return validateFindings(parsed.findings, index.files);
+}
+
+/**
+ * /review — read the changes you're about to commit and report what a senior
+ * reviewer would flag, grouped by severity.
+ *
+ * @returns {Promise<boolean>} true if the text was this command
+ */
+export async function handleReviewCommand(text, { bus, config = {}, streamFn = streamLLM } = {}) {
+  const match = (text || '').trim().match(/^\/review\b(.*)$/i);
+  if (!match) return false;
+
+  const args = match[1].trim();
+  if (args) {
+    say(bus, `Unrecognised option "${args}". Usage: /review`);
+    done(bus);
+    return true;
+  }
+
+  const cwd = config.workspaceDir || process.cwd();
+
+  const repo = await gitStatus(cwd);
+  if (repo.error) {
+    say(bus, `🔍 Cannot review: ${repo.error}`);
+    done(bus);
+    return true;
+  }
+
+  const collected = await collectDiff(cwd);
+  if (collected.error) {
+    say(bus, `🔍 Cannot review: ${collected.error}`);
+    done(bus);
+    return true;
+  }
+  if (collected.empty) {
+    say(bus, '🔍 Nothing to review — no staged or unstaged changes in this repo.');
+    done(bus);
+    return true;
+  }
+
+  const index = indexDiff(collected.diff);
+  if (index.fileCount === 0) {
+    say(bus, '🔍 Nothing reviewable in these changes (binary files only).');
+    done(bus);
+    return true;
+  }
+
+  const scopeNote = collected.mode === 'staged'
+    ? `🔍 Reviewing ${plural(index.fileCount, 'staged file')}...`
+    : `🔍 Nothing staged — reviewing ${plural(index.fileCount, 'changed file')} in the working tree...`;
+  bus.emit(EVENTS.AGENT_STATUS, { status: 'thinking', message: scopeNote });
+
+  const result = await runReviewPass({
+    index,
+    mode: collected.mode,
+    truncated: collected.truncated,
+    bus,
+    config,
+    streamFn,
+  });
+
+  if (result.error) {
+    say(bus, `🔍 Review failed: ${result.error}`);
+    done(bus);
+    return true;
+  }
+
+  say(bus, formatReview({
+    findings: result.findings,
+    dropped: result.dropped,
+    fileCount: index.fileCount,
+    mode: collected.mode,
+    truncated: collected.truncated,
+  }));
+  done(bus);
+  return true;
 }
