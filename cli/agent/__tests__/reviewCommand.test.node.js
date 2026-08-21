@@ -4,6 +4,7 @@ import {
   buildReviewPrompt,
   parseReviewResponse,
   validateFindings,
+  formatReview,
 } from '../reviewCommand.js';
 
 const MODIFIED_DIFF = [
@@ -262,5 +263,80 @@ describe('validateFindings', () => {
     const { findings } = validateFindings(input, files);
     expect(findings.map((f) => `${f.severity}/${f.confidence}`))
       .toEqual(['bug/high', 'bug/medium', 'security/high', 'tests/high']);
+  });
+});
+
+describe('formatReview', () => {
+  const finding = (over = {}) => ({
+    severity: 'bug', file: 'src/math.js', line: 11, confidence: 'high',
+    title: 'Loop skips the last element', detail: 'Off by one.', fix: 'Use <=.',
+    lineAdjusted: false, ...over,
+  });
+
+  it('groups findings by severity in bugs-first order', () => {
+    const out = formatReview({
+      fileCount: 1,
+      findings: [
+        finding(),
+        finding({ severity: 'security', title: 'Unescaped input' }),
+        finding({ severity: 'tests', title: 'No test for the new branch' }),
+      ],
+    });
+    expect(out.indexOf('Likely bugs')).toBeLessThan(out.indexOf('Security'));
+    expect(out.indexOf('Security')).toBeLessThan(out.indexOf('Missing tests'));
+    expect(out).toContain('3 findings');
+  });
+
+  it('renders each finding as a clickable path:line with its confidence', () => {
+    const out = formatReview({ fileCount: 1, findings: [finding()] });
+    expect(out).toContain('● src/math.js:11  [high]  Loop skips the last element');
+    expect(out).toContain('Off by one.');
+    expect(out).toContain('Fix: Use <=.');
+  });
+
+  it('admits when a line was snapped rather than pretending it was exact', () => {
+    const out = formatReview({ fileCount: 1, findings: [finding({ lineAdjusted: true })] });
+    expect(out).toContain('src/math.js:11 (nearest changed line)');
+  });
+
+  it('says plainly when there is nothing to report', () => {
+    const out = formatReview({ fileCount: 2, mode: 'staged' });
+    expect(out).toContain('no findings');
+    expect(out).toContain('2 files');
+    expect(out).not.toContain('●');
+  });
+
+  it('labels an unstaged review as unstaged', () => {
+    expect(formatReview({ fileCount: 1, mode: 'unstaged' })).toContain('(unstaged)');
+  });
+
+  it('flags when nothing in the review is high-confidence', () => {
+    const out = formatReview({ fileCount: 1, findings: [finding({ confidence: 'medium' })] });
+    expect(out).toContain('Nothing here is high-confidence');
+  });
+
+  it('does not add the confidence caveat when a high-confidence finding is present', () => {
+    const out = formatReview({ fileCount: 1, findings: [finding(), finding({ confidence: 'low' })] });
+    expect(out).not.toContain('Nothing here is high-confidence');
+  });
+
+  it('reports what it discarded, grouped by reason', () => {
+    const out = formatReview({
+      fileCount: 1,
+      findings: [finding()],
+      dropped: [
+        { reason: 'cited a file that is not in the diff' },
+        { reason: 'cited a file that is not in the diff' },
+        { reason: 'low-confidence nitpick' },
+      ],
+    });
+    expect(out).toContain('Discarded 3 findings');
+    expect(out).toContain('2 cited a file that is not in the diff');
+    expect(out).toContain('1 low-confidence nitpick');
+  });
+
+  it('warns when the diff was truncated', () => {
+    const out = formatReview({ fileCount: 1, findings: [finding()], truncated: true });
+    expect(out).toContain('too large to review in full');
   });
 });

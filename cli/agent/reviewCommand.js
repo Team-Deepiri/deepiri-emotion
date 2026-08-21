@@ -397,3 +397,73 @@ export function validateFindings(findings, files) {
 
   return { findings: kept, dropped };
 }
+
+// ─── Formatting ───────────────────────────────────────────────────────────────
+
+function indentBlock(text, pad) {
+  return String(text)
+    .split('\n')
+    .map((l) => `${pad}${l.trim()}`)
+    .join('\n');
+}
+
+function plural(n, word) {
+  return `${n} ${word}${n === 1 ? '' : 's'}`;
+}
+
+/**
+ * Render a validated review for the terminal, grouped by severity in
+ * SEVERITY_ORDER. Every finding line is `path:line`, which terminals make
+ * clickable, so the report is navigable rather than just readable.
+ *
+ * Deliberately reports what was thrown away and how confident the reviewer
+ * actually was — a review that hides its own uncertainty is worth less than
+ * one you can calibrate against.
+ */
+export function formatReview({ findings = [], dropped = [], fileCount = 0, mode = 'staged', truncated = false } = {}) {
+  const scope = mode === 'staged' ? 'staged' : 'unstaged';
+  const lines = [];
+
+  if (findings.length === 0) {
+    lines.push(`🔍 Review of ${plural(fileCount, 'file')} (${scope}) — no findings.`);
+    lines.push('Nothing here looked like a bug, a security issue, or a missing test worth flagging.');
+  } else {
+    lines.push(`🔍 Review of ${plural(fileCount, 'file')} (${scope}) — ${plural(findings.length, 'finding')}:`);
+
+    for (const severity of SEVERITY_ORDER) {
+      const group = findings.filter((f) => f.severity === severity);
+      if (group.length === 0) continue;
+
+      lines.push('');
+      lines.push(`${SEVERITY_LABELS[severity]} (${group.length})`);
+      for (const f of group) {
+        const location = f.line == null ? f.file : `${f.file}:${f.line}`;
+        const snapped = f.lineAdjusted ? ' (nearest changed line)' : '';
+        lines.push(`  ● ${location}${snapped}  [${f.confidence}]  ${f.title}`);
+        if (f.detail) lines.push(indentBlock(f.detail, '      '));
+        if (f.fix) lines.push(indentBlock(`Fix: ${f.fix}`, '      '));
+      }
+    }
+  }
+
+  const notes = [];
+  if (truncated) {
+    notes.push('The diff was too large to review in full — later changes were not looked at.');
+  }
+  if (findings.length > 0 && !findings.some((f) => f.confidence === 'high')) {
+    notes.push('Nothing here is high-confidence — treat all of it as worth a look, not as established.');
+  }
+  if (dropped.length > 0) {
+    const reasons = new Map();
+    for (const d of dropped) reasons.set(d.reason, (reasons.get(d.reason) ?? 0) + 1);
+    const summary = [...reasons].map(([reason, count]) => `${count} ${reason}`).join(', ');
+    notes.push(`Discarded ${plural(dropped.length, 'finding')} before showing you this: ${summary}.`);
+  }
+
+  if (notes.length > 0) {
+    lines.push('');
+    lines.push(...notes.map((n) => `· ${n}`));
+  }
+
+  return lines.join('\n');
+}
