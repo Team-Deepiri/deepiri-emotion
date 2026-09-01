@@ -18,6 +18,8 @@ export const COMMANDS = [
   { name: '/guard', description: 'toggle voice-of-reason supervisor review' },
   { name: '/scan', description: 'scan workspace for guidance docs' },
   { name: '/resume', description: 'resume a previous session' },
+  { name: '/bg', description: 'run a prompt as a background task, detached from the foreground chat' },
+  { name: '/tasks', description: 'list/inspect background tasks; "cancel/approve/deny <id>" to control one' },
   { name: '/clear', description: 'reset the conversation' },
   { name: '/compact', description: 'summarize conversation history to free up context' },
   { name: '/rewind', description: 'list or restore a recent checkpoint (undoes a turn and its file edits)' },
