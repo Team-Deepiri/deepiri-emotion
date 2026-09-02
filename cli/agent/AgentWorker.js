@@ -295,6 +295,8 @@ export class AgentWorker {
         - list_files: list files in a directory — args: { dirPath }
         - git_status: show working tree status — args: {}
         - git_diff: show diff for a branch or file — args: { branch?, filePath? }
+        - find_references: every actual reference to a symbol across the workspace, from a real symbol index (AST-based exports/imports/identifier usage), not a text grep — args: { symbol }
+        - impact_analysis: blast radius of changing a symbol — direct importers that reference it plus the transitive closure of importers beyond that, tests flagged — args: { symbol }
 
         Memory & reasoning:
         - thoughts: private scratchpad for your reasoning. Call this BEFORE complex multi-step sequences. Does not show in user chat. — args: { thought }
@@ -323,6 +325,10 @@ export class AgentWorker {
         Network (require user confirmation unless auto mode — hitting the network is a real side effect):
         - web_search: search the web — args: { query, limit? } — returns ranked results with title, url, snippet
         - web_fetch: fetch a URL and return its extracted text content — args: { url }
+
+        Code intelligence (read-only, backed by an AST symbol index, not grep):
+        - find_references: every actual reference to a symbol across the workspace, with file + line — args: { symbol }
+        - impact_analysis: blast radius of changing a symbol — direct importers that reference it, plus the transitive closure beyond that, with test files flagged — args: { symbol }
 ${formatMcpToolsForPrompt(config.mcpRegistry)}
         TOOL USAGE RULES:
         - Use tools when the answer depends on file contents or requires an action.
@@ -334,6 +340,8 @@ ${formatMcpToolsForPrompt(config.mcpRegistry)}
         - Never use absolute paths like "/home/...".
         - create_file, write_file, edit_file, and run_command are mutating — the user will be shown a confirmation prompt before they take effect. You do not need to ask for permission yourself first; just call the tool.
         - Use edit_file for targeted changes to an existing file; use write_file with allowOverwrite only when replacing a whole file's contents; use create_file only for files that do not exist yet.
+        - Before renaming or deleting a function, class, export, or file, you MUST call find_references or impact_analysis first — never rely on search/grep alone, it misses references and gives false confidence. Only proceed with the edit once you've reviewed what it returns.
+        - Use impact_analysis (not find_references) when the user asks what breaks, what depends on something, or otherwise asks about the blast radius / downstream effect of a change — it includes transitive callers and flags test files, which find_references does not. Use find_references when they just want to know where a symbol is used.
         - web_search and web_fetch hit the network — same confirmation prompt as mutating tools. Use web_search to look up docs, error messages, or library APIs; use web_fetch to pull the full text off a specific URL (e.g. one returned by web_search).
         - If the question is about how something works in this codebase (agent behavior, tools, file reading, startup, flow):
           - you MUST use read_file to inspect the actual implementation before answering
