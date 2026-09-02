@@ -20,6 +20,10 @@ function initRepo() {
   const dir = mkdtempSync(join(tmpdir(), 'git-tools-test-'));
   sh('git init -b main', dir);
   sh('git config commit.gpgsign false', dir);
+  // Background maintenance writes into .git after the command returns, which
+  // races the afterEach cleanup and fails it with ENOTEMPTY.
+  sh('git config gc.auto 0', dir);
+  sh('git config maintenance.auto false', dir);
   writeFileSync(join(dir, 'README.md'), 'initial\n');
   sh('git add README.md', dir);
   sh('git commit -m "initial"', dir);
@@ -33,7 +37,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  if (repo) rmSync(repo, { recursive: true, force: true });
+  // maxRetries covers anything git is still flushing to .git as we delete it.
+  if (repo) rmSync(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
 });
 
 // ─── gitStatus ────────────────────────────────────────────────────────────────
@@ -155,6 +160,29 @@ describe('gitDiff', () => {
     expect(result.lineCount).toBeGreaterThan(400);
     expect(result.diff).toContain('truncated');
     expect(result.diff.split('\n').length).toBeLessThanOrEqual(401);
+  });
+
+  it('honours a caller-supplied maxLines above the default cap', async () => {
+    const bigContent = Array.from({ length: 600 }, (_, i) => `line ${i}`).join('\n') + '\n';
+    writeFileSync(join(repo, 'big.txt'), bigContent);
+    sh('git add big.txt', repo);
+    sh('git commit -m "add big"', repo);
+    const changedContent = Array.from({ length: 600 }, (_, i) => `changed ${i}`).join('\n') + '\n';
+    writeFileSync(join(repo, 'big.txt'), changedContent);
+
+    const result = await gitDiff(repo, { maxLines: 5000 });
+    expect(result.truncated).toBe(false);
+    expect(result.diff).not.toContain('truncated');
+    expect(result.diff).toContain('+changed 599');
+  });
+
+  it('truncates at a caller-supplied maxLines below the default cap', async () => {
+    writeFileSync(join(repo, 'README.md'), Array.from({ length: 50 }, (_, i) => `l${i}`).join('\n') + '\n');
+
+    const result = await gitDiff(repo, { maxLines: 10 });
+    expect(result.truncated).toBe(true);
+    expect(result.diff).toContain('showing 10 of');
+    expect(result.diff.split('\n').length).toBeLessThanOrEqual(11);
   });
 
   it('returns a clear error when cwd is not a git repo', async () => {

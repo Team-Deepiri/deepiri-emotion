@@ -16,6 +16,7 @@ export const COMMANDS = [
   { name: '/auto', description: 'apply edits without confirmation' },
   { name: '/accept-edits', description: 'auto-approve file edits only' },
   { name: '/guard', description: 'toggle voice-of-reason supervisor review' },
+  { name: '/review', description: 'AI code review of your staged changes (--fix to apply patches)' },
   { name: '/scan', description: 'scan workspace for guidance docs' },
   { name: '/resume', description: 'resume a previous session' },
   { name: '/clear', description: 'reset the conversation' },

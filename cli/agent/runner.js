@@ -23,6 +23,7 @@ import {
 } from './modelsCommand.js';
 import { handleConnectCommand } from './connectCommand.js';
 import { handleMcpCommand } from './mcpCommand.js';
+import { handleReviewCommand } from './reviewCommand.js';
 
 const AUTO_COMPACT_THRESHOLD = 0.8;
 
@@ -337,6 +338,14 @@ Important: if you decide there's something worth saving, call edit_file or creat
     if (await handleMcpCommand(text || '', { bus, config })) return;
     if (await handleSkillsCommand(text || '', { bus, config })) return;
     if (await handleStatusCommand(text || '', { bus, config })) return;
+    // /review --fix writes through the same confirmation gate as any agent
+    // edit, so it needs the same turn bookkeeping /rewind relies on.
+    if (await handleReviewCommand(text || '', {
+      bus,
+      config,
+      modes: { autoMode, acceptEdits },
+      beginTurn,
+    })) return;
 
     if (text?.trim() === '/teach') {
       teachMode = !teachMode;
