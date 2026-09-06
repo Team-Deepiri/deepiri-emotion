@@ -16,6 +16,18 @@ function sh(cmd, cwd) {
   execSync(cmd, { cwd, stdio: 'pipe', env: { ...process.env, ...GIT_ENV } });
 }
 
+// Cleanup is not the thing under test: git can still be flushing into .git as
+// we delete it, which surfaces as ENOTEMPTY and fails an otherwise-passing
+// test. A few quick retries, then give up quietly — a leftover dir in the OS
+// temp area is harmless and gets reclaimed. Retries are kept short on purpose:
+// long ones compound across .git's tree and blow the hook timeout instead.
+function removeRepo(dir) {
+  if (!dir) return;
+  try {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+  } catch { /* temp dir left behind; the OS will clean it up */ }
+}
+
 function initRepo() {
   const dir = mkdtempSync(join(tmpdir(), 'git-tools-test-'));
   sh('git init -b main', dir);
@@ -37,8 +49,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  // maxRetries covers anything git is still flushing to .git as we delete it.
-  if (repo) rmSync(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
+  removeRepo(repo);
 });
 
 // ─── gitStatus ────────────────────────────────────────────────────────────────
@@ -96,7 +107,7 @@ describe('gitStatus', () => {
       const result = await gitStatus(nonRepo);
       expect(result.error).toMatch(/Not a git repository/);
     } finally {
-      rmSync(nonRepo, { recursive: true, force: true });
+      removeRepo(nonRepo);
     }
   });
 });
@@ -191,7 +202,7 @@ describe('gitDiff', () => {
       const result = await gitDiff(nonRepo);
       expect(result.error).toMatch(/Not a git repository/);
     } finally {
-      rmSync(nonRepo, { recursive: true, force: true });
+      removeRepo(nonRepo);
     }
   });
 });

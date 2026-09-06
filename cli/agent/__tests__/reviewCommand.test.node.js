@@ -23,6 +23,18 @@ const GIT_ENV = {
   GIT_COMMITTER_EMAIL: 'test@example.com',
 };
 
+// Cleanup is not the thing under test: git can still be flushing into .git as
+// we delete it, which surfaces as ENOTEMPTY and fails an otherwise-passing
+// test. A few quick retries, then give up quietly — a leftover dir in the OS
+// temp area is harmless and gets reclaimed. Retries are kept short on purpose:
+// long ones compound across .git's tree and blow the hook timeout instead.
+function removeRepo(dir) {
+  if (!dir) return;
+  try {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+  } catch { /* temp dir left behind; the OS will clean it up */ }
+}
+
 const MODIFIED_DIFF = [
   'diff --git a/src/math.js b/src/math.js',
   'index 1234567..89abcde 100644',
@@ -245,6 +257,13 @@ describe('validateFindings', () => {
     expect(findings[0].file).toBe('src/math.js');
   });
 
+  it('normalizes ./, a/ and b/ prefixes and quotes on a cited path', () => {
+    for (const cited of ['./src/math.js', 'a/src/math.js', 'b/src/math.js', '"src/math.js"']) {
+      const { findings } = validateFindings([{ ...base, file: cited, line: 11 }], files);
+      expect(findings[0]?.file, `failed for ${cited}`).toBe('src/math.js');
+    }
+  });
+
   it('snaps an out-of-range line onto the nearest line in the diff and flags it', () => {
     const { findings } = validateFindings([{ ...base, file: 'src/math.js', line: 400 }], files);
     expect(findings[0].line).toBe(14);
@@ -390,7 +409,7 @@ describe('/review', () => {
   });
 
   afterEach(() => {
-    if (repo) rmSync(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
+    removeRepo(repo);
   });
 
   const out = () => tokens.join('\n');
@@ -416,7 +435,7 @@ describe('/review', () => {
       await handleReviewCommand('/review', { bus, config: { workspaceDir: nonRepo } });
       expect(out()).toMatch(/Cannot review: Not a git repository/);
     } finally {
-      rmSync(nonRepo, { recursive: true, force: true });
+      removeRepo(nonRepo);
     }
   });
 
@@ -639,7 +658,7 @@ describe('/review --fix', () => {
   });
 
   afterEach(() => {
-    if (repo) rmSync(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
+    removeRepo(repo);
   });
 
   const out = () => tokens.join('\n');
@@ -765,7 +784,7 @@ describe('runFixPass staged/worktree divergence', () => {
   });
 
   afterEach(() => {
-    if (repo) rmSync(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
+    removeRepo(repo);
   });
 
   const findings = [{ severity: 'bug', file: 'math.js', line: 1, confidence: 'high', title: 't', detail: 'd', fix: '' }];

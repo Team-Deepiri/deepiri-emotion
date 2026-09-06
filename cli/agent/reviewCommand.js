@@ -314,11 +314,16 @@ export function parseReviewResponse(raw) {
   return { error: 'Could not parse the reviewer response as JSON.' };
 }
 
-/** Normalize a model-supplied path the way a human would read it. */
+/**
+ * Normalize a model-supplied path the way a human would read it. Shares the
+ * prefix/quote handling with diff header paths, plus a leading ./ that models
+ * add often enough to be worth stripping. Always returns a string: unlike a
+ * diff header, a cited path has no /dev/null case, and callers here treat an
+ * unusable path as "no match" rather than as a deletion.
+ */
 function canonicalizePath(raw) {
-  let path = String(raw ?? '').trim().replace(/^\.\//, '');
-  if (path.startsWith('a/') || path.startsWith('b/')) path = path.slice(2);
-  return path;
+  const cleaned = String(raw ?? '').trim().replace(/^\.\//, '');
+  return stripDiffPath(cleaned) ?? '';
 }
 
 /**
