@@ -192,9 +192,24 @@ describe('startBackgroundTask', () => {
       text: 'say hi',
       deps: { streamLLM: makeStreamLLM(['FINAL_ANSWER: hi']) },
     });
+    const snapshotPath = join(dir, '.emotion-sessions', 'background', `${id}.json`);
+    const readSnapshot = () => {
+      if (!existsSync(snapshotPath)) return null;
+      try {
+        return JSON.parse(readFileSync(snapshotPath, 'utf-8'));
+      } catch {
+        return null; // mid-rename; try again on the next tick
+      }
+    };
+
+    // persist() is async and fire-and-forget, so the in-memory status reaches
+    // 'done' before the matching snapshot hits disk — and the file already
+    // exists from the earlier 'running' write. Waiting on the file's contents
+    // rather than its existence is what makes this deterministic.
     await waitFor(() => getBackgroundTask(id)?.status === 'done');
-    await waitFor(() => existsSync(join(dir, '.emotion-sessions', 'background', `${id}.json`)));
-    const snapshot = JSON.parse(readFileSync(join(dir, '.emotion-sessions', 'background', `${id}.json`), 'utf-8'));
+    await waitFor(() => readSnapshot()?.status === 'done');
+
+    const snapshot = readSnapshot();
     expect(snapshot.status).toBe('done');
     expect(snapshot.id).toBe(id);
   });
