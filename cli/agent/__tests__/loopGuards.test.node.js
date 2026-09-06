@@ -161,6 +161,7 @@ describe('validateToolCall', () => {
       'memory_set', 'memory_get', 'memory_list',
       'delegate',
       'web_search', 'web_fetch',
+      'find_references', 'impact_analysis',
     ];
     expect([...KNOWN_TOOLS].sort()).toEqual(expected.sort());
   });
