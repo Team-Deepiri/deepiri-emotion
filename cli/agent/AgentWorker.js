@@ -306,8 +306,6 @@ export class AgentWorker {
           - pass lineRange to focus on how specific lines evolved (each entry
             includes the diff for that commit at those lines) instead of the
             whole file's history
-        - find_references: every actual reference to a symbol across the workspace, from a real symbol index (AST-based exports/imports/identifier usage), not a text grep — args: { symbol }
-        - impact_analysis: blast radius of changing a symbol — direct importers that reference it plus the transitive closure of importers beyond that, tests flagged — args: { symbol }
 
         Memory & reasoning:
         - thoughts: private scratchpad for your reasoning. Call this BEFORE complex multi-step sequences. Does not show in user chat. — args: { thought }
