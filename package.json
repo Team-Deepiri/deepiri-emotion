@@ -71,7 +71,7 @@
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.0.1",
     "@vitejs/plugin-react": "^5.0.0",
-    "@vitest/coverage-v8": "^4.1.4",
+    "@vitest/coverage-v8": "^5.0.0",
     "electron": "^39.8.10",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.1",
