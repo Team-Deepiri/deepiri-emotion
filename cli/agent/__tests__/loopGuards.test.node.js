@@ -156,7 +156,7 @@ describe('validateToolCall', () => {
     const expected = [
       'read_file', 'search', 'list_files', 'run_command',
       'explain', 'create_file', 'write_file', 'edit_file',
-      'git_status', 'git_diff',
+      'git_status', 'git_diff', 'git_explain',
       'thoughts',
       'memory_set', 'memory_get', 'memory_list',
       'delegate',
