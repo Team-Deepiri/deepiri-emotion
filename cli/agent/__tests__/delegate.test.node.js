@@ -16,6 +16,7 @@ vi.mock('../AgentWorker.js', () => ({
 }));
 
 import { delegateTasks } from '../delegate.js';
+import { getRole } from '../roles.js';
 
 /** Simulates a sub-agent emitting tokens then finishing, on its own isolated bus. */
 function makeRunImpl({ tokens = ['hello'], errorMessage = null, cancelled = false } = {}) {
@@ -184,6 +185,68 @@ describe('delegateTasks', () => {
     expect(lastWorkerArgs.config.delegationDepth).toBe(1);
   });
 
+  it('gives the sub-agent its role charter and tool allowlist', async () => {
+    runMock.mockImplementation(makeRunImpl());
+    await delegateTasks(
+      [{ provider: 'ollama', role: 'reviewer' }],
+      'p',
+      { delegateProviders: ['ollama'] },
+    );
+    expect(lastWorkerArgs.modes.rolePrompt).toContain('REVIEWER');
+    expect(lastWorkerArgs.modes.allowedTools).toEqual(getRole('reviewer').allowedTools);
+  });
+
+  it('reports the resolved role back on the result', async () => {
+    runMock.mockImplementation(makeRunImpl());
+    const results = await delegateTasks(
+      [{ provider: 'ollama', role: 'security' }],
+      'p',
+      { delegateProviders: ['ollama'] },
+    );
+    expect(results[0].role).toBe('security');
+  });
+
+  it('falls back to the generalist for an unknown role', async () => {
+    runMock.mockImplementation(makeRunImpl());
+    const results = await delegateTasks(
+      [{ provider: 'ollama', role: 'wizard' }],
+      'p',
+      { delegateProviders: ['ollama'] },
+    );
+    expect(results[0].role).toBe('generalist');
+  });
+
+  it('keeps a read-only role read-only and never auto-approves for it', async () => {
+    runMock.mockImplementation(makeRunImpl());
+    await delegateTasks(
+      [{ provider: 'ollama', role: 'reviewer' }],
+      'p',
+      { delegateProviders: ['ollama'] },
+    );
+    expect(lastWorkerArgs.modes.readOnly).toBe(true);
+    expect(lastWorkerArgs.modes.autoMode).toBe(false);
+  });
+
+  it('auto-approves for a writing role, whose bus has no user to confirm', async () => {
+    runMock.mockImplementation(makeRunImpl());
+    await delegateTasks(
+      [{ provider: 'ollama', role: 'implementer' }],
+      'p',
+      { delegateProviders: ['ollama'] },
+    );
+    expect(lastWorkerArgs.modes.readOnly).toBe(false);
+    expect(lastWorkerArgs.modes.autoMode).toBe(true);
+  });
+
+  it('defaults a target with no role at all to the generalist', async () => {
+    runMock.mockImplementation(makeRunImpl());
+    const results = await delegateTasks([{ provider: 'ollama' }], 'p', {
+      delegateProviders: ['ollama'],
+    });
+    expect(results[0].role).toBe('generalist');
+    expect(lastWorkerArgs.modes.readOnly).toBe(true);
+  });
+
   it('lets a per-target prompt override the shared default prompt', async () => {
     runMock.mockImplementation(makeRunImpl());
     await delegateTasks(
@@ -192,5 +255,79 @@ describe('delegateTasks', () => {
       { delegateProviders: ['ollama'] },
     );
     expect(lastWorkerArgs.task).toBe('custom prompt');
+  });
+});
+
+describe('provider resolution by role tier', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    lastWorkerArgs = null;
+  });
+
+  it('maps a role tier onto a provider when the target names none', async () => {
+    runMock.mockImplementation(makeRunImpl());
+    const results = await delegateTasks(
+      [{ role: 'architect' }],
+      'p',
+      {
+        delegateProviders: ['ollama', 'anthropic'],
+        delegateTierProviders: { strong: 'anthropic', cheap: 'ollama' },
+      },
+    );
+    expect(results[0].provider).toBe('anthropic');
+  });
+
+  it('sends a cheap-tier role to the cheap provider', async () => {
+    runMock.mockImplementation(makeRunImpl());
+    const results = await delegateTasks(
+      [{ role: 'tester' }],
+      'p',
+      {
+        delegateProviders: ['ollama', 'anthropic'],
+        delegateTierProviders: { strong: 'anthropic', cheap: 'ollama' },
+      },
+    );
+    expect(results[0].provider).toBe('ollama');
+  });
+
+  it('lets an explicit provider beat the role tier', async () => {
+    runMock.mockImplementation(makeRunImpl());
+    const results = await delegateTasks(
+      [{ role: 'architect', provider: 'ollama' }],
+      'p',
+      {
+        delegateProviders: ['ollama', 'anthropic'],
+        delegateTierProviders: { strong: 'anthropic' },
+      },
+    );
+    expect(results[0].provider).toBe('ollama');
+  });
+
+  it('ignores a tier provider the user has not enabled', async () => {
+    runMock.mockImplementation(makeRunImpl());
+    const results = await delegateTasks(
+      [{ role: 'architect' }],
+      'p',
+      {
+        delegateProviders: ['ollama'],
+        delegateTierProviders: { strong: 'anthropic' },
+      },
+    );
+    expect(results[0].provider).toBe('ollama');
+    expect(results[0].error).toBeUndefined();
+  });
+
+  it('falls back to the parent provider chain when nothing else is configured', async () => {
+    runMock.mockImplementation(makeRunImpl());
+    const results = await delegateTasks([{ role: 'reviewer' }], 'p', {
+      providerChain: ['gemini'],
+    });
+    expect(results[0].provider).toBe('gemini');
+  });
+
+  it('reports an error when no provider can be resolved at all', async () => {
+    const results = await delegateTasks([{ role: 'reviewer' }], 'p', {});
+    expect(results[0].error).toMatch(/No provider available/);
+    expect(runMock).not.toHaveBeenCalled();
   });
 });

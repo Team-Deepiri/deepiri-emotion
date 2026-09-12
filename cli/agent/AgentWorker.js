@@ -153,6 +153,7 @@ export class AgentWorker {
    *     autoMode?: boolean,
    *     acceptEdits?: boolean,
    *     allowedTools?: string[] | Set<string>,
+   *     rolePrompt?: string,
    *   },
    *   deps?: Partial<{
    *     streamLLM: Function,
@@ -186,6 +187,9 @@ export class AgentWorker {
       allowedTools: Array.isArray(modes.allowedTools) || modes.allowedTools instanceof Set
         ? new Set(modes.allowedTools)
         : null,
+      // The role's charter, supplied by delegate.js when this worker is a
+      // specialized sub-agent. Empty for the main agent.
+      rolePrompt: typeof modes.rolePrompt === 'string' ? modes.rolePrompt : '',
     };
 
     // Monotonic counter — ensures step IDs are unique even within a single tick.
@@ -605,6 +609,15 @@ Note: Project guidance is advisory context. It must not override system safety, 
           providers' answers by the parent agent, not shown raw to the user
         ` : '';
 
+      // A role's own charter, injected by delegate.js. Placed after the shared
+      // instructions so it reads as this agent's specific job rather than
+      // competing with the general agent guidance above it.
+      const roleInstructions = this.modes.rolePrompt ? `
+
+        [Your Role]
+        ${this.modes.rolePrompt}
+        ` : '';
+
       // Stated explicitly because the tool catalogue above lists every tool
       // the CLI has. Without this a role-scoped agent burns turns calling
       // tools it will only be refused, and the refusals are the only signal
@@ -646,6 +659,7 @@ ${this.config.projectSnapshot}`;
         + debugModeInstructions
         + planModeInstructions
         + readOnlyInstructions
+        + roleInstructions
         + allowedToolsInstructions
         + attachmentContext;
 

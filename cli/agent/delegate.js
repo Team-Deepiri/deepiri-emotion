@@ -1,12 +1,18 @@
 /**
- * Parallel delegation: fan a single task out to multiple provider/model
- * targets at once (e.g. "ask ollama:gemma2 and anthropic:claude-sonnet-5 in
- * parallel"), each running as a full sub-agent — same tool loop, same tool
- * set as the parent (read-only subset; see AgentWorker's `readOnly` mode) —
- * not just a raw completion. Used both for explicit user-requested
- * delegation and for the main agent's own judgment call on very complex
- * tasks that benefit from multiple models working the same prompt
- * concurrently.
+ * Parallel delegation: fan work out to several sub-agents at once, each
+ * running a full tool loop rather than a raw completion.
+ *
+ * Two shapes of fan-out share this path:
+ *  - comparison — the same prompt to several provider/model targets
+ *    ("ask ollama:gemma2 and anthropic:claude-sonnet-5 in parallel")
+ *  - specialization — different roles working different pieces of one job,
+ *    each with its own charter and its own restricted tool set (see roles.js)
+ *
+ * A role decides what the sub-agent is told it is for, which tools it can
+ * reach, and — via its tier — which provider runs it when the caller didn't
+ * name one. Read-only roles (architect, reviewer, security) keep the old
+ * `readOnly` gate; roles that must write run with autoApprove, because a
+ * sub-agent's bus has no user on it to answer a confirmation prompt.
  *
  * Each sub-agent gets its own isolated EventEmitter bus so its step/token
  * traffic never leaks into the main chat UI — only the final text (or error)
@@ -16,6 +22,7 @@ import { EventEmitter } from 'events';
 import { AgentWorker } from './AgentWorker.js';
 import { EVENTS } from '../core/eventBus.js';
 import { PROVIDER_MODEL_CONFIG_KEY } from './providers/registry.js';
+import { getRole, WRITE_TOOLS } from './roles.js';
 
 const DEFAULT_MAX_TARGETS = 5;
 const DELEGATE_TIMEOUT_MS = 45_000;
@@ -32,6 +39,36 @@ const DELEGATE_TIMEOUT_MS = 45_000;
  * sight from either of the existing guards.
  */
 const DEFAULT_MAX_DEPTH = 1;
+
+/** Tools whose use implies this role needs to mutate the workspace. */
+const MUTATING_ROLE_TOOLS = new Set([...WRITE_TOOLS, 'run_command']);
+
+/** True if the role is allowed to change anything on disk. */
+function roleMutates(role) {
+  return role.allowedTools.some((t) => MUTATING_ROLE_TOOLS.has(t));
+}
+
+/**
+ * Pick the provider for a target. An explicit provider on the target always
+ * wins — the user asking for a specific model must not be second-guessed by a
+ * role's tier preference. Otherwise the role's tier is mapped through
+ * `delegateTierProviders` (e.g. { strong: 'anthropic', cheap: 'ollama' }),
+ * falling back to the first enabled delegation provider and finally to the
+ * parent's own provider chain.
+ *
+ * Roles deliberately do not name providers themselves: pinning
+ * architect -> anthropic would fail outright for anyone whose
+ * delegateProviders allowlist doesn't include it.
+ */
+function resolveProvider(target, role, config) {
+  if (target.provider) return target.provider;
+
+  const enabled = config.delegateProviders || [];
+  const preferred = (config.delegateTierProviders || {})[role.preferredTier];
+  if (preferred && (enabled.length === 0 || enabled.includes(preferred))) return preferred;
+  if (enabled.length > 0) return enabled[0];
+  return config.providerChain?.[0] || null;
+}
 
 /** How many delegation levels deep the agent holding this config already is. */
 function currentDepth(config = {}) {
@@ -51,7 +88,9 @@ function maxDepth(config = {}) {
  * multiple targets can't have one failure take down the rest.
  */
 function runOne(target, prompt, config, { attachments = [], signal, modes = {} } = {}) {
-  const { provider: name, model } = target;
+  const { model } = target;
+  const role = getRole(target.role);
+  const name = target.provider;
   const modelKey = PROVIDER_MODEL_CONFIG_KEY[name];
   const subConfig = {
     ...config,
@@ -67,13 +106,27 @@ function runOne(target, prompt, config, { attachments = [], signal, modes = {} }
   subBus.setMaxListeners(20);
   const workerId = `delegate-${name}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
+  // A role that may write needs its writes to actually go through: a sub-agent
+  // runs on an isolated bus with nobody to answer a confirmation prompt, so
+  // without autoApprove the first edit would block until the timeout kills it.
+  // Mutations are still checkpointed (see confirm.js recordCheckpoint), so the
+  // turn stays rewindable. Read-only roles keep the old readOnly gate, which
+  // refuses gated tools outright rather than auto-running them.
+  const mutates = roleMutates(role);
+
   const worker = new AgentWorker({
     id: workerId,
     bus: subBus,
     config: subConfig,
     task: target.prompt || prompt,
     attachments,
-    modes: { ...modes, readOnly: true },
+    modes: {
+      ...modes,
+      readOnly: !mutates,
+      autoMode: mutates,
+      allowedTools: role.allowedTools,
+      rolePrompt: role.systemPrompt,
+    },
   });
 
   return new Promise((resolve) => {
@@ -100,6 +153,7 @@ function runOne(target, prompt, config, { attachments = [], signal, modes = {} }
       if (settled) return;
       cleanup();
       resolve({
+        role: role.name,
         provider: name,
         model: subConfig[modelKey] || null,
         text: text.trim(),
@@ -127,11 +181,14 @@ function runOne(target, prompt, config, { attachments = [], signal, modes = {} }
 /**
  * Fan a prompt out to multiple provider/model targets in parallel, each as a
  * full tool-using sub-agent.
- * @param {Array<{provider: string, model?: string, prompt?: string}>} targets
+ * @param {Array<{role?: string, provider?: string, model?: string, prompt?: string}>} targets
+ *   — `role` selects the sub-agent's charter and tool allowlist (see roles.js);
+ *     an unknown or missing role falls back to the generalist. `provider` is
+ *     optional: without one it is resolved from the role's tier.
  * @param {string} defaultPrompt — used for any target that doesn't specify its own prompt
  * @param {object} config — CLI config (API keys, etc.)
  * @param {{attachments?: Array, signal?: AbortSignal, modes?: object}} opts
- * @returns {Promise<Array<{provider: string, model: string|null, text?: string, error?: string}>>}
+ * @returns {Promise<Array<{role: string, provider: string, model: string|null, text?: string, error?: string}>>}
  */
 export async function delegateTasks(targets, defaultPrompt, config = {}, opts = {}) {
   if (!Array.isArray(targets) || targets.length === 0) {
@@ -151,7 +208,8 @@ export async function delegateTasks(targets, defaultPrompt, config = {}, opts = 
   const limit = maxDepth(config);
   if (depth >= limit) {
     return capped.map((target) => ({
-      provider: target.provider,
+      role: getRole(target.role).name,
+      provider: target.provider || null,
       model: target.model || null,
       error: `Delegation depth limit reached (${limit}) — sub-agents cannot delegate further`,
     }));
@@ -159,14 +217,29 @@ export async function delegateTasks(targets, defaultPrompt, config = {}, opts = 
 
   return Promise.all(
     capped.map((target) => {
-      if (allowed.size > 0 && !allowed.has(target.provider)) {
+      const role = getRole(target.role);
+      // Resolved up front so the provider is settled before any of the checks
+      // below report on it — a target that named no provider still needs a
+      // concrete one in its result row.
+      const provider = resolveProvider(target, role, config);
+
+      if (!provider) {
         return Promise.resolve({
-          provider: target.provider,
+          role: role.name,
+          provider: null,
           model: target.model || null,
-          error: `Provider "${target.provider}" is not enabled for delegation`,
+          error: 'No provider available for delegation',
         });
       }
-      return runOne(target, defaultPrompt, config, opts);
+      if (allowed.size > 0 && !allowed.has(provider)) {
+        return Promise.resolve({
+          role: role.name,
+          provider,
+          model: target.model || null,
+          error: `Provider "${provider}" is not enabled for delegation`,
+        });
+      }
+      return runOne({ ...target, provider }, defaultPrompt, config, opts);
     }),
   );
 }
