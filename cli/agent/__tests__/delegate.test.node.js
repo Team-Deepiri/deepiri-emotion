@@ -117,6 +117,73 @@ describe('delegateTasks', () => {
     expect(results).toHaveLength(3);
   });
 
+  it('stamps an incremented delegation depth into each sub-agent config', async () => {
+    runMock.mockImplementation(makeRunImpl());
+    await delegateTasks([{ provider: 'ollama' }], 'p', { delegateProviders: ['ollama'] });
+    expect(lastWorkerArgs.config.delegationDepth).toBe(1);
+  });
+
+  it('refuses to delegate once the depth limit is reached', async () => {
+    const results = await delegateTasks(
+      [{ provider: 'ollama' }],
+      'p',
+      { delegateProviders: ['ollama'], delegationDepth: 1 },
+    );
+    expect(results[0].error).toMatch(/Delegation depth limit reached/);
+    expect(runMock).not.toHaveBeenCalled();
+  });
+
+  it('reports the depth limit once per target rather than silently dropping them', async () => {
+    const results = await delegateTasks(
+      [{ provider: 'ollama' }, { provider: 'anthropic' }],
+      'p',
+      { delegateProviders: ['ollama', 'anthropic'], delegationDepth: 1 },
+    );
+    expect(results).toHaveLength(2);
+    for (const r of results) expect(r.error).toMatch(/depth limit/);
+  });
+
+  it('still caps target count when refusing on depth', async () => {
+    const targets = Array.from({ length: 8 }, () => ({ provider: 'ollama' }));
+    const results = await delegateTasks(targets, 'p', {
+      delegateProviders: ['ollama'],
+      delegationDepth: 1,
+    });
+    expect(results).toHaveLength(5);
+  });
+
+  it('honors a configured delegateMaxDepth above the default', async () => {
+    runMock.mockImplementation(makeRunImpl());
+    const results = await delegateTasks(
+      [{ provider: 'ollama' }],
+      'p',
+      { delegateProviders: ['ollama'], delegationDepth: 1, delegateMaxDepth: 2 },
+    );
+    expect(results[0].error).toBeUndefined();
+    expect(lastWorkerArgs.config.delegationDepth).toBe(2);
+  });
+
+  it('refuses all delegation when delegateMaxDepth is 0', async () => {
+    const results = await delegateTasks(
+      [{ provider: 'ollama' }],
+      'p',
+      { delegateProviders: ['ollama'], delegateMaxDepth: 0 },
+    );
+    expect(results[0].error).toMatch(/depth limit/);
+    expect(runMock).not.toHaveBeenCalled();
+  });
+
+  it('treats a malformed delegationDepth as depth zero', async () => {
+    runMock.mockImplementation(makeRunImpl());
+    const results = await delegateTasks(
+      [{ provider: 'ollama' }],
+      'p',
+      { delegateProviders: ['ollama'], delegationDepth: 'lots' },
+    );
+    expect(results[0].error).toBeUndefined();
+    expect(lastWorkerArgs.config.delegationDepth).toBe(1);
+  });
+
   it('lets a per-target prompt override the shared default prompt', async () => {
     runMock.mockImplementation(makeRunImpl());
     await delegateTasks(

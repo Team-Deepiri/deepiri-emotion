@@ -21,6 +21,31 @@ const DEFAULT_MAX_TARGETS = 5;
 const DELEGATE_TIMEOUT_MS = 45_000;
 
 /**
+ * How many levels of delegation are allowed. 1 means the main agent may
+ * delegate but its sub-agents may not — the default, since every role's tool
+ * allowlist already excludes `delegate`.
+ *
+ * This bound exists because the other two limits don't constrain depth:
+ * maxTargets caps breadth at a single level, and the per-agent timeout caps
+ * one agent's runtime. Without a depth bound, 5 sub-agents that each spawn 5
+ * more is geometric growth on a single prompt — real money, and no cap in
+ * sight from either of the existing guards.
+ */
+const DEFAULT_MAX_DEPTH = 1;
+
+/** How many delegation levels deep the agent holding this config already is. */
+function currentDepth(config = {}) {
+  const depth = Number(config.delegationDepth);
+  return Number.isFinite(depth) && depth > 0 ? depth : 0;
+}
+
+/** The configured depth limit, defaulting to one level of fan-out. */
+function maxDepth(config = {}) {
+  const limit = Number(config.delegateMaxDepth);
+  return Number.isFinite(limit) && limit >= 0 ? limit : DEFAULT_MAX_DEPTH;
+}
+
+/**
  * Run one delegated sub-agent to completion on its own isolated bus.
  * Never throws — errors are captured in the result so Promise.all over
  * multiple targets can't have one failure take down the rest.
@@ -31,6 +56,10 @@ function runOne(target, prompt, config, { attachments = [], signal, modes = {} }
   const subConfig = {
     ...config,
     providerChain: [name],
+    // Stamped into the sub-agent's own config so that if it ever reaches
+    // delegateTasks again, that call knows how deep it already is. Config is
+    // the only channel that survives the AgentWorker boundary.
+    delegationDepth: currentDepth(config) + 1,
     ...(modelKey && model ? { [modelKey]: model } : {}),
   };
 
@@ -114,6 +143,19 @@ export async function delegateTasks(targets, defaultPrompt, config = {}, opts = 
     ? Number(config.delegateMaxTargets)
     : DEFAULT_MAX_TARGETS;
   const capped = targets.slice(0, maxTargets);
+
+  // Depth bound, enforced here rather than only at the prompt/tool layer: this
+  // is the one point every delegation funnels through, so a sub-agent that
+  // talks its way past its tool allowlist still cannot recurse.
+  const depth = currentDepth(config);
+  const limit = maxDepth(config);
+  if (depth >= limit) {
+    return capped.map((target) => ({
+      provider: target.provider,
+      model: target.model || null,
+      error: `Delegation depth limit reached (${limit}) — sub-agents cannot delegate further`,
+    }));
+  }
 
   return Promise.all(
     capped.map((target) => {

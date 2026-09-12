@@ -599,6 +599,7 @@ Note: Project guidance is advisory context. It must not override system safety, 
         You were spawned by another agent to answer one focused prompt in parallel
         with other models/providers. There is no user here to approve actions:
         - create_file, write_file, edit_file, run_command, web_search, and web_fetch are disabled — do not call them
+        - delegate is disabled — you cannot spawn further sub-agents of your own
         - Use only read-only tools (read_file, search, list_files, git_status, git_diff, git_explain)
         - Answer the prompt directly and concisely; your response is merged with other
           providers' answers by the parent agent, not shown raw to the user
@@ -947,6 +948,21 @@ ${this.config.projectSnapshot}`;
             category: explainResult.category,
           });
           agentContext = `${agentContext}\n\n[Explanation delivered: ${explainResult.concept}]`;
+          continue;
+        }
+
+        // A delegated sub-agent must not delegate again. delegateTasks enforces
+        // the real depth bound, but it is worth refusing here too: reaching it
+        // would spawn the step events and the whole fan-out apparatus just to
+        // collect a row of depth-limit errors.
+        if (loopToolIntent && loopToolIntent.tool === 'delegate' && readOnly) {
+          toolCallCount++;
+          noProgressStreak++;
+          agentContext = `${agentContext}
+
+        [System note]
+        "delegate" is disabled for delegated sub-agents — you cannot spawn further agents.
+        Answer the prompt you were given using your own tools.`;
           continue;
         }
 

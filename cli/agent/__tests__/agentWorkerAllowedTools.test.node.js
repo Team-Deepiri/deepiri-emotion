@@ -159,6 +159,46 @@ describe('allowlist covers the inline tool branches', () => {
   });
 });
 
+describe('read-only sub-agents cannot delegate', () => {
+  it('refuses delegate in read-only mode without spawning any sub-agent', async () => {
+    const delegateTasks = vi.fn(async () => []);
+    const { worker } = makeWorker('fan this out', {
+      modes: { readOnly: true },
+      responses: [toolCall('delegate', { tasks: [{ provider: 'ollama' }] })],
+      deps: { delegateTasks, maybeConfirmAndExecute: vi.fn(), executeTool: vi.fn() },
+    });
+    await worker.run();
+    expect(delegateTasks).not.toHaveBeenCalled();
+  });
+
+  it('tells the sub-agent why, so it answers instead of retrying', async () => {
+    const prompts = [];
+    const call = toolCall('delegate', { tasks: [{ provider: 'ollama' }] });
+    const { worker } = makeWorker('fan this out', {
+      modes: { readOnly: true },
+      deps: {
+        delegateTasks: vi.fn(async () => []),
+        maybeConfirmAndExecute: vi.fn(),
+        executeTool: vi.fn(),
+        streamLLM: makeStreamLLM([call], prompts),
+      },
+    });
+    await worker.run();
+    expect(prompts.some((p) => p.includes('cannot spawn further agents'))).toBe(true);
+  });
+
+  it('still lets the top-level agent delegate', async () => {
+    const delegateTasks = vi.fn(async () => [{ provider: 'ollama', text: 'hi' }]);
+    const { worker } = makeWorker('fan this out', {
+      modes: {},
+      responses: [toolCall('delegate', { tasks: [{ provider: 'ollama' }] })],
+      deps: { delegateTasks, maybeConfirmAndExecute: vi.fn(), executeTool: vi.fn() },
+    });
+    await worker.run();
+    expect(delegateTasks).toHaveBeenCalled();
+  });
+});
+
 describe('allowlist is stated in the system prompt', () => {
   it('lists the available tools for a scoped agent', async () => {
     const { worker, prompts } = makeWorker('do a thing', {
