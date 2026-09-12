@@ -69,3 +69,18 @@ describe('mergeDelegateStep', () => {
     expect(mergeDelegateStep()).toEqual([]);
   });
 });
+
+describe('queued agents', () => {
+  it('does not count a queued agent as finished', () => {
+    let rows = mergeDelegateStep([], { index: 0, role: 'implementer', status: 'running' });
+    rows = mergeDelegateStep(rows, { index: 1, role: 'reviewer', status: 'queued' });
+    const settled = rows.filter((a) => a.status === 'done' || a.status === 'error');
+    expect(settled).toHaveLength(0);
+  });
+
+  it('flips a queued agent to running when its wave starts', () => {
+    let rows = mergeDelegateStep([], { index: 1, role: 'reviewer', status: 'queued' });
+    rows = mergeDelegateStep(rows, { index: 1, role: 'reviewer', provider: 'ollama', status: 'running' });
+    expect(rows[1]).toMatchObject({ status: 'running', provider: 'ollama' });
+  });
+});

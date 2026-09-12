@@ -7,7 +7,7 @@ import { Box, Text } from 'ink';
  * work — DELEGATE_STEP was emitted but had no subscriber, so a multi-agent
  * turn was a silent pause of up to the 45s delegate timeout.
  */
-const STATUS_ICONS = { running: '◐', done: '✓', error: '✗' };
+const STATUS_ICONS = { queued: '▢', running: '◐', done: '✓', error: '✗' };
 const STATUS_COLORS = { running: 'yellow', done: 'green', error: 'red' };
 
 /**
@@ -41,7 +41,9 @@ export function agentLabel({ role, provider, model }) {
 export function DelegatePanel({ agents }) {
   if (!agents || agents.length === 0) return null;
 
-  const doneCount = agents.filter((a) => a.status !== 'running').length;
+  // Counts settled agents only — a queued agent has not finished, and treating
+  // "not running" as finished would show 2/2 before any work had started.
+  const doneCount = agents.filter((a) => a.status === 'done' || a.status === 'error').length;
 
   return React.createElement(
     Box,
@@ -57,7 +59,7 @@ export function DelegatePanel({ agents }) {
         {
           key: `delegate-${i}`,
           color: STATUS_COLORS[agent.status],
-          dimColor: agent.status === 'running',
+          dimColor: agent.status === 'running' || agent.status === 'queued',
         },
         ' ',
         STATUS_ICONS[agent.status] || '▢',

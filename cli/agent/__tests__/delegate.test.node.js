@@ -651,3 +651,71 @@ describe('formatDelegationResults', () => {
     expect(out.trimEnd().endsWith('was done')).toBe(true);
   });
 });
+
+describe('wave progress reporting', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    lastWorkerArgs = null;
+  });
+
+  it('reports a task as running only when its wave starts', async () => {
+    const seen = [];
+    runMock.mockImplementation(makeRunImpl({ tokens: ['x'] }));
+    await delegateTasks(
+      [
+        { id: 'build', role: 'implementer' },
+        { id: 'review', role: 'reviewer', dependsOn: ['build'] },
+      ],
+      'p',
+      { delegateProviders: ['ollama'], providerChain: ['ollama'] },
+      { onProgress: (u) => seen.push(u) },
+    );
+    // Two waves, so two separate announcements rather than both up front.
+    expect(seen.map((u) => u.role)).toEqual(['implementer', 'reviewer']);
+  });
+
+  it('announces every task in a single wave together', async () => {
+    const seen = [];
+    runMock.mockImplementation(makeRunImpl());
+    await delegateTasks(
+      [{ role: 'reviewer' }, { role: 'security' }],
+      'p',
+      { delegateProviders: ['ollama'], providerChain: ['ollama'] },
+      { onProgress: (u) => seen.push(u) },
+    );
+    expect(seen).toHaveLength(2);
+    expect(seen.every((u) => u.status === 'running')).toBe(true);
+  });
+
+  it('reports the original target index so rows line up', async () => {
+    const seen = [];
+    runMock.mockImplementation(makeRunImpl());
+    await delegateTasks(
+      [
+        { id: 'review', role: 'reviewer', dependsOn: ['build'] },
+        { id: 'build', role: 'implementer' },
+      ],
+      'p',
+      { delegateProviders: ['ollama'], providerChain: ['ollama'] },
+      { onProgress: (u) => seen.push(u) },
+    );
+    expect(seen[0]).toMatchObject({ index: 1, role: 'implementer' });
+    expect(seen[1]).toMatchObject({ index: 0, role: 'reviewer' });
+  });
+
+  it('includes the resolved provider in the progress update', async () => {
+    const seen = [];
+    runMock.mockImplementation(makeRunImpl());
+    await delegateTasks([{ role: 'reviewer' }], 'p', { providerChain: ['gemini'] }, {
+      onProgress: (u) => seen.push(u),
+    });
+    expect(seen[0].provider).toBe('gemini');
+  });
+
+  it('works fine when no onProgress callback was given', async () => {
+    runMock.mockImplementation(makeRunImpl());
+    await expect(
+      delegateTasks([{ role: 'reviewer' }], 'p', { providerChain: ['ollama'] }),
+    ).resolves.toHaveLength(1);
+  });
+});

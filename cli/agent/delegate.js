@@ -395,7 +395,11 @@ function runOne(target, prompt, config, { attachments = [], signal, modes = {} }
  *     receives their output. Independent tasks still run in parallel.
  * @param {string} defaultPrompt — used for any target that doesn't specify its own prompt
  * @param {object} config — CLI config (API keys, etc.)
- * @param {{attachments?: Array, signal?: AbortSignal, modes?: object}} opts
+ * @param {{attachments?: Array, signal?: AbortSignal, modes?: object,
+ *          onProgress?: (update: {index: number, role: string, provider: string|null,
+ *                                 model: string|null, status: string}) => void}} opts
+ *   — onProgress fires as each wave begins, so a caller can show which agents
+ *     are actually working rather than marking them all running up front.
  * @returns {Promise<Array<{role: string, provider: string, model: string|null, text?: string, error?: string}>>}
  */
 export async function delegateTasks(rawTargets, defaultPrompt, config = {}, opts = {}) {
@@ -468,6 +472,21 @@ export async function delegateTasks(rawTargets, defaultPrompt, config = {}, opts
   // dependsOn anywhere this collapses to a single wave — the original flat
   // fan-out, unchanged.
   for (const wave of planWaves(capped)) {
+    // Announced as the wave starts, not when the fan-out was requested: a task
+    // waiting on an earlier wave is queued, not running, and saying otherwise
+    // makes the progress view describe work that has not begun.
+    if (typeof opts.onProgress === 'function') {
+      for (const t of wave) {
+        opts.onProgress({
+          index: t.order,
+          role: getRole(t.role).name,
+          provider: resolveProvider(t, getRole(t.role), config),
+          model: t.model || null,
+          status: 'running',
+        });
+      }
+    }
+
     const waveResults = await Promise.all(wave.map(runTarget));
     wave.forEach((target, i) => {
       resultsById.set(target.id, waveResults[i]);
