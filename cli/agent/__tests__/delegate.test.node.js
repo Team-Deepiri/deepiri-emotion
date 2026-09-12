@@ -15,7 +15,7 @@ vi.mock('../AgentWorker.js', () => ({
   },
 }));
 
-import { delegateTasks } from '../delegate.js';
+import { delegateTasks, planWaves } from '../delegate.js';
 import { getRole } from '../roles.js';
 
 /** Simulates a sub-agent emitting tokens then finishing, on its own isolated bus. */
@@ -329,5 +329,158 @@ describe('provider resolution by role tier', () => {
     const results = await delegateTasks([{ role: 'reviewer' }], 'p', {});
     expect(results[0].error).toMatch(/No provider available/);
     expect(runMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('planWaves', () => {
+  const ids = (waves) => waves.map((w) => w.map((t) => t.id));
+
+  it('puts everything in one wave when nothing declares a dependency', () => {
+    expect(ids(planWaves([{ id: 'a' }, { id: 'b' }, { id: 'c' }]))).toEqual([['a', 'b', 'c']]);
+  });
+
+  it('assigns ids to targets that do not supply one', () => {
+    expect(ids(planWaves([{}, {}]))).toEqual([['task-1', 'task-2']]);
+  });
+
+  it('orders a dependent task into a later wave', () => {
+    const waves = planWaves([
+      { id: 'review', dependsOn: ['build'] },
+      { id: 'build' },
+    ]);
+    expect(ids(waves)).toEqual([['build'], ['review']]);
+  });
+
+  it('keeps independent tasks together in the same wave', () => {
+    const waves = planWaves([
+      { id: 'build' },
+      { id: 'review', dependsOn: ['build'] },
+      { id: 'security', dependsOn: ['build'] },
+    ]);
+    expect(ids(waves)).toEqual([['build'], ['review', 'security']]);
+  });
+
+  it('handles a chain of three', () => {
+    const waves = planWaves([
+      { id: 'c', dependsOn: ['b'] },
+      { id: 'b', dependsOn: ['a'] },
+      { id: 'a' },
+    ]);
+    expect(ids(waves)).toEqual([['a'], ['b'], ['c']]);
+  });
+
+  it('treats a dependency on an unknown id as already satisfied', () => {
+    expect(ids(planWaves([{ id: 'a', dependsOn: ['ghost'] }]))).toEqual([['a']]);
+  });
+
+  it('breaks a dependency cycle into a final wave rather than hanging', () => {
+    const waves = planWaves([
+      { id: 'a', dependsOn: ['b'] },
+      { id: 'b', dependsOn: ['a'] },
+    ]);
+    expect(ids(waves)).toEqual([['a', 'b']]);
+  });
+
+  it('still schedules the acyclic part before breaking a cycle', () => {
+    const waves = planWaves([
+      { id: 'free' },
+      { id: 'a', dependsOn: ['b'] },
+      { id: 'b', dependsOn: ['a'] },
+    ]);
+    expect(ids(waves)).toEqual([['free'], ['a', 'b']]);
+  });
+
+  it('returns no waves for no targets', () => {
+    expect(planWaves([])).toEqual([]);
+  });
+});
+
+describe('wave execution', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    lastWorkerArgs = null;
+  });
+
+  it('runs a dependent task only after its dependency finished', async () => {
+    const startOrder = [];
+    runMock.mockImplementation((args) => {
+      startOrder.push(args.task);
+      return makeRunImpl({ tokens: ['out'] })(args);
+    });
+    await delegateTasks(
+      [
+        { id: 'review', role: 'reviewer', prompt: 'review it', dependsOn: ['build'] },
+        { id: 'build', role: 'implementer', prompt: 'build it' },
+      ],
+      'p',
+      { delegateProviders: ['ollama'], providerChain: ['ollama'] },
+    );
+    expect(startOrder[0]).toContain('build it');
+    expect(startOrder[1]).toContain('review it');
+  });
+
+  it('feeds a dependency output into the dependent task prompt', async () => {
+    const tasks = [];
+    runMock.mockImplementation((args) => {
+      tasks.push(args.task);
+      return makeRunImpl({ tokens: ['THE DIFF'] })(args);
+    });
+    await delegateTasks(
+      [
+        { id: 'build', role: 'implementer', prompt: 'build it' },
+        { id: 'review', role: 'reviewer', prompt: 'review it', dependsOn: ['build'] },
+      ],
+      'p',
+      { delegateProviders: ['ollama'], providerChain: ['ollama'] },
+    );
+    const reviewPrompt = tasks.find((t) => t.includes('review it'));
+    expect(reviewPrompt).toContain('THE DIFF');
+    expect(reviewPrompt).toContain('implementer');
+  });
+
+  it('does not forward a failed dependency output', async () => {
+    const tasks = [];
+    runMock
+      .mockImplementationOnce((args) => {
+        tasks.push(args.task);
+        return makeRunImpl({ errorMessage: 'boom' })(args);
+      })
+      .mockImplementationOnce((args) => {
+        tasks.push(args.task);
+        return makeRunImpl({ tokens: ['ok'] })(args);
+      });
+    await delegateTasks(
+      [
+        { id: 'build', role: 'implementer', prompt: 'build it' },
+        { id: 'review', role: 'reviewer', prompt: 'review it', dependsOn: ['build'] },
+      ],
+      'p',
+      { delegateProviders: ['ollama'], providerChain: ['ollama'] },
+    );
+    const reviewPrompt = tasks.find((t) => t.includes('review it'));
+    expect(reviewPrompt).not.toContain('Output from');
+  });
+
+  it('returns results in the order the targets were given, not wave order', async () => {
+    runMock.mockImplementation(makeRunImpl({ tokens: ['x'] }));
+    const results = await delegateTasks(
+      [
+        { id: 'review', role: 'reviewer', dependsOn: ['build'] },
+        { id: 'build', role: 'implementer' },
+      ],
+      'p',
+      { delegateProviders: ['ollama'], providerChain: ['ollama'] },
+    );
+    expect(results.map((r) => r.role)).toEqual(['reviewer', 'implementer']);
+  });
+
+  it('still caps total targets across all waves', async () => {
+    runMock.mockImplementation(makeRunImpl());
+    const targets = Array.from({ length: 8 }, (_, i) => ({ id: `t${i}`, role: 'reviewer' }));
+    const results = await delegateTasks(targets, 'p', {
+      delegateProviders: ['ollama'],
+      providerChain: ['ollama'],
+    });
+    expect(results).toHaveLength(5);
   });
 });

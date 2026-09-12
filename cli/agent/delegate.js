@@ -70,6 +70,77 @@ function resolveProvider(target, role, config) {
   return config.providerChain?.[0] || null;
 }
 
+/** Upstream output is trimmed to this before being fed to a dependent task. */
+const MAX_UPSTREAM_CHARS = 4000;
+
+/**
+ * Order targets into waves that can each run in parallel.
+ *
+ * A flat Promise.all can't express "review what the implementer wrote" — the
+ * reviewer would run against nothing. Tasks may therefore declare `dependsOn`,
+ * and everything with its dependencies met runs together in one wave before
+ * the next wave starts.
+ *
+ * Two defensive choices, both because these ids come from model output rather
+ * than a trusted caller:
+ *  - a dependency on an id that doesn't exist is treated as already satisfied,
+ *    so one hallucinated id can't strand a task forever
+ *  - a dependency cycle doesn't hard-fail; the tasks still caught in it run
+ *    together as a final wave, losing their ordering but not the work
+ *
+ * @param {Array<object>} targets
+ * @returns {Array<Array<object>>} waves, each an array of targets to run together
+ */
+export function planWaves(targets) {
+  const byId = new Map();
+  const prepared = targets.map((t, i) => {
+    const id = typeof t.id === 'string' && t.id ? t.id : `task-${i + 1}`;
+    const prep = { ...t, id, order: i };
+    byId.set(id, prep);
+    return prep;
+  });
+
+  const waves = [];
+  const completed = new Set();
+  let remaining = prepared;
+
+  while (remaining.length > 0) {
+    const ready = remaining.filter((t) => {
+      const deps = Array.isArray(t.dependsOn) ? t.dependsOn : [];
+      return deps.every((d) => !byId.has(d) || completed.has(d));
+    });
+
+    if (ready.length === 0) {
+      waves.push(remaining);
+      break;
+    }
+
+    waves.push(ready);
+    for (const t of ready) completed.add(t.id);
+    const readySet = new Set(ready);
+    remaining = remaining.filter((t) => !readySet.has(t));
+  }
+
+  return waves;
+}
+
+/**
+ * Build the prompt for a task, prefixing whatever its dependencies produced.
+ * Without this a dependent task runs in the same blind state as a parallel
+ * one and the ordering buys nothing.
+ */
+function promptWithUpstream(target, defaultPrompt, resultsById) {
+  const base = target.prompt || defaultPrompt;
+  const deps = Array.isArray(target.dependsOn) ? target.dependsOn : [];
+  const upstream = deps
+    .map((id) => resultsById.get(id))
+    .filter((r) => r && r.text && !r.error)
+    .map((r) => `[Output from the ${r.role} agent]\n${r.text.slice(0, MAX_UPSTREAM_CHARS)}`);
+
+  if (upstream.length === 0) return base;
+  return `${base}\n\n${upstream.join('\n\n')}`;
+}
+
 /** How many delegation levels deep the agent holding this config already is. */
 function currentDepth(config = {}) {
   const depth = Number(config.delegationDepth);
@@ -181,10 +252,13 @@ function runOne(target, prompt, config, { attachments = [], signal, modes = {} }
 /**
  * Fan a prompt out to multiple provider/model targets in parallel, each as a
  * full tool-using sub-agent.
- * @param {Array<{role?: string, provider?: string, model?: string, prompt?: string}>} targets
+ * @param {Array<{role?: string, provider?: string, model?: string, prompt?: string,
+ *                id?: string, dependsOn?: string[]}>} targets
  *   — `role` selects the sub-agent's charter and tool allowlist (see roles.js);
  *     an unknown or missing role falls back to the generalist. `provider` is
- *     optional: without one it is resolved from the role's tier.
+ *     optional: without one it is resolved from the role's tier. `dependsOn`
+ *     names other targets' `id`s; a task runs only after those finish, and
+ *     receives their output. Independent tasks still run in parallel.
  * @param {string} defaultPrompt — used for any target that doesn't specify its own prompt
  * @param {object} config — CLI config (API keys, etc.)
  * @param {{attachments?: Array, signal?: AbortSignal, modes?: object}} opts
@@ -215,31 +289,53 @@ export async function delegateTasks(targets, defaultPrompt, config = {}, opts = 
     }));
   }
 
-  return Promise.all(
-    capped.map((target) => {
-      const role = getRole(target.role);
-      // Resolved up front so the provider is settled before any of the checks
-      // below report on it — a target that named no provider still needs a
-      // concrete one in its result row.
-      const provider = resolveProvider(target, role, config);
+  // One task per id, so a dependent task can find what it depends on, and the
+  // original order can be restored at the end — callers (and the UI) index
+  // results positionally against the targets they passed in.
+  const resultsById = new Map();
+  const ordered = [];
 
-      if (!provider) {
-        return Promise.resolve({
-          role: role.name,
-          provider: null,
-          model: target.model || null,
-          error: 'No provider available for delegation',
-        });
-      }
-      if (allowed.size > 0 && !allowed.has(provider)) {
-        return Promise.resolve({
-          role: role.name,
-          provider,
-          model: target.model || null,
-          error: `Provider "${provider}" is not enabled for delegation`,
-        });
-      }
-      return runOne({ ...target, provider }, defaultPrompt, config, opts);
-    }),
-  );
+  const runTarget = (target) => {
+    const role = getRole(target.role);
+    // Resolved up front so the provider is settled before any of the checks
+    // below report on it — a target that named no provider still needs a
+    // concrete one in its result row.
+    const provider = resolveProvider(target, role, config);
+
+    if (!provider) {
+      return Promise.resolve({
+        role: role.name,
+        provider: null,
+        model: target.model || null,
+        error: 'No provider available for delegation',
+      });
+    }
+    if (allowed.size > 0 && !allowed.has(provider)) {
+      return Promise.resolve({
+        role: role.name,
+        provider,
+        model: target.model || null,
+        error: `Provider "${provider}" is not enabled for delegation`,
+      });
+    }
+    return runOne(
+      { ...target, provider, prompt: promptWithUpstream(target, defaultPrompt, resultsById) },
+      defaultPrompt,
+      config,
+      opts,
+    );
+  };
+
+  // Waves run in sequence; everything inside a wave runs in parallel. With no
+  // dependsOn anywhere this collapses to a single wave — the original flat
+  // fan-out, unchanged.
+  for (const wave of planWaves(capped)) {
+    const waveResults = await Promise.all(wave.map(runTarget));
+    wave.forEach((target, i) => {
+      resultsById.set(target.id, waveResults[i]);
+      ordered.push({ order: target.order, result: waveResults[i] });
+    });
+  }
+
+  return ordered.sort((a, b) => a.order - b.order).map((e) => e.result);
 }
