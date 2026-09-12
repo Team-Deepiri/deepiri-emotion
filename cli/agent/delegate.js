@@ -195,6 +195,86 @@ function promptWithUpstream(target, defaultPrompt, resultsById) {
   return `${base}\n\n${upstream.join('\n\n')}`;
 }
 
+/** Total budget for everything delegation feeds back into the parent's context. */
+const MAX_SYNTHESIS_CHARS = 6000;
+
+/**
+ * Split a character budget across texts, smallest first.
+ *
+ * An even split wastes budget: three agents where two answered in a sentence
+ * and one wrote at length would truncate the long one at a third of the
+ * budget while the short ones leave most of theirs unused. Giving each text
+ * the smaller of {its length, an even share of what's left} lets the unused
+ * remainder flow to whoever actually needs it.
+ *
+ * @param {string[]} texts
+ * @param {number} total
+ * @returns {number[]} per-text character limits, in the original order
+ */
+function allocateBudget(texts, total) {
+  const limits = new Array(texts.length).fill(0);
+  const bySize = texts
+    .map((t, i) => ({ i, len: t.length }))
+    .sort((a, b) => a.len - b.len);
+
+  let remaining = total;
+  let left = bySize.length;
+  for (const { i, len } of bySize) {
+    const share = Math.floor(remaining / left);
+    limits[i] = Math.min(len, share);
+    remaining -= limits[i];
+    left--;
+  }
+  return limits;
+}
+
+/**
+ * Render delegation results as context for the parent agent to synthesize.
+ *
+ * Previously this was JSON.stringify(results).slice(0, 6000) — which could cut
+ * mid-string and hand the model malformed JSON, and gave it no instruction
+ * beyond the raw array, so the natural thing to do was concatenate the pieces.
+ * Attributing each section by role and stating the job explicitly is what
+ * turns a pile of answers into one answer.
+ *
+ * @param {Array<{role?: string, provider?: string, text?: string, error?: string}>} results
+ * @returns {string}
+ */
+export function formatDelegationResults(results = []) {
+  const succeeded = results.filter((r) => !r.error && r.text);
+  const failed = results.filter((r) => r.error);
+  const silent = results.filter((r) => !r.error && !r.text);
+
+  const limits = allocateBudget(succeeded.map((r) => r.text), MAX_SYNTHESIS_CHARS);
+  const sections = succeeded.map((r, i) => {
+    const label = r.provider ? `${r.role || 'agent'} (${r.provider})` : (r.role || 'agent');
+    const truncated = r.text.length > limits[i];
+    const body = truncated ? `${r.text.slice(0, limits[i])}\n… (truncated)` : r.text;
+    return `--- ${label} ---\n${body}`;
+  });
+
+  for (const r of failed) {
+    sections.push(`--- ${r.role || 'agent'}${r.provider ? ` (${r.provider})` : ''}: FAILED ---\n${r.error}`);
+  }
+  for (const r of silent) {
+    sections.push(`--- ${r.role || 'agent'}: returned nothing ---`);
+  }
+
+  const count = results.length;
+  return `[Delegation results — ${count} agent${count === 1 ? '' : 's'}]
+
+${sections.join('\n\n')}
+
+[Synthesis]
+The sections above are separate agents' work on different parts of one task.
+Combine them into a single coherent answer for the user:
+- do NOT concatenate the sections or report them one agent at a time
+- the user does not care which agent said what — drop the attributions
+- where agents disagree, resolve it and say which you went with and why
+- where an agent failed or returned nothing, say plainly what is missing
+  rather than implying that part of the work was done`;
+}
+
 /** How many delegation levels deep the agent holding this config already is. */
 function currentDepth(config = {}) {
   const depth = Number(config.delegationDepth);

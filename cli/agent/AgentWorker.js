@@ -16,7 +16,7 @@ import { streamLLM as defaultStreamLLM } from './llmStream.js';
 import { parseToolIntent as defaultParseToolIntent, executeTool as defaultExecuteTool } from './tools.js';
 import { maybeConfirmAndExecute as defaultMaybeConfirmAndExecute, isGatedTool } from './confirm.js';
 import { createSimplePlan as defaultCreateSimplePlan } from './planner.js';
-import { delegateTasks as defaultDelegateTasks, normalizeTargets } from './delegate.js';
+import { delegateTasks as defaultDelegateTasks, normalizeTargets, formatDelegationResults } from './delegate.js';
 import { formatRolesForPrompt } from './roles.js';
 import { discoverGuidance as defaultDiscoverGuidance } from './guidance.js';
 import { detectSupportNeed as defaultDetectSupportNeed } from './support.js';
@@ -1046,8 +1046,7 @@ ${this.config.projectSnapshot}`;
 
           agentContext = `${agentContext}
 
-        [Delegation results]
-        ${JSON.stringify(results, null, 2).slice(0, 6000)}`;
+${formatDelegationResults(results)}`;
           continue;
         }
 

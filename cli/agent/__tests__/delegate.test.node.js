@@ -15,7 +15,7 @@ vi.mock('../AgentWorker.js', () => ({
   },
 }));
 
-import { delegateTasks, planWaves, normalizeTargets } from '../delegate.js';
+import { delegateTasks, planWaves, normalizeTargets, formatDelegationResults } from '../delegate.js';
 import { getRole } from '../roles.js';
 
 /** Simulates a sub-agent emitting tokens then finishing, on its own isolated bus. */
@@ -571,5 +571,83 @@ describe('delegateTasks input validation', () => {
     );
     expect(results).toHaveLength(1);
     expect(results[0].role).toBe('reviewer');
+  });
+});
+
+describe('formatDelegationResults', () => {
+  it('labels each section by role and provider', () => {
+    const out = formatDelegationResults([
+      { role: 'implementer', provider: 'anthropic', text: 'wrote the code' },
+      { role: 'reviewer', provider: 'ollama', text: 'looks fine' },
+    ]);
+    expect(out).toContain('--- implementer (anthropic) ---');
+    expect(out).toContain('--- reviewer (ollama) ---');
+    expect(out).toContain('wrote the code');
+    expect(out).toContain('looks fine');
+  });
+
+  it('tells the parent to synthesize rather than concatenate', () => {
+    const out = formatDelegationResults([{ role: 'reviewer', text: 'ok' }]);
+    expect(out).toContain('[Synthesis]');
+    expect(out).toContain('do NOT concatenate');
+  });
+
+  it('reports a failed agent as failed instead of dropping it', () => {
+    const out = formatDelegationResults([
+      { role: 'implementer', text: 'done' },
+      { role: 'security', provider: 'ollama', error: 'Timed out or cancelled' },
+    ]);
+    expect(out).toContain('security (ollama): FAILED');
+    expect(out).toContain('Timed out or cancelled');
+  });
+
+  it('distinguishes an agent that returned nothing from one that failed', () => {
+    const out = formatDelegationResults([{ role: 'tester', text: '' }]);
+    expect(out).toContain('returned nothing');
+    expect(out).not.toContain('FAILED');
+  });
+
+  it('counts the agents in the header', () => {
+    expect(formatDelegationResults([{ role: 'a', text: 'x' }])).toContain('1 agent]');
+    expect(formatDelegationResults([
+      { role: 'a', text: 'x' },
+      { role: 'b', text: 'y' },
+    ])).toContain('2 agents]');
+  });
+
+  it('handles no results at all', () => {
+    expect(() => formatDelegationResults([])).not.toThrow();
+    expect(formatDelegationResults()).toContain('0 agents');
+  });
+
+  it('keeps the whole output when everything fits in budget', () => {
+    const out = formatDelegationResults([{ role: 'a', text: 'short answer' }]);
+    expect(out).toContain('short answer');
+    expect(out).not.toContain('truncated');
+  });
+
+  it('truncates an oversized result and says so', () => {
+    const out = formatDelegationResults([{ role: 'a', text: 'x'.repeat(20_000) }]);
+    expect(out).toContain('… (truncated)');
+    expect(out.length).toBeLessThan(20_000);
+  });
+
+  it('does not starve a long result when a short one leaves budget unused', () => {
+    const out = formatDelegationResults([
+      { role: 'brief', text: 'yes' },
+      { role: 'verbose', text: 'y'.repeat(10_000) },
+    ]);
+    expect(out).toContain('yes');
+    // An even split would cap the long one at half the budget; water-filling
+    // hands it the remainder the short answer never used.
+    expect(out.match(/y{3000,}/)).not.toBeNull();
+  });
+
+  it('never truncates mid-JSON the way the old raw dump could', () => {
+    const out = formatDelegationResults([
+      { role: 'a', provider: 'ollama', text: 'z'.repeat(9000) },
+    ]);
+    expect(out).toContain('[Synthesis]');
+    expect(out.trimEnd().endsWith('was done')).toBe(true);
   });
 });
