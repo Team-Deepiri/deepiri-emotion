@@ -15,7 +15,7 @@ vi.mock('../AgentWorker.js', () => ({
   },
 }));
 
-import { delegateTasks, planWaves } from '../delegate.js';
+import { delegateTasks, planWaves, normalizeTargets } from '../delegate.js';
 import { getRole } from '../roles.js';
 
 /** Simulates a sub-agent emitting tokens then finishing, on its own isolated bus. */
@@ -482,5 +482,94 @@ describe('wave execution', () => {
       providerChain: ['ollama'],
     });
     expect(results).toHaveLength(5);
+  });
+});
+
+describe('normalizeTargets', () => {
+  it('returns nothing for input that is not an array', () => {
+    expect(normalizeTargets(undefined)).toEqual([]);
+    expect(normalizeTargets(null)).toEqual([]);
+    expect(normalizeTargets('implementer')).toEqual([]);
+    expect(normalizeTargets({ role: 'implementer' })).toEqual([]);
+  });
+
+  it('drops entries that are not objects', () => {
+    expect(normalizeTargets(['build', 42, null, ['x'], { role: 'tester' }])).toHaveLength(1);
+  });
+
+  it('assigns an id to a task that has none', () => {
+    expect(normalizeTargets([{ role: 'tester' }])[0].id).toBe('task-1');
+  });
+
+  it('keeps an explicit id', () => {
+    expect(normalizeTargets([{ id: 'build', role: 'tester' }])[0].id).toBe('build');
+  });
+
+  it('makes duplicate ids unique so dependsOn cannot resolve ambiguously', () => {
+    const ids = normalizeTargets([
+      { id: 'build', role: 'implementer' },
+      { id: 'build', role: 'tester' },
+    ]).map((t) => t.id);
+    expect(new Set(ids).size).toBe(2);
+  });
+
+  it('replaces an unknown role with the generalist', () => {
+    expect(normalizeTargets([{ role: 'wizard' }])[0].role).toBe('generalist');
+    expect(normalizeTargets([{ role: 42 }])[0].role).toBe('generalist');
+  });
+
+  it('accepts dependsOn given as a bare string', () => {
+    expect(normalizeTargets([{ id: 'r', dependsOn: 'build' }])[0].dependsOn).toEqual(['build']);
+  });
+
+  it('drops a self-dependency, which could only deadlock', () => {
+    expect(normalizeTargets([{ id: 'a', dependsOn: ['a'] }])[0].dependsOn).toBeUndefined();
+  });
+
+  it('discards non-string entries inside dependsOn', () => {
+    expect(normalizeTargets([{ id: 'r', dependsOn: ['build', 7, null, ''] }])[0].dependsOn)
+      .toEqual(['build']);
+  });
+
+  it('omits blank prompts, providers and models rather than passing empties through', () => {
+    const t = normalizeTargets([{ role: 'tester', prompt: '   ', provider: '', model: null }])[0];
+    expect(t.prompt).toBeUndefined();
+    expect(t.provider).toBeUndefined();
+    expect(t.model).toBeUndefined();
+  });
+
+  it('trims surrounding whitespace on string fields', () => {
+    const t = normalizeTargets([{ role: 'tester', prompt: '  do it  ', provider: ' ollama ' }])[0];
+    expect(t.prompt).toBe('do it');
+    expect(t.provider).toBe('ollama');
+  });
+
+  it('is idempotent, since both the worker and delegateTasks normalize', () => {
+    const once = normalizeTargets([{ id: 'a', role: 'reviewer', dependsOn: 'b' }]);
+    expect(normalizeTargets(once)).toEqual(once);
+  });
+});
+
+describe('delegateTasks input validation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    lastWorkerArgs = null;
+  });
+
+  it('reports no targets when every entry was malformed', async () => {
+    const results = await delegateTasks([null, 'x', 5], 'p', { delegateProviders: ['ollama'] });
+    expect(results).toEqual([{ error: 'No delegation targets provided' }]);
+    expect(runMock).not.toHaveBeenCalled();
+  });
+
+  it('runs the valid tasks and ignores the malformed ones', async () => {
+    runMock.mockImplementation(makeRunImpl());
+    const results = await delegateTasks(
+      [null, { role: 'reviewer' }, 'nope'],
+      'p',
+      { delegateProviders: ['ollama'], providerChain: ['ollama'] },
+    );
+    expect(results).toHaveLength(1);
+    expect(results[0].role).toBe('reviewer');
   });
 });

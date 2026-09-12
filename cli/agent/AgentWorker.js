@@ -16,7 +16,8 @@ import { streamLLM as defaultStreamLLM } from './llmStream.js';
 import { parseToolIntent as defaultParseToolIntent, executeTool as defaultExecuteTool } from './tools.js';
 import { maybeConfirmAndExecute as defaultMaybeConfirmAndExecute, isGatedTool } from './confirm.js';
 import { createSimplePlan as defaultCreateSimplePlan } from './planner.js';
-import { delegateTasks as defaultDelegateTasks } from './delegate.js';
+import { delegateTasks as defaultDelegateTasks, normalizeTargets } from './delegate.js';
+import { formatRolesForPrompt } from './roles.js';
 import { discoverGuidance as defaultDiscoverGuidance } from './guidance.js';
 import { detectSupportNeed as defaultDetectSupportNeed } from './support.js';
 import { stopReason, toolCallKey } from './loopGuards.js';
@@ -325,17 +326,40 @@ export class AgentWorker {
         - memory_get: retrieve a previously saved fact — args: { key }
         - memory_list: list all saved memory keys — args: {}
 
-        Delegation (fan-out to other model providers, runs in parallel):
-        - delegate: send a prompt to multiple provider/model targets at once and
-          get all their answers back — args: { tasks: [{ provider, model?, prompt? }], prompt? }
+        Delegation (fan out to sub-agents that run in parallel):
+        - delegate: split work across sub-agents and get their results back
+          — args: { tasks: [{ role?, prompt?, id?, dependsOn?, provider?, model? }], prompt? }
+
+          Two ways to use it:
+          1. SPECIALIZE — different roles doing different pieces of one job. Give each
+             task a "role" and its own "prompt" describing just that agent's piece.
+             Available roles:
+${formatRolesForPrompt()}
+          2. COMPARE — the same question to several providers. Give each task a
+             "provider" and leave "role" unset.
+
+          Ordering:
+          - tasks run in parallel by default
+          - give a task an "id", and list other tasks' ids in "dependsOn", to make it
+            wait for them and receive their output
+          - a reviewer, tester or security agent almost always needs dependsOn pointing
+            at the implementer — otherwise it runs before the work exists and reviews nothing
+
+          Example — implement, then review and audit that work in parallel:
+          { "tool": "delegate", "args": { "tasks": [
+            { "id": "impl", "role": "implementer", "prompt": "Add input validation to parseConfig in src/config.js" },
+            { "id": "rev", "role": "reviewer", "dependsOn": ["impl"], "prompt": "Review the validation change for correctness" },
+            { "id": "sec", "role": "security", "dependsOn": ["impl"], "prompt": "Audit the validation change for injection risk" }
+          ] } }
+
           - "provider" must be one of: ollama, anthropic, openai, gemini, openrouter, claude-cli, cursor, cyrex
-          - each target may override the prompt; targets without one use the top-level "prompt"
-            (or, if omitted, the user's current message)
-          - use this when: the user explicitly asks to delegate/compare/ask multiple
-            models or providers, OR the task is genuinely complex enough that getting
-            independent takes from more than one model is worth the latency
+            — omit it and a provider is chosen for the role automatically
+          - targets without their own prompt use the top-level "prompt" (or the user's message)
+          - use this when: the user explicitly asks to delegate/compare models, OR the task
+            genuinely decomposes into pieces that different specialists can work at once
           - do NOT use delegate for ordinary questions — it is slower and costs more
             than answering directly; reserve it for real fan-out value
+          - keep the task list small; only the first few tasks run
 
         Mutation (require user confirmation unless auto mode):
         - create_file: create a new file — args: { filePath, content }
@@ -983,16 +1007,19 @@ ${this.config.projectSnapshot}`;
         if (loopToolIntent && loopToolIntent.tool === 'delegate') {
           toolCallCount++;
           noProgressStreak = 0;
-          const targets = Array.isArray(loopToolIntent.args.tasks) ? loopToolIntent.args.tasks : [];
+          // Normalized before the step events so the labels describe what will
+          // actually run — a malformed task is dropped here rather than being
+          // announced and then silently discarded inside delegateTasks.
+          const targets = normalizeTargets(loopToolIntent.args.tasks);
           wbus.emit(EVENTS.AGENT_STEP, {
             id: this._nextStepId(),
             type: 'delegate',
             status: 'running',
-            message: `Delegating to ${targets.map((t) => `${t.provider}${t.model ? ':' + t.model : ''}`).join(', ')}`,
+            message: `Delegating to ${targets.map((t) => t.provider ? `${t.role} (${t.provider})` : t.role).join(', ')}`,
           });
           targets.forEach((t, i) => {
             wbus.emit(EVENTS.DELEGATE_STEP, {
-              index: i, provider: t.provider, model: t.model || null, status: 'running',
+              index: i, role: t.role, provider: t.provider || null, model: t.model || null, status: 'running',
             });
           });
 
@@ -1005,7 +1032,7 @@ ${this.config.projectSnapshot}`;
 
           results.forEach((r, i) => {
             wbus.emit(EVENTS.DELEGATE_STEP, {
-              index: i, provider: r.provider, model: r.model || null,
+              index: i, role: r.role || null, provider: r.provider, model: r.model || null,
               status: r.error ? 'error' : 'done', error: r.error || null,
             });
           });

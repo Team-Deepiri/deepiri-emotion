@@ -73,6 +73,60 @@ function resolveProvider(target, role, config) {
 /** Upstream output is trimmed to this before being fed to a dependent task. */
 const MAX_UPSTREAM_CHARS = 4000;
 
+/** Trim for a model-supplied string field; non-strings become undefined. */
+function cleanString(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+/**
+ * Coerce a model-produced `tasks` array into targets delegateTasks can trust.
+ *
+ * Everything here arrives as free-form JSON the LLM wrote, so each field is
+ * treated as a suggestion rather than a guarantee: a task that is not an
+ * object, a role that does not exist, a dependsOn that is a bare string
+ * instead of an array. Rather than rejecting the whole delegation over one
+ * malformed entry — which would waste the turn — each field is repaired to
+ * something runnable, and only entries with no usable content at all are
+ * dropped.
+ *
+ * @param {unknown} raw — whatever the model put in args.tasks
+ * @returns {Array<object>} normalized targets, safe to hand to planWaves
+ */
+export function normalizeTargets(raw) {
+  if (!Array.isArray(raw)) return [];
+
+  const seenIds = new Set();
+  const normalized = [];
+
+  for (const [i, entry] of raw.entries()) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+
+    // Unique ids matter: dependsOn resolves by id, and a duplicate would let
+    // one task silently satisfy another task's dependency.
+    let id = cleanString(entry.id) || `task-${i + 1}`;
+    while (seenIds.has(id)) id = `${id}-${i + 1}`;
+    seenIds.add(id);
+
+    // A bare string is the common malformed shape ("dependsOn": "build"),
+    // and is worth accepting rather than discarding the ordering entirely.
+    const rawDeps = typeof entry.dependsOn === 'string' ? [entry.dependsOn] : entry.dependsOn;
+    const dependsOn = (Array.isArray(rawDeps) ? rawDeps : [])
+      .map(cleanString)
+      .filter((d) => d && d !== id); // self-dependency would only ever deadlock
+
+    normalized.push({
+      id,
+      role: getRole(entry.role).name,
+      ...(cleanString(entry.provider) ? { provider: cleanString(entry.provider) } : {}),
+      ...(cleanString(entry.model) ? { model: cleanString(entry.model) } : {}),
+      ...(cleanString(entry.prompt) ? { prompt: cleanString(entry.prompt) } : {}),
+      ...(dependsOn.length ? { dependsOn } : {}),
+    });
+  }
+
+  return normalized;
+}
+
 /**
  * Order targets into waves that can each run in parallel.
  *
@@ -264,8 +318,12 @@ function runOne(target, prompt, config, { attachments = [], signal, modes = {} }
  * @param {{attachments?: Array, signal?: AbortSignal, modes?: object}} opts
  * @returns {Promise<Array<{role: string, provider: string, model: string|null, text?: string, error?: string}>>}
  */
-export async function delegateTasks(targets, defaultPrompt, config = {}, opts = {}) {
-  if (!Array.isArray(targets) || targets.length === 0) {
+export async function delegateTasks(rawTargets, defaultPrompt, config = {}, opts = {}) {
+  // Normalized here rather than only at the call site so every caller gets the
+  // same guarantees — these targets originate in model output regardless of
+  // which path reached us.
+  const targets = normalizeTargets(rawTargets);
+  if (targets.length === 0) {
     return [{ error: 'No delegation targets provided' }];
   }
 
