@@ -29,6 +29,8 @@ export const INITIAL_STATE = {
   queuedMessage: null,
   allowedCount: 0,
   guardMode: true,
+  /** Summaries from BACKGROUND_TASKS_CHANGED — [{ id, status, text, ... }]. */
+  backgroundTasks: [],
   tokenUsage: { used: 0, limit: DEFAULT_CONTEXT_LIMIT },
   /** Live provider progress from LLM_PROGRESS (null when idle). */
   llmProgress: null,

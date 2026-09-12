@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { execSync } from 'child_process';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { gitStatus, gitDiff } from '../gitTools.js';
+import { gitStatus, gitDiff, gitExplain } from '../gitTools.js';
 
 const GIT_ENV = {
   GIT_AUTHOR_NAME: 'Test',
@@ -203,6 +203,93 @@ describe('gitDiff', () => {
       expect(result.error).toMatch(/Not a git repository/);
     } finally {
       removeRepo(nonRepo);
+    }
+  });
+});
+
+// ─── gitExplain ───────────────────────────────────────────────────────────────
+
+describe('gitExplain', () => {
+  it('requires a path', async () => {
+    const result = await gitExplain(repo, {});
+    expect(result.error).toMatch(/path is required/);
+  });
+
+  it('returns log history for a file with a single commit', async () => {
+    const result = await gitExplain(repo, { path: 'README.md' });
+    expect(result.error).toBeUndefined();
+    expect(result.history).toHaveLength(1);
+    expect(result.history[0]).toMatchObject({ author: 'Test', subject: 'initial' });
+    expect(result.history[0].hash).toMatch(/^[0-9a-f]{12}$/);
+  });
+
+  it('orders history most-recent-first across multiple commits', async () => {
+    writeFileSync(join(repo, 'README.md'), 'second\n');
+    sh('git add README.md', repo);
+    sh('git commit -m "second commit"', repo);
+
+    const result = await gitExplain(repo, { path: 'README.md' });
+    expect(result.history.map((h) => h.subject)).toEqual(['second commit', 'initial']);
+  });
+
+  it('returns per-line blame with author, date, and commit for the current content', async () => {
+    writeFileSync(join(repo, 'README.md'), 'line one\nline two\n');
+    sh('git add README.md', repo);
+    sh('git commit -m "two lines"', repo);
+
+    const result = await gitExplain(repo, { path: 'README.md' });
+    expect(result.blame).toHaveLength(2);
+    expect(result.blame[0]).toMatchObject({ line: 1, author: 'Test', subject: 'two lines', content: 'line one' });
+    expect(result.blame[1]).toMatchObject({ line: 2, author: 'Test', subject: 'two lines', content: 'line two' });
+  });
+
+  it('attributes blame lines to the commit that last touched them', async () => {
+    writeFileSync(join(repo, 'README.md'), 'line one\nline two\n');
+    sh('git add README.md', repo);
+    sh('git commit -m "add line two"', repo);
+
+    writeFileSync(join(repo, 'README.md'), 'line one\nline two changed\n');
+    sh('git add README.md', repo);
+    sh('git commit -m "change line two"', repo);
+
+    const result = await gitExplain(repo, { path: 'README.md' });
+    const first = result.blame.find((b) => b.line === 1);
+    const second = result.blame.find((b) => b.line === 2);
+    expect(first.subject).toBe('add line two');
+    expect(second.subject).toBe('change line two');
+  });
+
+  it('uses git log -L and returns diff-style history when lineRange is given', async () => {
+    writeFileSync(join(repo, 'README.md'), 'line one\nline two\n');
+    sh('git add README.md', repo);
+    sh('git commit -m "two lines"', repo);
+
+    const result = await gitExplain(repo, { path: 'README.md', lineRange: { start: 1, end: 2 } });
+    expect(result.error).toBeUndefined();
+    expect(result.lineRange).toEqual({ start: 1, end: 2 });
+    expect(result.history).toContain('two lines');
+    expect(result.truncated).toBe(false);
+  });
+
+  it('rejects an invalid lineRange', async () => {
+    const result = await gitExplain(repo, { path: 'README.md', lineRange: { start: 5, end: 2 } });
+    expect(result.error).toMatch(/lineRange/);
+  });
+
+  it('returns empty history and blame for a nonexistent file without erroring', async () => {
+    const result = await gitExplain(repo, { path: 'does-not-exist.txt' });
+    expect(result.error).toBeUndefined();
+    expect(result.history).toEqual([]);
+    expect(result.blame).toEqual([]);
+  });
+
+  it('returns a clear error when cwd is not a git repo', async () => {
+    const nonRepo = mkdtempSync(join(tmpdir(), 'not-a-repo-'));
+    try {
+      const result = await gitExplain(nonRepo, { path: 'README.md' });
+      expect(result.error).toMatch(/Not a git repository/);
+    } finally {
+      rmSync(nonRepo, { recursive: true, force: true });
     }
   });
 });

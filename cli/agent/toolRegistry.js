@@ -20,6 +20,7 @@ export const BUILTIN_TOOL_METADATA = [
   { name: 'edit_file', requiredArgs: ['filePath', 'oldString', 'newString'] },
   { name: 'git_status', requiredArgs: [] },
   { name: 'git_diff', requiredArgs: [] },
+  { name: 'git_explain', requiredArgs: ['path'] },
   { name: 'thoughts', requiredArgs: ['thought'] },
   { name: 'memory_set', requiredArgs: ['key', 'value'] },
   { name: 'memory_get', requiredArgs: ['key'] },
@@ -27,6 +28,8 @@ export const BUILTIN_TOOL_METADATA = [
   { name: 'delegate', requiredArgs: ['tasks'] },
   { name: 'web_search', requiredArgs: ['query'] },
   { name: 'web_fetch', requiredArgs: ['url'] },
+  { name: 'find_references', requiredArgs: ['symbol'] },
+  { name: 'impact_analysis', requiredArgs: ['symbol'] },
 ];
 
 /**
