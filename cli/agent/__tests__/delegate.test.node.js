@@ -719,3 +719,37 @@ describe('wave progress reporting', () => {
     ).resolves.toHaveLength(1);
   });
 });
+
+describe('delegate timeout configuration', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    lastWorkerArgs = null;
+  });
+
+  /** The delay each sub-agent's cancel timer was scheduled with. */
+  async function timeoutUsed(config) {
+    const spy = vi.spyOn(global, 'setTimeout');
+    runMock.mockImplementation(makeRunImpl());
+    await delegateTasks([{ role: 'reviewer' }], 'p', { providerChain: ['ollama'], ...config });
+    const delays = spy.mock.calls.map((c) => c[1]);
+    spy.mockRestore();
+    return delays;
+  }
+
+  it('falls back to 45s when nothing is configured', async () => {
+    expect(await timeoutUsed({})).toContain(45_000);
+  });
+
+  it('honors a configured delegateTimeoutMs', async () => {
+    expect(await timeoutUsed({ delegateTimeoutMs: 300_000 })).toContain(300_000);
+  });
+
+  it('ignores a malformed timeout rather than scheduling NaN', async () => {
+    expect(await timeoutUsed({ delegateTimeoutMs: 'ages' })).toContain(45_000);
+  });
+
+  it('ignores a non-positive timeout, which would cancel instantly', async () => {
+    expect(await timeoutUsed({ delegateTimeoutMs: 0 })).toContain(45_000);
+    expect(await timeoutUsed({ delegateTimeoutMs: -1 })).toContain(45_000);
+  });
+});

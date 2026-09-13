@@ -25,7 +25,24 @@ import { PROVIDER_MODEL_CONFIG_KEY } from './providers/registry.js';
 import { getRole, WRITE_TOOLS } from './roles.js';
 
 const DEFAULT_MAX_TARGETS = 5;
-const DELEGATE_TIMEOUT_MS = 45_000;
+
+/**
+ * How long one sub-agent may run before it is cancelled.
+ *
+ * Configurable because the right value depends entirely on what is serving the
+ * request: a hosted model answers a delegated prompt in seconds, while a local
+ * model large enough to follow a role charter can spend well over a minute on
+ * a single turn. A fixed 45s silently turned every local-model delegation into
+ * a row of "Timed out or cancelled", which reads as the feature being broken
+ * rather than the budget being too small.
+ */
+const DEFAULT_DELEGATE_TIMEOUT_MS = 45_000;
+
+/** Per-sub-agent timeout, from config, falling back to the default. */
+function delegateTimeout(config = {}) {
+  const ms = Number(config.delegateTimeoutMs);
+  return Number.isFinite(ms) && ms > 0 ? ms : DEFAULT_DELEGATE_TIMEOUT_MS;
+}
 
 /**
  * How many levels of delegation are allowed. 1 means the main agent may
@@ -342,7 +359,7 @@ function runOne(target, prompt, config, { attachments = [], signal, modes = {} }
     const timer = setTimeout(() => {
       if (settled) return;
       worker.cancel();
-    }, DELEGATE_TIMEOUT_MS);
+    }, delegateTimeout(config));
 
     const onAbort = () => worker.cancel();
     if (signal) signal.addEventListener('abort', onAbort, { once: true });
