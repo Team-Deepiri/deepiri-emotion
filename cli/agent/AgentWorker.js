@@ -16,7 +16,8 @@ import { streamLLM as defaultStreamLLM } from './llmStream.js';
 import { parseToolIntent as defaultParseToolIntent, executeTool as defaultExecuteTool } from './tools.js';
 import { maybeConfirmAndExecute as defaultMaybeConfirmAndExecute, isGatedTool } from './confirm.js';
 import { createSimplePlan as defaultCreateSimplePlan } from './planner.js';
-import { delegateTasks as defaultDelegateTasks } from './delegate.js';
+import { delegateTasks as defaultDelegateTasks, normalizeTargets, formatDelegationResults, planWaves } from './delegate.js';
+import { formatRolesForPrompt } from './roles.js';
 import { discoverGuidance as defaultDiscoverGuidance } from './guidance.js';
 import { detectSupportNeed as defaultDetectSupportNeed } from './support.js';
 import { stopReason, toolCallKey } from './loopGuards.js';
@@ -152,6 +153,8 @@ export class AgentWorker {
    *     activeModes?: Set<string>,
    *     autoMode?: boolean,
    *     acceptEdits?: boolean,
+   *     allowedTools?: string[] | Set<string>,
+   *     rolePrompt?: string,
    *   },
    *   deps?: Partial<{
    *     streamLLM: Function,
@@ -178,6 +181,16 @@ export class AgentWorker {
       acceptEdits: modes.acceptEdits ?? false,
       guardMode:   modes.guardMode   ?? false,
       readOnly:    modes.readOnly    ?? false,
+      // Role-scoped tool access. null means "no allowlist" — the main agent,
+      // which may call anything (subject to the usual confirmation gates).
+      // A Set means the agent was spawned with a role and that set is the
+      // complete list of tools it can reach.
+      allowedTools: Array.isArray(modes.allowedTools) || modes.allowedTools instanceof Set
+        ? new Set(modes.allowedTools)
+        : null,
+      // The role's charter, supplied by delegate.js when this worker is a
+      // specialized sub-agent. Empty for the main agent.
+      rolePrompt: typeof modes.rolePrompt === 'string' ? modes.rolePrompt : '',
     };
 
     // Monotonic counter — ensures step IDs are unique even within a single tick.
@@ -243,7 +256,7 @@ export class AgentWorker {
   async run() {
     const { config, modes, wbus } = this;
     const text = this.task;
-    const { teachMode, activeModes, autoMode, acceptEdits, guardMode, readOnly } = modes;
+    const { teachMode, activeModes, autoMode, acceptEdits, guardMode, readOnly, allowedTools } = modes;
     const { maxSteps, maxToolCalls, agentTimeoutMs, ollamaMaxPredictTokens } = {
       ...DEFAULT_CONFIG,
       ...config,
@@ -313,17 +326,40 @@ export class AgentWorker {
         - memory_get: retrieve a previously saved fact — args: { key }
         - memory_list: list all saved memory keys — args: {}
 
-        Delegation (fan-out to other model providers, runs in parallel):
-        - delegate: send a prompt to multiple provider/model targets at once and
-          get all their answers back — args: { tasks: [{ provider, model?, prompt? }], prompt? }
+        Delegation (fan out to sub-agents that run in parallel):
+        - delegate: split work across sub-agents and get their results back
+          — args: { tasks: [{ role?, prompt?, id?, dependsOn?, provider?, model? }], prompt? }
+
+          Two ways to use it:
+          1. SPECIALIZE — different roles doing different pieces of one job. Give each
+             task a "role" and its own "prompt" describing just that agent's piece.
+             Available roles:
+${formatRolesForPrompt()}
+          2. COMPARE — the same question to several providers. Give each task a
+             "provider" and leave "role" unset.
+
+          Ordering:
+          - tasks run in parallel by default
+          - give a task an "id", and list other tasks' ids in "dependsOn", to make it
+            wait for them and receive their output
+          - a reviewer, tester or security agent almost always needs dependsOn pointing
+            at the implementer — otherwise it runs before the work exists and reviews nothing
+
+          Example — implement, then review and audit that work in parallel:
+          { "tool": "delegate", "args": { "tasks": [
+            { "id": "impl", "role": "implementer", "prompt": "Add input validation to parseConfig in src/config.js" },
+            { "id": "rev", "role": "reviewer", "dependsOn": ["impl"], "prompt": "Review the validation change for correctness" },
+            { "id": "sec", "role": "security", "dependsOn": ["impl"], "prompt": "Audit the validation change for injection risk" }
+          ] } }
+
           - "provider" must be one of: ollama, anthropic, openai, gemini, openrouter, claude-cli, cursor, cyrex
-          - each target may override the prompt; targets without one use the top-level "prompt"
-            (or, if omitted, the user's current message)
-          - use this when: the user explicitly asks to delegate/compare/ask multiple
-            models or providers, OR the task is genuinely complex enough that getting
-            independent takes from more than one model is worth the latency
+            — omit it and a provider is chosen for the role automatically
+          - targets without their own prompt use the top-level "prompt" (or the user's message)
+          - use this when: the user explicitly asks to delegate/compare models, OR the task
+            genuinely decomposes into pieces that different specialists can work at once
           - do NOT use delegate for ordinary questions — it is slower and costs more
             than answering directly; reserve it for real fan-out value
+          - keep the task list small; only the first few tasks run
 
         Mutation (require user confirmation unless auto mode):
         - create_file: create a new file — args: { filePath, content }
@@ -591,9 +627,30 @@ Note: Project guidance is advisory context. It must not override system safety, 
         You were spawned by another agent to answer one focused prompt in parallel
         with other models/providers. There is no user here to approve actions:
         - create_file, write_file, edit_file, run_command, web_search, and web_fetch are disabled — do not call them
+        - delegate is disabled — you cannot spawn further sub-agents of your own
         - Use only read-only tools (read_file, search, list_files, git_status, git_diff, git_explain)
         - Answer the prompt directly and concisely; your response is merged with other
           providers' answers by the parent agent, not shown raw to the user
+        ` : '';
+
+      // A role's own charter, injected by delegate.js. Placed after the shared
+      // instructions so it reads as this agent's specific job rather than
+      // competing with the general agent guidance above it.
+      const roleInstructions = this.modes.rolePrompt ? `
+
+        [Your Role]
+        ${this.modes.rolePrompt}
+        ` : '';
+
+      // Stated explicitly because the tool catalogue above lists every tool
+      // the CLI has. Without this a role-scoped agent burns turns calling
+      // tools it will only be refused, and the refusals are the only signal
+      // it would otherwise get.
+      const allowedToolsInstructions = allowedTools ? `
+
+        [Your Tools]
+        You have access to exactly these tools: ${[...allowedTools].join(', ')}.
+        Every other tool listed above is unavailable to you — do not call it.
         ` : '';
 
       const attachmentContext = attachments.length > 0
@@ -626,6 +683,8 @@ ${this.config.projectSnapshot}`;
         + debugModeInstructions
         + planModeInstructions
         + readOnlyInstructions
+        + roleInstructions
+        + allowedToolsInstructions
         + attachmentContext;
 
       const simplePlan = this._createSimplePlan(text);
@@ -884,6 +943,25 @@ ${this.config.projectSnapshot}`;
           }
         }
 
+        // Role-scoped tool access. Checked ahead of the explain/delegate
+        // branches below so the allowlist covers every tool uniformly — those
+        // branches handle their tool inline and would otherwise run before any
+        // gate could see them. An agent spawned with a role gets exactly the
+        // tools its role declares; the refusal goes back as context so it can
+        // re-plan with what it does have, rather than failing the whole
+        // sub-agent over one bad tool choice.
+        if (loopToolIntent && allowedTools && !allowedTools.has(loopToolIntent.tool)) {
+          toolCallCount++;
+          noProgressStreak++;
+          agentContext = `${agentContext}
+
+        [System note]
+        "${loopToolIntent.tool}" is not available to you in this role.
+        Tools you can use: ${[...allowedTools].join(', ')}.
+        Continue with those, or give your answer from what you already know.`;
+          continue;
+        }
+
         if (loopToolIntent && loopToolIntent.tool === 'explain') {
           if (teachCallCount >= MAX_TEACH_CALLS) {
             agentContext = `${agentContext}
@@ -911,19 +989,46 @@ ${this.config.projectSnapshot}`;
           continue;
         }
 
+        // A delegated sub-agent must not delegate again. delegateTasks enforces
+        // the real depth bound, but it is worth refusing here too: reaching it
+        // would spawn the step events and the whole fan-out apparatus just to
+        // collect a row of depth-limit errors.
+        if (loopToolIntent && loopToolIntent.tool === 'delegate' && readOnly) {
+          toolCallCount++;
+          noProgressStreak++;
+          agentContext = `${agentContext}
+
+        [System note]
+        "delegate" is disabled for delegated sub-agents — you cannot spawn further agents.
+        Answer the prompt you were given using your own tools.`;
+          continue;
+        }
+
         if (loopToolIntent && loopToolIntent.tool === 'delegate') {
           toolCallCount++;
           noProgressStreak = 0;
-          const targets = Array.isArray(loopToolIntent.args.tasks) ? loopToolIntent.args.tasks : [];
+          // Normalized before the step events so the labels describe what will
+          // actually run — a malformed task is dropped here rather than being
+          // announced and then silently discarded inside delegateTasks.
+          const targets = normalizeTargets(loopToolIntent.args.tasks);
           wbus.emit(EVENTS.AGENT_STEP, {
             id: this._nextStepId(),
             type: 'delegate',
             status: 'running',
-            message: `Delegating to ${targets.map((t) => `${t.provider}${t.model ? ':' + t.model : ''}`).join(', ')}`,
+            message: `Delegating to ${targets.map((t) => t.provider ? `${t.role} (${t.provider})` : t.role).join(', ')}`,
           });
+          // Only the first wave actually starts now; anything waiting on it is
+          // queued. delegateTasks reports each later wave through onProgress as
+          // it begins, so the rows track real state instead of all claiming to
+          // run from the outset.
+          const firstWave = new Set((planWaves(targets)[0] || []).map((t) => t.order));
           targets.forEach((t, i) => {
             wbus.emit(EVENTS.DELEGATE_STEP, {
-              index: i, provider: t.provider, model: t.model || null, status: 'running',
+              index: i,
+              role: t.role,
+              provider: t.provider || null,
+              model: t.model || null,
+              status: firstWave.has(i) ? 'running' : 'queued',
             });
           });
 
@@ -931,12 +1036,16 @@ ${this.config.projectSnapshot}`;
             targets,
             loopToolIntent.args.prompt || text,
             config,
-            { attachments, signal: this.abortController.signal },
+            {
+              attachments,
+              signal: this.abortController.signal,
+              onProgress: (update) => wbus.emit(EVENTS.DELEGATE_STEP, update),
+            },
           );
 
           results.forEach((r, i) => {
             wbus.emit(EVENTS.DELEGATE_STEP, {
-              index: i, provider: r.provider, model: r.model || null,
+              index: i, role: r.role || null, provider: r.provider, model: r.model || null,
               status: r.error ? 'error' : 'done', error: r.error || null,
             });
           });
@@ -950,8 +1059,7 @@ ${this.config.projectSnapshot}`;
 
           agentContext = `${agentContext}
 
-        [Delegation results]
-        ${JSON.stringify(results, null, 2).slice(0, 6000)}`;
+${formatDelegationResults(results)}`;
           continue;
         }
 

@@ -15,7 +15,8 @@ vi.mock('../AgentWorker.js', () => ({
   },
 }));
 
-import { delegateTasks } from '../delegate.js';
+import { delegateTasks, planWaves, normalizeTargets, formatDelegationResults } from '../delegate.js';
+import { getRole } from '../roles.js';
 
 /** Simulates a sub-agent emitting tokens then finishing, on its own isolated bus. */
 function makeRunImpl({ tokens = ['hello'], errorMessage = null, cancelled = false } = {}) {
@@ -117,6 +118,135 @@ describe('delegateTasks', () => {
     expect(results).toHaveLength(3);
   });
 
+  it('stamps an incremented delegation depth into each sub-agent config', async () => {
+    runMock.mockImplementation(makeRunImpl());
+    await delegateTasks([{ provider: 'ollama' }], 'p', { delegateProviders: ['ollama'] });
+    expect(lastWorkerArgs.config.delegationDepth).toBe(1);
+  });
+
+  it('refuses to delegate once the depth limit is reached', async () => {
+    const results = await delegateTasks(
+      [{ provider: 'ollama' }],
+      'p',
+      { delegateProviders: ['ollama'], delegationDepth: 1 },
+    );
+    expect(results[0].error).toMatch(/Delegation depth limit reached/);
+    expect(runMock).not.toHaveBeenCalled();
+  });
+
+  it('reports the depth limit once per target rather than silently dropping them', async () => {
+    const results = await delegateTasks(
+      [{ provider: 'ollama' }, { provider: 'anthropic' }],
+      'p',
+      { delegateProviders: ['ollama', 'anthropic'], delegationDepth: 1 },
+    );
+    expect(results).toHaveLength(2);
+    for (const r of results) expect(r.error).toMatch(/depth limit/);
+  });
+
+  it('still caps target count when refusing on depth', async () => {
+    const targets = Array.from({ length: 8 }, () => ({ provider: 'ollama' }));
+    const results = await delegateTasks(targets, 'p', {
+      delegateProviders: ['ollama'],
+      delegationDepth: 1,
+    });
+    expect(results).toHaveLength(5);
+  });
+
+  it('honors a configured delegateMaxDepth above the default', async () => {
+    runMock.mockImplementation(makeRunImpl());
+    const results = await delegateTasks(
+      [{ provider: 'ollama' }],
+      'p',
+      { delegateProviders: ['ollama'], delegationDepth: 1, delegateMaxDepth: 2 },
+    );
+    expect(results[0].error).toBeUndefined();
+    expect(lastWorkerArgs.config.delegationDepth).toBe(2);
+  });
+
+  it('refuses all delegation when delegateMaxDepth is 0', async () => {
+    const results = await delegateTasks(
+      [{ provider: 'ollama' }],
+      'p',
+      { delegateProviders: ['ollama'], delegateMaxDepth: 0 },
+    );
+    expect(results[0].error).toMatch(/depth limit/);
+    expect(runMock).not.toHaveBeenCalled();
+  });
+
+  it('treats a malformed delegationDepth as depth zero', async () => {
+    runMock.mockImplementation(makeRunImpl());
+    const results = await delegateTasks(
+      [{ provider: 'ollama' }],
+      'p',
+      { delegateProviders: ['ollama'], delegationDepth: 'lots' },
+    );
+    expect(results[0].error).toBeUndefined();
+    expect(lastWorkerArgs.config.delegationDepth).toBe(1);
+  });
+
+  it('gives the sub-agent its role charter and tool allowlist', async () => {
+    runMock.mockImplementation(makeRunImpl());
+    await delegateTasks(
+      [{ provider: 'ollama', role: 'reviewer' }],
+      'p',
+      { delegateProviders: ['ollama'] },
+    );
+    expect(lastWorkerArgs.modes.rolePrompt).toContain('REVIEWER');
+    expect(lastWorkerArgs.modes.allowedTools).toEqual(getRole('reviewer').allowedTools);
+  });
+
+  it('reports the resolved role back on the result', async () => {
+    runMock.mockImplementation(makeRunImpl());
+    const results = await delegateTasks(
+      [{ provider: 'ollama', role: 'security' }],
+      'p',
+      { delegateProviders: ['ollama'] },
+    );
+    expect(results[0].role).toBe('security');
+  });
+
+  it('falls back to the generalist for an unknown role', async () => {
+    runMock.mockImplementation(makeRunImpl());
+    const results = await delegateTasks(
+      [{ provider: 'ollama', role: 'wizard' }],
+      'p',
+      { delegateProviders: ['ollama'] },
+    );
+    expect(results[0].role).toBe('generalist');
+  });
+
+  it('keeps a read-only role read-only and never auto-approves for it', async () => {
+    runMock.mockImplementation(makeRunImpl());
+    await delegateTasks(
+      [{ provider: 'ollama', role: 'reviewer' }],
+      'p',
+      { delegateProviders: ['ollama'] },
+    );
+    expect(lastWorkerArgs.modes.readOnly).toBe(true);
+    expect(lastWorkerArgs.modes.autoMode).toBe(false);
+  });
+
+  it('auto-approves for a writing role, whose bus has no user to confirm', async () => {
+    runMock.mockImplementation(makeRunImpl());
+    await delegateTasks(
+      [{ provider: 'ollama', role: 'implementer' }],
+      'p',
+      { delegateProviders: ['ollama'] },
+    );
+    expect(lastWorkerArgs.modes.readOnly).toBe(false);
+    expect(lastWorkerArgs.modes.autoMode).toBe(true);
+  });
+
+  it('defaults a target with no role at all to the generalist', async () => {
+    runMock.mockImplementation(makeRunImpl());
+    const results = await delegateTasks([{ provider: 'ollama' }], 'p', {
+      delegateProviders: ['ollama'],
+    });
+    expect(results[0].role).toBe('generalist');
+    expect(lastWorkerArgs.modes.readOnly).toBe(true);
+  });
+
   it('lets a per-target prompt override the shared default prompt', async () => {
     runMock.mockImplementation(makeRunImpl());
     await delegateTasks(
@@ -125,5 +255,501 @@ describe('delegateTasks', () => {
       { delegateProviders: ['ollama'] },
     );
     expect(lastWorkerArgs.task).toBe('custom prompt');
+  });
+});
+
+describe('provider resolution by role tier', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    lastWorkerArgs = null;
+  });
+
+  it('maps a role tier onto a provider when the target names none', async () => {
+    runMock.mockImplementation(makeRunImpl());
+    const results = await delegateTasks(
+      [{ role: 'architect' }],
+      'p',
+      {
+        delegateProviders: ['ollama', 'anthropic'],
+        delegateTierProviders: { strong: 'anthropic', cheap: 'ollama' },
+      },
+    );
+    expect(results[0].provider).toBe('anthropic');
+  });
+
+  it('sends a cheap-tier role to the cheap provider', async () => {
+    runMock.mockImplementation(makeRunImpl());
+    const results = await delegateTasks(
+      [{ role: 'tester' }],
+      'p',
+      {
+        delegateProviders: ['ollama', 'anthropic'],
+        delegateTierProviders: { strong: 'anthropic', cheap: 'ollama' },
+      },
+    );
+    expect(results[0].provider).toBe('ollama');
+  });
+
+  it('lets an explicit provider beat the role tier', async () => {
+    runMock.mockImplementation(makeRunImpl());
+    const results = await delegateTasks(
+      [{ role: 'architect', provider: 'ollama' }],
+      'p',
+      {
+        delegateProviders: ['ollama', 'anthropic'],
+        delegateTierProviders: { strong: 'anthropic' },
+      },
+    );
+    expect(results[0].provider).toBe('ollama');
+  });
+
+  it('ignores a tier provider the user has not enabled', async () => {
+    runMock.mockImplementation(makeRunImpl());
+    const results = await delegateTasks(
+      [{ role: 'architect' }],
+      'p',
+      {
+        delegateProviders: ['ollama'],
+        delegateTierProviders: { strong: 'anthropic' },
+      },
+    );
+    expect(results[0].provider).toBe('ollama');
+    expect(results[0].error).toBeUndefined();
+  });
+
+  it('falls back to the parent provider chain when nothing else is configured', async () => {
+    runMock.mockImplementation(makeRunImpl());
+    const results = await delegateTasks([{ role: 'reviewer' }], 'p', {
+      providerChain: ['gemini'],
+    });
+    expect(results[0].provider).toBe('gemini');
+  });
+
+  it('reports an error when no provider can be resolved at all', async () => {
+    const results = await delegateTasks([{ role: 'reviewer' }], 'p', {});
+    expect(results[0].error).toMatch(/No provider available/);
+    expect(runMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('planWaves', () => {
+  const ids = (waves) => waves.map((w) => w.map((t) => t.id));
+
+  it('puts everything in one wave when nothing declares a dependency', () => {
+    expect(ids(planWaves([{ id: 'a' }, { id: 'b' }, { id: 'c' }]))).toEqual([['a', 'b', 'c']]);
+  });
+
+  it('assigns ids to targets that do not supply one', () => {
+    expect(ids(planWaves([{}, {}]))).toEqual([['task-1', 'task-2']]);
+  });
+
+  it('orders a dependent task into a later wave', () => {
+    const waves = planWaves([
+      { id: 'review', dependsOn: ['build'] },
+      { id: 'build' },
+    ]);
+    expect(ids(waves)).toEqual([['build'], ['review']]);
+  });
+
+  it('keeps independent tasks together in the same wave', () => {
+    const waves = planWaves([
+      { id: 'build' },
+      { id: 'review', dependsOn: ['build'] },
+      { id: 'security', dependsOn: ['build'] },
+    ]);
+    expect(ids(waves)).toEqual([['build'], ['review', 'security']]);
+  });
+
+  it('handles a chain of three', () => {
+    const waves = planWaves([
+      { id: 'c', dependsOn: ['b'] },
+      { id: 'b', dependsOn: ['a'] },
+      { id: 'a' },
+    ]);
+    expect(ids(waves)).toEqual([['a'], ['b'], ['c']]);
+  });
+
+  it('treats a dependency on an unknown id as already satisfied', () => {
+    expect(ids(planWaves([{ id: 'a', dependsOn: ['ghost'] }]))).toEqual([['a']]);
+  });
+
+  it('breaks a dependency cycle into a final wave rather than hanging', () => {
+    const waves = planWaves([
+      { id: 'a', dependsOn: ['b'] },
+      { id: 'b', dependsOn: ['a'] },
+    ]);
+    expect(ids(waves)).toEqual([['a', 'b']]);
+  });
+
+  it('still schedules the acyclic part before breaking a cycle', () => {
+    const waves = planWaves([
+      { id: 'free' },
+      { id: 'a', dependsOn: ['b'] },
+      { id: 'b', dependsOn: ['a'] },
+    ]);
+    expect(ids(waves)).toEqual([['free'], ['a', 'b']]);
+  });
+
+  it('returns no waves for no targets', () => {
+    expect(planWaves([])).toEqual([]);
+  });
+});
+
+describe('wave execution', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    lastWorkerArgs = null;
+  });
+
+  it('runs a dependent task only after its dependency finished', async () => {
+    const startOrder = [];
+    runMock.mockImplementation((args) => {
+      startOrder.push(args.task);
+      return makeRunImpl({ tokens: ['out'] })(args);
+    });
+    await delegateTasks(
+      [
+        { id: 'review', role: 'reviewer', prompt: 'review it', dependsOn: ['build'] },
+        { id: 'build', role: 'implementer', prompt: 'build it' },
+      ],
+      'p',
+      { delegateProviders: ['ollama'], providerChain: ['ollama'] },
+    );
+    expect(startOrder[0]).toContain('build it');
+    expect(startOrder[1]).toContain('review it');
+  });
+
+  it('feeds a dependency output into the dependent task prompt', async () => {
+    const tasks = [];
+    runMock.mockImplementation((args) => {
+      tasks.push(args.task);
+      return makeRunImpl({ tokens: ['THE DIFF'] })(args);
+    });
+    await delegateTasks(
+      [
+        { id: 'build', role: 'implementer', prompt: 'build it' },
+        { id: 'review', role: 'reviewer', prompt: 'review it', dependsOn: ['build'] },
+      ],
+      'p',
+      { delegateProviders: ['ollama'], providerChain: ['ollama'] },
+    );
+    const reviewPrompt = tasks.find((t) => t.includes('review it'));
+    expect(reviewPrompt).toContain('THE DIFF');
+    expect(reviewPrompt).toContain('implementer');
+  });
+
+  it('does not forward a failed dependency output', async () => {
+    const tasks = [];
+    runMock
+      .mockImplementationOnce((args) => {
+        tasks.push(args.task);
+        return makeRunImpl({ errorMessage: 'boom' })(args);
+      })
+      .mockImplementationOnce((args) => {
+        tasks.push(args.task);
+        return makeRunImpl({ tokens: ['ok'] })(args);
+      });
+    await delegateTasks(
+      [
+        { id: 'build', role: 'implementer', prompt: 'build it' },
+        { id: 'review', role: 'reviewer', prompt: 'review it', dependsOn: ['build'] },
+      ],
+      'p',
+      { delegateProviders: ['ollama'], providerChain: ['ollama'] },
+    );
+    const reviewPrompt = tasks.find((t) => t.includes('review it'));
+    expect(reviewPrompt).not.toContain('Output from');
+  });
+
+  it('returns results in the order the targets were given, not wave order', async () => {
+    runMock.mockImplementation(makeRunImpl({ tokens: ['x'] }));
+    const results = await delegateTasks(
+      [
+        { id: 'review', role: 'reviewer', dependsOn: ['build'] },
+        { id: 'build', role: 'implementer' },
+      ],
+      'p',
+      { delegateProviders: ['ollama'], providerChain: ['ollama'] },
+    );
+    expect(results.map((r) => r.role)).toEqual(['reviewer', 'implementer']);
+  });
+
+  it('still caps total targets across all waves', async () => {
+    runMock.mockImplementation(makeRunImpl());
+    const targets = Array.from({ length: 8 }, (_, i) => ({ id: `t${i}`, role: 'reviewer' }));
+    const results = await delegateTasks(targets, 'p', {
+      delegateProviders: ['ollama'],
+      providerChain: ['ollama'],
+    });
+    expect(results).toHaveLength(5);
+  });
+});
+
+describe('normalizeTargets', () => {
+  it('returns nothing for input that is not an array', () => {
+    expect(normalizeTargets(undefined)).toEqual([]);
+    expect(normalizeTargets(null)).toEqual([]);
+    expect(normalizeTargets('implementer')).toEqual([]);
+    expect(normalizeTargets({ role: 'implementer' })).toEqual([]);
+  });
+
+  it('drops entries that are not objects', () => {
+    expect(normalizeTargets(['build', 42, null, ['x'], { role: 'tester' }])).toHaveLength(1);
+  });
+
+  it('assigns an id to a task that has none', () => {
+    expect(normalizeTargets([{ role: 'tester' }])[0].id).toBe('task-1');
+  });
+
+  it('keeps an explicit id', () => {
+    expect(normalizeTargets([{ id: 'build', role: 'tester' }])[0].id).toBe('build');
+  });
+
+  it('makes duplicate ids unique so dependsOn cannot resolve ambiguously', () => {
+    const ids = normalizeTargets([
+      { id: 'build', role: 'implementer' },
+      { id: 'build', role: 'tester' },
+    ]).map((t) => t.id);
+    expect(new Set(ids).size).toBe(2);
+  });
+
+  it('replaces an unknown role with the generalist', () => {
+    expect(normalizeTargets([{ role: 'wizard' }])[0].role).toBe('generalist');
+    expect(normalizeTargets([{ role: 42 }])[0].role).toBe('generalist');
+  });
+
+  it('accepts dependsOn given as a bare string', () => {
+    expect(normalizeTargets([{ id: 'r', dependsOn: 'build' }])[0].dependsOn).toEqual(['build']);
+  });
+
+  it('drops a self-dependency, which could only deadlock', () => {
+    expect(normalizeTargets([{ id: 'a', dependsOn: ['a'] }])[0].dependsOn).toBeUndefined();
+  });
+
+  it('discards non-string entries inside dependsOn', () => {
+    expect(normalizeTargets([{ id: 'r', dependsOn: ['build', 7, null, ''] }])[0].dependsOn)
+      .toEqual(['build']);
+  });
+
+  it('omits blank prompts, providers and models rather than passing empties through', () => {
+    const t = normalizeTargets([{ role: 'tester', prompt: '   ', provider: '', model: null }])[0];
+    expect(t.prompt).toBeUndefined();
+    expect(t.provider).toBeUndefined();
+    expect(t.model).toBeUndefined();
+  });
+
+  it('trims surrounding whitespace on string fields', () => {
+    const t = normalizeTargets([{ role: 'tester', prompt: '  do it  ', provider: ' ollama ' }])[0];
+    expect(t.prompt).toBe('do it');
+    expect(t.provider).toBe('ollama');
+  });
+
+  it('is idempotent, since both the worker and delegateTasks normalize', () => {
+    const once = normalizeTargets([{ id: 'a', role: 'reviewer', dependsOn: 'b' }]);
+    expect(normalizeTargets(once)).toEqual(once);
+  });
+});
+
+describe('delegateTasks input validation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    lastWorkerArgs = null;
+  });
+
+  it('reports no targets when every entry was malformed', async () => {
+    const results = await delegateTasks([null, 'x', 5], 'p', { delegateProviders: ['ollama'] });
+    expect(results).toEqual([{ error: 'No delegation targets provided' }]);
+    expect(runMock).not.toHaveBeenCalled();
+  });
+
+  it('runs the valid tasks and ignores the malformed ones', async () => {
+    runMock.mockImplementation(makeRunImpl());
+    const results = await delegateTasks(
+      [null, { role: 'reviewer' }, 'nope'],
+      'p',
+      { delegateProviders: ['ollama'], providerChain: ['ollama'] },
+    );
+    expect(results).toHaveLength(1);
+    expect(results[0].role).toBe('reviewer');
+  });
+});
+
+describe('formatDelegationResults', () => {
+  it('labels each section by role and provider', () => {
+    const out = formatDelegationResults([
+      { role: 'implementer', provider: 'anthropic', text: 'wrote the code' },
+      { role: 'reviewer', provider: 'ollama', text: 'looks fine' },
+    ]);
+    expect(out).toContain('--- implementer (anthropic) ---');
+    expect(out).toContain('--- reviewer (ollama) ---');
+    expect(out).toContain('wrote the code');
+    expect(out).toContain('looks fine');
+  });
+
+  it('tells the parent to synthesize rather than concatenate', () => {
+    const out = formatDelegationResults([{ role: 'reviewer', text: 'ok' }]);
+    expect(out).toContain('[Synthesis]');
+    expect(out).toContain('do NOT concatenate');
+  });
+
+  it('reports a failed agent as failed instead of dropping it', () => {
+    const out = formatDelegationResults([
+      { role: 'implementer', text: 'done' },
+      { role: 'security', provider: 'ollama', error: 'Timed out or cancelled' },
+    ]);
+    expect(out).toContain('security (ollama): FAILED');
+    expect(out).toContain('Timed out or cancelled');
+  });
+
+  it('distinguishes an agent that returned nothing from one that failed', () => {
+    const out = formatDelegationResults([{ role: 'tester', text: '' }]);
+    expect(out).toContain('returned nothing');
+    expect(out).not.toContain('FAILED');
+  });
+
+  it('counts the agents in the header', () => {
+    expect(formatDelegationResults([{ role: 'a', text: 'x' }])).toContain('1 agent]');
+    expect(formatDelegationResults([
+      { role: 'a', text: 'x' },
+      { role: 'b', text: 'y' },
+    ])).toContain('2 agents]');
+  });
+
+  it('handles no results at all', () => {
+    expect(() => formatDelegationResults([])).not.toThrow();
+    expect(formatDelegationResults()).toContain('0 agents');
+  });
+
+  it('keeps the whole output when everything fits in budget', () => {
+    const out = formatDelegationResults([{ role: 'a', text: 'short answer' }]);
+    expect(out).toContain('short answer');
+    expect(out).not.toContain('truncated');
+  });
+
+  it('truncates an oversized result and says so', () => {
+    const out = formatDelegationResults([{ role: 'a', text: 'x'.repeat(20_000) }]);
+    expect(out).toContain('… (truncated)');
+    expect(out.length).toBeLessThan(20_000);
+  });
+
+  it('does not starve a long result when a short one leaves budget unused', () => {
+    const out = formatDelegationResults([
+      { role: 'brief', text: 'yes' },
+      { role: 'verbose', text: 'y'.repeat(10_000) },
+    ]);
+    expect(out).toContain('yes');
+    // An even split would cap the long one at half the budget; water-filling
+    // hands it the remainder the short answer never used.
+    expect(out.match(/y{3000,}/)).not.toBeNull();
+  });
+
+  it('never truncates mid-JSON the way the old raw dump could', () => {
+    const out = formatDelegationResults([
+      { role: 'a', provider: 'ollama', text: 'z'.repeat(9000) },
+    ]);
+    expect(out).toContain('[Synthesis]');
+    expect(out.trimEnd().endsWith('was done')).toBe(true);
+  });
+});
+
+describe('wave progress reporting', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    lastWorkerArgs = null;
+  });
+
+  it('reports a task as running only when its wave starts', async () => {
+    const seen = [];
+    runMock.mockImplementation(makeRunImpl({ tokens: ['x'] }));
+    await delegateTasks(
+      [
+        { id: 'build', role: 'implementer' },
+        { id: 'review', role: 'reviewer', dependsOn: ['build'] },
+      ],
+      'p',
+      { delegateProviders: ['ollama'], providerChain: ['ollama'] },
+      { onProgress: (u) => seen.push(u) },
+    );
+    // Two waves, so two separate announcements rather than both up front.
+    expect(seen.map((u) => u.role)).toEqual(['implementer', 'reviewer']);
+  });
+
+  it('announces every task in a single wave together', async () => {
+    const seen = [];
+    runMock.mockImplementation(makeRunImpl());
+    await delegateTasks(
+      [{ role: 'reviewer' }, { role: 'security' }],
+      'p',
+      { delegateProviders: ['ollama'], providerChain: ['ollama'] },
+      { onProgress: (u) => seen.push(u) },
+    );
+    expect(seen).toHaveLength(2);
+    expect(seen.every((u) => u.status === 'running')).toBe(true);
+  });
+
+  it('reports the original target index so rows line up', async () => {
+    const seen = [];
+    runMock.mockImplementation(makeRunImpl());
+    await delegateTasks(
+      [
+        { id: 'review', role: 'reviewer', dependsOn: ['build'] },
+        { id: 'build', role: 'implementer' },
+      ],
+      'p',
+      { delegateProviders: ['ollama'], providerChain: ['ollama'] },
+      { onProgress: (u) => seen.push(u) },
+    );
+    expect(seen[0]).toMatchObject({ index: 1, role: 'implementer' });
+    expect(seen[1]).toMatchObject({ index: 0, role: 'reviewer' });
+  });
+
+  it('includes the resolved provider in the progress update', async () => {
+    const seen = [];
+    runMock.mockImplementation(makeRunImpl());
+    await delegateTasks([{ role: 'reviewer' }], 'p', { providerChain: ['gemini'] }, {
+      onProgress: (u) => seen.push(u),
+    });
+    expect(seen[0].provider).toBe('gemini');
+  });
+
+  it('works fine when no onProgress callback was given', async () => {
+    runMock.mockImplementation(makeRunImpl());
+    await expect(
+      delegateTasks([{ role: 'reviewer' }], 'p', { providerChain: ['ollama'] }),
+    ).resolves.toHaveLength(1);
+  });
+});
+
+describe('delegate timeout configuration', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    lastWorkerArgs = null;
+  });
+
+  /** The delay each sub-agent's cancel timer was scheduled with. */
+  async function timeoutUsed(config) {
+    const spy = vi.spyOn(global, 'setTimeout');
+    runMock.mockImplementation(makeRunImpl());
+    await delegateTasks([{ role: 'reviewer' }], 'p', { providerChain: ['ollama'], ...config });
+    const delays = spy.mock.calls.map((c) => c[1]);
+    spy.mockRestore();
+    return delays;
+  }
+
+  it('falls back to 45s when nothing is configured', async () => {
+    expect(await timeoutUsed({})).toContain(45_000);
+  });
+
+  it('honors a configured delegateTimeoutMs', async () => {
+    expect(await timeoutUsed({ delegateTimeoutMs: 300_000 })).toContain(300_000);
+  });
+
+  it('ignores a malformed timeout rather than scheduling NaN', async () => {
+    expect(await timeoutUsed({ delegateTimeoutMs: 'ages' })).toContain(45_000);
+  });
+
+  it('ignores a non-positive timeout, which would cancel instantly', async () => {
+    expect(await timeoutUsed({ delegateTimeoutMs: 0 })).toContain(45_000);
+    expect(await timeoutUsed({ delegateTimeoutMs: -1 })).toContain(45_000);
   });
 });

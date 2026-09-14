@@ -3,6 +3,7 @@ import { Box, Text } from 'ink';
 import { EVENTS } from '../core/eventBus.js';
 import { INITIAL_STATE, NUM_SPINNER_FRAMES } from '../core/stateStore.js';
 import { MessageList } from './MessageList.js';
+import { mergeDelegateStep } from './DelegatePanel.js';
 import { StatusBar } from './StatusBar.js';
 import { PromptInput } from './PromptInput.js';
 import { SelectMenu } from './SelectMenu.js';
@@ -73,6 +74,7 @@ export default function App({
         streamingMessage: '',
         steps: [],
         plan: [],
+        delegates: [],
         error: null,
         errorHint: null,
         activeTool: null,
@@ -119,6 +121,7 @@ export default function App({
           streamingMessage: '',
           steps: [],
           plan: [],
+          delegates: [],
           agentStatus: 'idle',
           statusMessage: '',
           llmProgress: s.llmProgress?.phase === 'error' ? s.llmProgress : null,
@@ -167,6 +170,10 @@ export default function App({
 
     const onPlanUpdate = ({ items }) => {
       setState((s) => ({ ...s, plan: items || [] }));
+    };
+
+    const onDelegateStep = (payload = {}) => {
+      setState((s) => ({ ...s, delegates: mergeDelegateStep(s.delegates, payload) }));
     };
 
     const onAgentCancelled = () => {
@@ -317,7 +324,8 @@ export default function App({
         messages: s.messages.filter((m) => m.turnId == null || m.turnId < turnId),
         streamingMessage: '',
         steps: [],
-        plan: []
+        plan: [],
+        delegates: []
       }));
     };
 
@@ -329,6 +337,7 @@ export default function App({
     eventBus.on(EVENTS.AGENT_ERROR, onAgentError);
     eventBus.on(EVENTS.PROVIDER_RESOLVED, onProviderResolved);
     eventBus.on(EVENTS.PLAN_UPDATE, onPlanUpdate);
+    eventBus.on(EVENTS.DELEGATE_STEP, onDelegateStep);
     eventBus.on(EVENTS.AGENT_CANCELLED, onAgentCancelled);
     eventBus.on(EVENTS.TOOL_START, onToolStart);
     eventBus.on(EVENTS.TOOL_END, onToolEnd);
@@ -367,6 +376,7 @@ export default function App({
       eventBus.off(EVENTS.AGENT_ERROR, onAgentError);
       eventBus.off(EVENTS.PROVIDER_RESOLVED, onProviderResolved);
       eventBus.off(EVENTS.PLAN_UPDATE, onPlanUpdate);
+      eventBus.off(EVENTS.DELEGATE_STEP, onDelegateStep);
       eventBus.off(EVENTS.AGENT_CANCELLED, onAgentCancelled);
       eventBus.off(EVENTS.TOOL_START, onToolStart);
       eventBus.off(EVENTS.TOOL_END, onToolEnd);
@@ -525,6 +535,7 @@ export default function App({
       streamingMessage: state.streamingMessage,
       liveSteps: state.steps,
       livePlan: state.plan,
+      liveDelegates: state.delegates,
       activeModes: state.activeModes,
       staticEpoch,
     }),

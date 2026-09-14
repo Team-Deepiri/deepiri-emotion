@@ -3,6 +3,7 @@ import { Box, Text, Static } from 'ink';
 import { MarkdownText } from './MarkdownText.js';
 import { StepTimeline } from './StepTimeline.js';
 import { PlanChecklist } from './PlanChecklist.js';
+import { DelegatePanel } from './DelegatePanel.js';
 
 /**
  * Speaker identity without labels:
@@ -76,6 +77,7 @@ function MessageListImpl({
   streamingMessage,
   liveSteps,
   livePlan,
+  liveDelegates,
   activeModes,
   staticEpoch = 0,
 }) {
@@ -112,6 +114,13 @@ function MessageListImpl({
             streamingMessage,
             React.createElement(Text, { color: 'magenta', dimColor: true }, '▌')
           )
+        )
+      : null,
+    liveDelegates?.length
+      ? React.createElement(
+          Box,
+          { marginLeft: 1, flexDirection: 'column', flexShrink: 1 },
+          React.createElement(DelegatePanel, { agents: liveDelegates })
         )
       : null,
     liveSteps?.length
