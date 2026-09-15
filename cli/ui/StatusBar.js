@@ -70,6 +70,7 @@ export function StatusBar({
   tokenUsage,
   workspaceDir,
   llmProgress = null,
+  backgroundTasks = [],
 }) {
   const isBusy = agentStatus !== 'idle';
   const cwd = shortPath(workspaceDir || process.cwd());
@@ -80,6 +81,9 @@ export function StatusBar({
   const providerLabel = activeProvider
     ? `${activeProvider}${activeModel ? `/${activeModel}` : ''}`
     : 'no provider';
+  const runningTasks = backgroundTasks.filter((t) => t.status === 'running').length;
+  const waitingTasks = backgroundTasks.filter((t) => t.status === 'awaiting_confirmation').length;
+  const landedTasks = backgroundTasks.filter((t) => t.unseenCompletion).length;
   const badges = modeBadges({
     teachMode,
     supportMode,
@@ -124,6 +128,27 @@ export function StatusBar({
         `${formatK(used)}/${formatK(limit)}`
       )
     ),
+    (runningTasks > 0 || waitingTasks > 0 || landedTasks > 0)
+      ? React.createElement(
+          Box,
+          { flexDirection: 'row', gap: 1 },
+          runningTasks > 0 && React.createElement(
+            Text,
+            { key: 'bg-running', color: 'cyan' },
+            `🧵 ${runningTasks} background task${runningTasks === 1 ? '' : 's'} running`
+          ),
+          waitingTasks > 0 && React.createElement(
+            Text,
+            { key: 'bg-waiting', color: 'yellow', bold: true },
+            `⚠ ${waitingTasks} awaiting approval — /tasks`
+          ),
+          landedTasks > 0 && React.createElement(
+            Text,
+            { key: 'bg-landed', color: 'green' },
+            `✓ ${landedTasks} finished — /tasks`
+          )
+        )
+      : null,
     llmProgress?.message
       ? React.createElement(
           Box,

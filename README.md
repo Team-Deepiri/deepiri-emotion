@@ -71,6 +71,7 @@ Prefer not to install globally? `npm run cli` does the same thing from the repo 
 - **Project memory** — `/init` scans the workspace and writes a starter `EMOTION.md`, loaded into context on every launch. `/scan` picks up other guidance docs (AGENTS.md, CLAUDE.md, etc.).
 - **Session history** — Every conversation is recorded under `.emotion-sessions/`; `/resume` brings one back.
 - **Voice-of-reason supervisor** — An optional second LLM pass reviews risky actions before they execute. Toggle with `/guard`.
+- **AI code review** — `/review` reads your staged changes (or the working tree, if nothing is staged) and reports what a senior reviewer would flag, grouped bugs-first and cited by file and line. Findings pointing at code that isn't in the diff are discarded rather than shown, and every finding carries an honest confidence level. `/review --fix` drafts patches and offers each one through the normal confirmation gate.
 - **Parallel delegation** — The `delegate` tool fans one task out to several provider/model sub-agents at once and compares what comes back.
 - **Modes** — `/plan` (read-only planning), `/debug` (full step visibility), `/teach` (explains its reasoning as it works).
 - **Screenshots and images** — Paste a screenshot straight into the prompt with `Ctrl+V` (macOS clipboard), or drop an image file path into your message on any platform. Attach several at once and ask the agent about a broken UI, an error dialog, or a design mock. PNG/JPEG/GIF/WebP.

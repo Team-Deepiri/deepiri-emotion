@@ -41,7 +41,9 @@ export const EVENTS = {
   LLM_PROGRESS: 'LLM_PROGRESS',
   TURN_STARTED: 'TURN_STARTED',
   REWIND: 'REWIND',
-  DELEGATE_STEP: 'DELEGATE_STEP'
+  DELEGATE_STEP: 'DELEGATE_STEP',
+  /** Emitted by backgroundTasks.js whenever any background task's status/steps change. */
+  BACKGROUND_TASKS_CHANGED: 'BACKGROUND_TASKS_CHANGED',
 };
 
 export function createEventBus() {
