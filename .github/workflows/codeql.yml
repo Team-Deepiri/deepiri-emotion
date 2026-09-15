@@ -8,6 +8,10 @@ on:
       - 'docs/**'
       - '.gitignore'
       - 'LICENSE*'
+  push:
+    branches: [main, dev]
+  schedule:
+    - cron: '0 6 * * 1'  # Weekly on Mondays
   workflow_dispatch:
 permissions:
   actions: read
