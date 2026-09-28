@@ -4,6 +4,7 @@ import { MODES } from '../core/modes.js';
 
 const STEP_ICONS = {
   thinking: '🧠',
+  delegate: '🤝',
   tool_call: '🔍',
   tool_result: '✓',
   response: '✍',
@@ -30,7 +31,7 @@ export function StepTimeline({ steps, activeModes }) {
   // Debug: show everything including reasoning steps and provider selection.
   const visibleSteps = modeSet.has(MODES.DEBUG)
     ? steps
-    : steps.filter((s) => s.type === 'tool_call' || s.type === 'tool_result' || s.type === 'teach' || s.type === 'supervisor');
+    : steps.filter((s) => s.type === 'tool_call' || s.type === 'tool_result' || s.type === 'teach' || s.type === 'supervisor' || s.type === 'delegate');
 
   if (!visibleSteps.length) return null;
 
