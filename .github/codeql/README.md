@@ -61,7 +61,7 @@ with:
 ### Initialize CodeQL
 
 ```yaml
-uses: github/codeql-action/init@v3
+uses: github/codeql-action/init@4bfa242aa49c5f7c6770b98670d354a7dfac05f8 # v3
 with:
   languages: javascript-typescript
   config-file: ./.github/codeql/codeql-config.yml
@@ -72,7 +72,7 @@ Starts CodeQL and loads this repo's CodeQL config file.
 ### Analyze
 
 ```yaml
-uses: github/codeql-action/analyze@v3
+uses: github/codeql-action/analyze@4bfa242aa49c5f7c6770b98670d354a7dfac05f8 # v3
 ```
 
 Runs CodeQL queries and uploads results to GitHub Security.
