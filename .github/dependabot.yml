@@ -7,3 +7,7 @@ updates:
       interval: "weekly"
     commit-message:
       prefix: "ci"
+    # dependabot-calm: one PR for all action updates instead of one per action.
+    groups:
+      github-actions:
+        patterns: ["*"]
