@@ -1,0 +1,13 @@
+# Keeps the commit-SHA pins current: Dependabot opens a PR per new action release.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
+    # dependabot-calm: one PR for all action updates instead of one per action.
+    groups:
+      github-actions:
+        patterns: ["*"]
