@@ -94,7 +94,7 @@ This installs dependencies, runs lint/tests, builds the app, and produces instal
 
 ### Prerequisites
 
-- **Node.js** 18+ (20 recommended; use [.nvmrc](.nvmrc) with nvm).
+- **Node.js** 22.12+ to develop and build the desktop app (the Electron 42 toolchain requires it; the CLI alone runs on 18+). Use [.nvmrc](.nvmrc) with nvm.
 - **npm** (or yarn/pnpm).
 
 ### Install and run (development)
