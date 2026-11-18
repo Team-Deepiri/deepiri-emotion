@@ -10,7 +10,7 @@ This document covers **how to get the installers** and **how to set up** the pro
 
 | Requirement | Notes |
 |-------------|--------|
-| **Node.js** | 18+ (20+ recommended for `icon-gen` on macOS icons). Use `.nvmrc` if using nvm. |
+| **Node.js** | 22.12+ to develop/build the desktop app (Electron 42 toolchain); the CLI alone runs on 18+. Use `.nvmrc` if using nvm. |
 | **npm** | Comes with Node (or use yarn/pnpm) |
 | **OS for building** | Build **Windows** installers on Windows; **macOS** on macOS; **Linux** on Linux. Cross-compiling Windows/mac from Linux is possible with extra tooling but not covered here. |
 

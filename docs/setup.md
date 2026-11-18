@@ -50,7 +50,7 @@ npm run setup:install                     # Same as --install-only via npm
 
 | Requirement | Version / notes |
 |-------------|------------------|
-| **Node.js** | **18+** (20+ recommended; use [.nvmrc](.nvmrc) with nvm: `nvm use`). |
+| **Node.js** | **22.12+** to develop/build the desktop app (Electron 42 toolchain); the CLI alone runs on 18+. Use [.nvmrc](.nvmrc) with nvm: `nvm use`. |
 | **npm** | Comes with Node (or use yarn/pnpm; commands below use `npm`). |
 | **Git** | To clone the repo. |
 | **OS for building installers** | Build **Windows** on Windows, **macOS** on macOS, **Linux** on Linux. |
