@@ -72,6 +72,9 @@ Type `/` in the prompt for autocomplete.
 | `/guard` | Toggle the voice-of-reason supervisor review. |
 | `/teach` | Explain reasoning as it works. |
 | `/debug` | Full step visibility. |
+| `/like` | 👍 Approve the last reply (same as empty-prompt `y`). |
+| `/dislike` | 👎 Last reply missed — try another approach (same as empty-prompt `n`). |
+| `/retry` | 🔁 Redo the last work as a fresh attempt (same as empty-prompt `r`). |
 | `/help` | Full command list. |
 
 Power-user shortcuts still work: `/models use <name>`, `/models pull <name>`.

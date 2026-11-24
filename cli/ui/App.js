@@ -8,6 +8,7 @@ import { PromptInput } from './PromptInput.js';
 import { SelectMenu } from './SelectMenu.js';
 import { grabClipboardImage, resolveImagePath } from '../agent/attachments.js';
 import { Welcome } from './Welcome.js';
+import { resolveReaction } from '../agent/reactions.js';
 
 const SPINNER_INTERVAL_MS = 200; // slower ticks = fewer Ink redraws of the dynamic region
 const STATUS_THROTTLE_MS = 300; // don't rewrite status on every thinking char / progress ping
@@ -37,6 +38,8 @@ export default function App({
   const [staticEpoch, setStaticEpoch] = useState(0);
   const [inputValue, setInputValue] = useState('');
   const [pendingAttachments, setPendingAttachments] = useState([]);
+  // turnId of the assistant reply the user already reacted to (keeps Static stable)
+  const [reactedTurnId, setReactedTurnId] = useState(null);
   const turnIdRef = useRef(null);
   const agentStatusRef = useRef(state.agentStatus);
   const tokenBufferRef = useRef('');
@@ -54,6 +57,7 @@ export default function App({
       }
     });
     setInputValue('');
+    setReactedTurnId(null);
     setStaticEpoch((n) => n + 1);
   }, []);
 
@@ -412,8 +416,21 @@ export default function App({
 
   const handleSubmit = useCallback(
     (text) => {
-      const t = (text || inputValue || '').trim();
+      let t = (text || inputValue || '').trim();
       if (!t) return;
+
+      // Expand /like /dislike /retry (and bare y/n/r via onReact) into the
+      // Claude Code–style reaction message before sending.
+      const reaction = resolveReaction(t);
+      if (reaction) {
+        const msgs = state.messages;
+        const last = msgs[msgs.length - 1];
+        if (last?.role === 'assistant' && last.turnId != null) {
+          setReactedTurnId(last.turnId);
+        }
+        t = reaction.text;
+      }
+
       setInputValue('');
 
       // Merge clipboard attachments with any image path detected in the text.
@@ -435,7 +452,22 @@ export default function App({
       }
       eventBus.emit(EVENTS.USER_MESSAGE, { text: finalText, attachments: allAttachments });
     },
-    [inputValue, pendingAttachments, eventBus, state.agentStatus]
+    [inputValue, pendingAttachments, eventBus, state.agentStatus, state.messages]
+  );
+
+  const handleReact = useCallback(
+    (key) => {
+      if (state.agentStatus !== 'idle' || state.streamingMessage) return false;
+      const msgs = state.messages;
+      const last = msgs[msgs.length - 1];
+      if (!last || last.role !== 'assistant') return false;
+      if (last.turnId != null && last.turnId === reactedTurnId) return false;
+      const reaction = resolveReaction(key);
+      if (!reaction) return false;
+      handleSubmit(reaction.slash);
+      return true;
+    },
+    [state.agentStatus, state.streamingMessage, state.messages, reactedTurnId, handleSubmit]
   );
 
   const handleConfirm = useCallback(
@@ -502,7 +534,7 @@ export default function App({
             state.activeProvider ? `  |  ${state.activeProvider}${state.activeModel ? ` / ${state.activeModel}` : ''}` : ''
           ),
           React.createElement(Text, { dimColor: true },
-            'Shift+Enter newline · Enter send · Ctrl+V image · Ctrl+L clear · Esc cancel'
+            'Shift+Enter newline · Enter send · y/n/r react · Ctrl+V image · Ctrl+L clear · Esc cancel'
           )
         ),
     ...(state.error ? [
@@ -527,6 +559,8 @@ export default function App({
       livePlan: state.plan,
       activeModes: state.activeModes,
       staticEpoch,
+      agentStatus: state.agentStatus,
+      reactedTurnId,
     }),
     ...(state.activeTool
       ? [React.createElement(Text, { key: 'activeTool', dimColor: true }, state.activeTool.label)]
@@ -589,13 +623,14 @@ export default function App({
         onSubmit: handleSubmit,
         onClear: handleClear,
         onPaste: handlePaste,
+        onReact: handleReact,
         placeholder: state.pendingConfirmation
           ? 'Awaiting confirmation — press y, a, or n'
           : state.pendingSelect
             ? '↑↓ move · Enter select · Esc cancel'
             : state.pendingTextInput
               ? 'Type value · Enter confirm · Esc cancel'
-              : 'Type a message...',
+              : 'Type a message (or y/n/r to react)...',
         pendingConfirmation: state.pendingConfirmation,
         onConfirm: handleConfirm,
         pendingSelect: state.pendingSelect,

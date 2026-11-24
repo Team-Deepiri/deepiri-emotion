@@ -24,6 +24,7 @@ import { DEFAULT_CONFIG } from '../core/config.js';
 import { getErrorHint } from '../core/errorHints.js';
 import { reviewAction } from './supervisor.js';
 import { MCP_TOOL_PREFIX } from './toolRegistry.js';
+import { MEANING_PROMPT } from './reactions.js';
 
 /**
  * Renders connected MCP servers' tools into the same prose format as the
@@ -289,6 +290,8 @@ export class AgentWorker {
         like "Ask the user..." or "Respond by explaining..." as your answer — that
         is a description of an action, not the action itself. Just say the thing,
         addressed directly to the user in first/second person.
+
+        ${MEANING_PROMPT}
 
         AVAILABLE TOOLS:
         Read-only:
