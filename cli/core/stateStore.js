@@ -11,6 +11,8 @@ export const INITIAL_STATE = {
   statusMessage: '',
   steps: [],
   plan: [],
+  // One row per sub-agent during a delegation fan-out; cleared each turn.
+  delegates: [],
   spinnerFrame: 0,
   inputBuffer: '',
   error: null,

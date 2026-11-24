@@ -51,6 +51,9 @@ export const DEFAULT_CONFIG = {
   agentTimeoutMs: Number(process.env.AGENT_TIMEOUT_MS) || 60_000,
   // Max parallel providers a single delegate tool call may fan out to.
   delegateMaxTargets: Number(process.env.DELEGATE_MAX_TARGETS) || 5,
+  // How long one delegated sub-agent may run before it is cancelled. Raise it
+  // for local models, which routinely need longer than this for a single turn.
+  delegateTimeoutMs: Number(process.env.DELEGATE_TIMEOUT_MS) || 45_000,
   // Cap on plain-text chars returned by web_fetch (mirrors readFileTool's 8k default).
   webFetchMaxContentChars: Number(process.env.WEB_FETCH_MAX_CONTENT) || 8000,
   // Voice-of-reason supervisor — set SUPERVISOR_ENABLED=false or supervisorEnabled:false to disable
