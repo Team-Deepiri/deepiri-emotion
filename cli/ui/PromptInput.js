@@ -43,6 +43,7 @@ export function PromptInput({
   onSubmit,
   onClear,
   onPaste,
+  onReact,
   placeholder,
   pendingConfirmation,
   onConfirm,
@@ -233,6 +234,18 @@ export function PromptInput({
       }
       onSubmit(value);
       return;
+    }
+    // Empty-prompt reactions (Claude Code–style thumbs): y / n / r while idle.
+    if (
+      !value &&
+      agentStatus === 'idle' &&
+      typeof onReact === 'function' &&
+      input &&
+      !key.ctrl &&
+      !key.meta &&
+      /^[ynrYNR]$/.test(input)
+    ) {
+      if (onReact(input)) return;
     }
     if (key.ctrl && input === 'c') {
       process.exit(0);

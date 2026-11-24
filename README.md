@@ -75,6 +75,7 @@ Prefer not to install globally? `npm run cli` does the same thing from the repo 
 - **Parallel delegation** — The `delegate` tool fans one task out to several provider/model sub-agents at once and compares what comes back.
 - **Modes** — `/plan` (read-only planning), `/debug` (full step visibility), `/teach` (explains its reasoning as it works).
 - **Screenshots and images** — Paste a screenshot straight into the prompt with `Ctrl+V` (macOS clipboard), or drop an image file path into your message on any platform. Attach several at once and ask the agent about a broken UI, an error dialog, or a design mock. PNG/JPEG/GIF/WebP.
+- **Message reactions** — Claude Code–style 👍 / 👎 / 🔁 under the latest reply (`y` / `n` / `r` on an empty prompt, or `/like` `/dislike` `/retry`). Lightweight feedback without typing a full turn.
 - **Quality-of-life** — `@`-mention file autocomplete, slash-command autocomplete, streaming step timeline, Ctrl+L to clear.
 
 ---

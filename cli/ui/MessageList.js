@@ -4,6 +4,7 @@ import { MarkdownText } from './MarkdownText.js';
 import { StepTimeline } from './StepTimeline.js';
 import { PlanChecklist } from './PlanChecklist.js';
 import { DelegatePanel } from './DelegatePanel.js';
+import { formatReactionHint } from '../agent/reactions.js';
 
 /**
  * Speaker identity without labels:
@@ -72,6 +73,15 @@ function CompletedMessage({ message: m, activeModes }) {
   );
 }
 
+function lastAssistantIsReactable(messages, streamingMessage, agentStatus, reactedTurnId) {
+  if (streamingMessage || agentStatus !== 'idle') return false;
+  if (!messages?.length) return false;
+  const last = messages[messages.length - 1];
+  if (last?.role !== 'assistant') return false;
+  if (last.turnId != null && last.turnId === reactedTurnId) return false;
+  return true;
+}
+
 function MessageListImpl({
   messages,
   streamingMessage,
@@ -80,7 +90,17 @@ function MessageListImpl({
   liveDelegates,
   activeModes,
   staticEpoch = 0,
+  agentStatus = 'idle',
+  reactedTurnId = null,
+  showReactions = true,
 }) {
+  const reactable = showReactions && lastAssistantIsReactable(
+    messages,
+    streamingMessage,
+    agentStatus,
+    reactedTurnId
+  );
+
   return React.createElement(
     Box,
     { flexDirection: 'column', flexShrink: 1, paddingY: 1 },
@@ -128,6 +148,14 @@ function MessageListImpl({
           Box,
           { marginLeft: 1, flexDirection: 'column', flexShrink: 1, marginTop: streamingMessage ? 0 : 0 },
           React.createElement(StepTimeline, { steps: liveSteps, activeModes })
+        )
+      : null,
+    // Claude Code–style thumbs under the latest finished assistant reply.
+    reactable
+      ? React.createElement(
+          Box,
+          { marginLeft: 2, marginTop: 0, marginBottom: 1 },
+          React.createElement(Text, { dimColor: true, color: 'cyan' }, formatReactionHint())
         )
       : null
   );
