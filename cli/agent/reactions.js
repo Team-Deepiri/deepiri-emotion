@@ -1,12 +1,11 @@
 /**
- * Message reactions — Claude Code–style lightweight feedback on the latest
- * assistant turn (inspired by the thumbs-reactions plugin / Claude.ai thumbs).
+ * Message reactions — lightweight feedback on the latest assistant turn.
  *
- * Empty-prompt keys (when idle): y = like, n = dislike, r = retry
+ * Empty-prompt keys (when idle): y = ok, n = miss, r = redo
  * Slash: /like, /dislike, /retry
  *
- * Each reaction is sent as a normal user message so the next agent turn sees
- * it; meanings are also injected into the system prompt (see MEANING_PROMPT).
+ * Sent as a normal user message; meanings live in MEANING_PROMPT.
+ * Labels are plain TUI text (no emoji).
  */
 
 export const REACTIONS = {
@@ -14,25 +13,25 @@ export const REACTIONS = {
     id: 'like',
     keys: ['y', 'Y'],
     slash: '/like',
-    label: '👍',
+    label: 'ok',
     hint: 'y',
-    text: '👍 Looks good, continue',
+    text: '[ok] Looks good — continue.',
   },
   dislike: {
     id: 'dislike',
     keys: ['n', 'N'],
     slash: '/dislike',
-    label: '👎',
+    label: 'miss',
     hint: 'n',
-    text: "👎 That's not right — try another approach",
+    text: '[miss] Wrong direction — try another approach.',
   },
   retry: {
     id: 'retry',
     keys: ['r', 'R'],
     slash: '/retry',
-    label: '🔁',
+    label: 'redo',
     hint: 'r',
-    text: '🔁 Try that again',
+    text: '[redo] Do that again from scratch.',
   },
 };
 
@@ -40,9 +39,9 @@ export const REACTION_LIST = Object.values(REACTIONS);
 
 /** Short system-prompt block so the model knows what each reaction means. */
 export const MEANING_PROMPT = `Message reactions (user may reply with these instead of a full message):
-- 👍 / /like — approves the last reply, or says yes to a single yes/no question or one suggested next step. Do not pick between options or invent values. Do not approve anything the reply did not propose. Prefer continuing work over a "glad that helped" acknowledgment.
-- 👎 / /dislike — the last reply missed: say what you will change, or ask one short question. Do not defend the previous approach at length.
-- 🔁 / /retry — redo the last piece of work as a fresh attempt, not a rewording.`;
+- [ok] / /like — approves the last reply, or says yes to a single yes/no question or one suggested next step. Do not pick between options or invent values. Do not approve anything the reply did not propose. Prefer continuing work over a "glad that helped" acknowledgment.
+- [miss] / /dislike — the last reply missed: say what you will change, or ask one short question. Do not defend the previous approach at length.
+- [redo] / /retry — redo the last piece of work as a fresh attempt, not a rewording.`;
 
 /**
  * Resolve a bare keypress (empty prompt) or slash command to a reaction.
@@ -60,5 +59,6 @@ export function resolveReaction(input) {
 
 /** Hint line shown under the latest assistant reply when reactions are available. */
 export function formatReactionHint() {
-  return REACTION_LIST.map((r) => `${r.label} ${r.hint}`).join('  ·  ') + '  (empty prompt)';
+  const keys = REACTION_LIST.map((r) => `[${r.hint}] ${r.label}`).join('  ');
+  return `react  ${keys}`;
 }

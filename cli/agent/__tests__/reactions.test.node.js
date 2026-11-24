@@ -28,29 +28,34 @@ describe('resolveReaction', () => {
     expect(resolveReaction('/like please')).toBeNull();
   });
 
-  it('maps each reaction to a Claude Code–style follow-up message', () => {
-    expect(REACTIONS.like.text).toMatch(/^👍/);
-    expect(REACTIONS.dislike.text).toMatch(/^👎/);
-    expect(REACTIONS.retry.text).toMatch(/^🔁/);
+  it('maps each reaction to a plain tagged follow-up (no emoji)', () => {
+    expect(REACTIONS.like.text).toMatch(/^\[ok\]/);
+    expect(REACTIONS.dislike.text).toMatch(/^\[miss\]/);
+    expect(REACTIONS.retry.text).toMatch(/^\[redo\]/);
+    for (const r of REACTION_LIST) {
+      expect(r.text).not.toMatch(/[\u{1F300}-\u{1FAFF}]/u);
+      expect(r.label).not.toMatch(/[\u{1F300}-\u{1FAFF}]/u);
+    }
   });
 });
 
 describe('formatReactionHint', () => {
-  it('lists every reaction with its empty-prompt key', () => {
+  it('lists every reaction as [key] label with no emoji', () => {
     const hint = formatReactionHint();
+    expect(hint).toMatch(/^react\s+/);
     for (const r of REACTION_LIST) {
-      expect(hint).toContain(r.label);
-      expect(hint).toContain(r.hint);
+      expect(hint).toContain(`[${r.hint}] ${r.label}`);
     }
-    expect(hint).toMatch(/empty prompt/);
+    expect(hint).not.toMatch(/[\u{1F300}-\u{1FAFF}]/u);
   });
 });
 
 describe('MEANING_PROMPT', () => {
   it('documents all three reactions for the system prompt', () => {
-    expect(MEANING_PROMPT).toContain('👍');
-    expect(MEANING_PROMPT).toContain('👎');
-    expect(MEANING_PROMPT).toContain('🔁');
+    expect(MEANING_PROMPT).toContain('[ok]');
+    expect(MEANING_PROMPT).toContain('[miss]');
+    expect(MEANING_PROMPT).toContain('[redo]');
     expect(MEANING_PROMPT).toContain('/like');
+    expect(MEANING_PROMPT).not.toMatch(/[\u{1F300}-\u{1FAFF}]/u);
   });
 });

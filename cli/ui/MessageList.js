@@ -150,12 +150,12 @@ function MessageListImpl({
           React.createElement(StepTimeline, { steps: liveSteps, activeModes })
         )
       : null,
-    // Claude Code–style thumbs under the latest finished assistant reply.
+    // Plain-text react affordance under the latest finished assistant reply.
     reactable
       ? React.createElement(
           Box,
           { marginLeft: 2, marginTop: 0, marginBottom: 1 },
-          React.createElement(Text, { dimColor: true, color: 'cyan' }, formatReactionHint())
+          React.createElement(Text, { dimColor: true }, formatReactionHint())
         )
       : null
   );
