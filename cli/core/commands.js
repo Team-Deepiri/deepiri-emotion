@@ -27,9 +27,9 @@ export const COMMANDS = [
   { name: '/init', description: 'scan workspace and write starter EMOTION.md' },
   { name: '/remember', description: 'extract durable facts from recent sessions and propose adding them to EMOTION.md' },
   { name: '/memory', description: 'show what EMOTION.md currently remembers and when it last changed' },
-  { name: '/like', description: '👍 approve the last reply (same as empty-prompt y)' },
-  { name: '/dislike', description: "👎 last reply missed — try another approach (same as empty-prompt n)" },
-  { name: '/retry', description: '🔁 redo the last work as a fresh attempt (same as empty-prompt r)' },
+  { name: '/like', description: 'mark last reply ok (empty-prompt y)' },
+  { name: '/dislike', description: 'mark last reply a miss (empty-prompt n)' },
+  { name: '/retry', description: 'redo last work from scratch (empty-prompt r)' },
   { name: '/help', description: 'show this list' },
 ];
 

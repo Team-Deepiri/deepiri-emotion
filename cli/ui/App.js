@@ -430,7 +430,7 @@ export default function App({
       if (!t) return;
 
       // Expand /like /dislike /retry (and bare y/n/r via onReact) into the
-      // Claude Code–style reaction message before sending.
+      // tagged reaction message before sending.
       const reaction = resolveReaction(t);
       if (reaction) {
         const msgs = state.messages;
